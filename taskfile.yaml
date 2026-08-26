@@ -1,0 +1,8 @@
+tasks:
+  # TODO: write a setup
+  # Check for installed deps
+  setup:
+
+  dev:
+
+  build:
