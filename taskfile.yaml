@@ -1,3 +1,5 @@
+version: "3"
+
 tasks:
   # TODO: write a setup
   # Check for installed deps
@@ -6,3 +8,11 @@ tasks:
   dev:
 
   build:
+
+  git-info:
+    desc: "Prints your git info"
+    cmds:
+      - cmd: echo ----- Note this should be same as your gitlab -------
+      - cmd: echo "Name:" && git config --get user.name
+      - cmd: echo "Email:" && git config --get user.email
+    silent: true

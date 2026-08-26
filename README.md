@@ -16,7 +16,7 @@
 
 ### Example output
 
-```
+```text
 ❯ java --version
 java 25.0.1 2025-10-21 LTS
 Java(TM) SE Runtime Environment (build 25.0.1+8-LTS-27)
