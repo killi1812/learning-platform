@@ -1,0 +1,19 @@
+*.local*
+*.log
+*.old
+
+# Build outputs
+build/
+target/
+out/
+.gradle/
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# Java / Spring
+*.jar
+*.war
