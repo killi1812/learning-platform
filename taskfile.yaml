@@ -1,5 +1,8 @@
 version: "3"
 
+vars:
+  BREW_DEPS: "openjdk@25 docker"
+
 tasks:
   default:
     desc: "Default task (runs check)"
@@ -7,9 +10,22 @@ tasks:
       - task: check
 
   setup:
-    desc: "Setup development environment (TODO)"
+    desc: "Verify and install required development dependencies via Homebrew"
     cmds:
-      - cmd: echo "TODO - Setup environment scripts will be added here."
+      - cmd: |
+          if task check >/dev/null 2>&1; then
+            echo "✨ All dependencies are already installed and satisfied."
+          else
+            echo "🔧 Missing dependencies detected. Installing via Homebrew: {{.BREW_DEPS}}..."
+            if ! command -v brew >/dev/null 2>&1; then
+              echo "❌ Homebrew is required for automatic setup. Please install it from https://brew.sh"
+              exit 1
+            fi
+            brew install {{.BREW_DEPS}}
+            echo "🔄 Re-running checks..."
+            task check
+          fi
+    silent: true
 
   check:
     desc: "Check git info and all required dependencies (brew, docker, java 25)"
@@ -18,6 +34,7 @@ tasks:
       - task: check-brew
       - task: check-docker
       - task: check-java
+    silent: true
 
   git-info:
     desc: "Prints your git info"
@@ -54,6 +71,9 @@ tasks:
   check-java:
     desc: "Check if Java version 25 is installed"
     cmds:
+      - cmd: echo "--------- !Important -----------"
+      - cmd: echo "Don't forget to add java to PATH"
+      - cmd: echo "--------------------------------"
       - cmd: |
           if ! java -version >/dev/null 2>&1; then
             echo "❌ Java is not installed or not in PATH. Java 25 is required."
@@ -119,6 +139,8 @@ tasks:
             echo "No gradlew or mvnw found. Please initialize your Spring Boot project first."
             exit 1
           fi
+    silent: false
+    internal: true
 
   build:
     desc: "Build JAR locally and build production Docker image"
