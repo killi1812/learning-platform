@@ -28,7 +28,7 @@ tasks:
     silent: true
 
   check:
-    desc: "Check git info and all required dependencies (brew, docker, java 25)"
+    desc: "Check git info and all required dependencies"
     cmds:
       - task: git-info
       - task: check-brew
@@ -101,7 +101,7 @@ tasks:
           fi
 
   dev:services:
-    desc: "Start development services (PostgreSQL) in Docker"
+    desc: "Start development services in Docker"
     cmds:
       - cmd: docker compose up -d
 
@@ -147,4 +147,4 @@ tasks:
     deps:
       - build-jar
     cmds:
-      - cmd: docker compose -f docker-compose-prod.yml build
+      - cmd: docker build -t dat250-project-app:latest .
