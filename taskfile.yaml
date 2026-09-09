@@ -43,6 +43,7 @@ tasks:
       - cmd: echo "Name:" $(git config --get user.name)
       - cmd: echo "Email:" $(git config --get user.email)
     silent: true
+    internal: true
 
   check-brew:
     desc: "Check if Homebrew is installed"
@@ -55,6 +56,7 @@ tasks:
             exit 1
           fi
     silent: true
+    internal: true
 
   check-docker:
     desc: "Check if Docker is installed"
@@ -67,6 +69,7 @@ tasks:
             exit 1
           fi
     silent: true
+    internal: true
 
   check-java:
     desc: "Check if Java version 25 is installed"
@@ -87,6 +90,7 @@ tasks:
             exit 1
           fi
     silent: true
+    internal: true
 
   dev:
     desc: "Run Spring Boot application locally"
