@@ -1,7 +1,9 @@
 version: "3"
 
 vars:
-  BREW_DEPS: "openjdk@25 docker"
+  BREW_DEPS: "openjdk@25 docker colima"
+  PROJECT_DIR: "LearningPlatform"
+  OUTPUT_DIR: "bin"
 
 tasks:
   default:
@@ -33,6 +35,7 @@ tasks:
       - task: git-info
       - task: check-brew
       - task: check-docker
+      - task: check-colima
       - task: check-java
     silent: true
 
@@ -59,13 +62,28 @@ tasks:
     internal: true
 
   check-docker:
-    desc: "Check if Docker is installed"
+    desc: "Check if Docker is installed (Linux)"
+    platforms: [linux]
     cmds:
       - cmd: |
           if command -v docker >/dev/null 2>&1; then
             echo "✅ Docker is installed: $(docker --version)"
           else
             echo "❌ Docker is not installed"
+            exit 1
+          fi
+    silent: true
+    internal: true
+
+  check-colima:
+    desc: "Check if Colima is installed (macOS)"
+    platforms: [darwin]
+    cmds:
+      - cmd: |
+          if command -v colima >/dev/null 2>&1; then
+            echo "✅ Colima is installed: $(colima version | head -n 1)"
+          else
+            echo "❌ Colima is not installed"
             exit 1
           fi
     silent: true
@@ -94,55 +112,57 @@ tasks:
 
   dev:
     desc: "Run Spring Boot application locally"
+    dir: "{{ .PROJECT_DIR }}"
+    deps: [dev:services]
     cmds:
-      - cmd: |
-          if [ -f "./gradlew" ]; then
-            ./gradlew bootRun
-          elif [ -f "./mvnw" ]; then
-            ./mvnw spring-boot:run
-          else
-            echo "No gradlew or mvnw found. Please initialize your Spring Boot project first."
-          fi
+      - defer: { task: dev:services-down }
+      - cmd: ./gradlew bootRun
+    silent: true
+
+  colima-status:
+    desc: "Check if colima is running"
+    platforms: [darwin]
+    cmd: |
+      if ! colima status >/dev/null 2>&1; then
+        echo "🚀 Starting Colima..."
+        colima start
+      else
+        echo "✅ Colima is already running"
+      fi
+    silent: true
+    internal: true
 
   dev:services:
     desc: "Start development services in Docker"
+    dir: "{{.TASKFILE_DIR}}"
     cmds:
+      - task: colima-status
       - cmd: docker compose up -d
+    silent: true
 
   dev:services-down:
     desc: "Stop development services"
+    dir: "{{.TASKFILE_DIR}}"
     cmds:
       - cmd: docker compose down
 
   dev:services-logs:
     desc: "Follow development services logs"
+    dir: "{{.TASKFILE_DIR}}"
     cmds:
       - cmd: docker compose logs -f
 
   test:
     desc: "Run unit and integration tests"
+    dir: "{{ .PROJECT_DIR }}"
     cmds:
-      - cmd: |
-          if [ -f "./gradlew" ]; then
-            ./gradlew test
-          elif [ -f "./mvnw" ]; then
-            ./mvnw test
-          else
-            echo "No gradlew or mvnw found."
-          fi
+      - cmd: ./gradlew test
+    silent: true
 
   build-jar:
     desc: "Build the executable application JAR locally"
     cmds:
-      - cmd: |
-          if [ -f "./gradlew" ]; then
-            ./gradlew bootJar
-          elif [ -f "./mvnw" ]; then
-            ./mvnw clean package -DskipTests
-          else
-            echo "No gradlew or mvnw found. Please initialize your Spring Boot project first."
-            exit 1
-          fi
+      - cmd: ./gradlew bootJar
     silent: false
     internal: true
 
