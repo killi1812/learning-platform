@@ -50,6 +50,7 @@ tasks:
 
   check-brew:
     desc: "Check if Homebrew is installed"
+    platforms: [darwin]
     cmds:
       - cmd: |
           if command -v brew >/dev/null 2>&1; then
@@ -116,7 +117,7 @@ tasks:
     deps: [dev:services]
     cmds:
       - defer: { task: dev:services-down }
-      - cmd: ./gradlew bootRun
+      - cmd: ./gradlew bootRun || test $? -eq 130
     silent: true
 
   colima-status:
