@@ -2,27 +2,52 @@
 
 <!--toc:start-->
 - [Project (insert name here)](#project-insert-name-here)
-  - [Java version](#java-version)
-    - [Example output](#example-output)
+  - [Seutp](#seutp)
+  - [Checking dev env](#checking-dev-env)
+  - [Run a project](#run-a-project)
+    - [Java version](#java-version)
+  - [Brew](#brew)
   - [Links](#links)
 <!--toc:end-->
 
 
-## Java version
+## Seutp
+
+- To setup the dev environment:
+  - Install [Taskfile](https://taskfile.dev/docs/installation)
+  - Run `task setup`
+
+## Checking dev env
+
+- Run `task check-env`
+
+## Run a project
+
+- Run `task dev`
+  - The database will be started in the docker container and stopped after
+  - The code will hot-reload so **No** need for reruns
+- The project starts on **url:** `http://localhost:8080`
+
+### Java version
 
 - we use Java 25
+- check with `java --version` or `task check-java`
+- If you have multiple java versions install
 
-- check with `java --version`
+### Brew
 
-### Example output
+Brew is a _MacOS_ [package manager](https://en.wikipedia.org/wiki/Package_manager)
 
-```text
-❯ java --version
-java 25.0.1 2025-10-21 LTS
-Java(TM) SE Runtime Environment (build 25.0.1+8-LTS-27)
-Java HotSpot(TM) 64-Bit Server VM (build 25.0.1+8-LTS-27, mixed mode, sharing)
+To install brew run the following command
 
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
+
+### Docker
+
+- Docker is a container environment where out app will run.
+- On _MacOS_ we will use [_colima_](https://colima.run/) as container software
 
 ## Links
 
