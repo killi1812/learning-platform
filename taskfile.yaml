@@ -1,8 +1,9 @@
 version: "3"
 
 vars:
-  BREW_DEPS: "openjdk@25 docker colima"
+  BREW_DEPS: "openjdk@25 docker colima npm node"
   PROJECT_DIR: "LearningPlatform"
+  FRONTEND_DIR: "frontend"
   OUTPUT_DIR: "bin"
 
 tasks:
@@ -37,6 +38,7 @@ tasks:
       - task: check-docker
       - task: check-colima
       - task: check-java
+      - task: check-node
     silent: true
 
   git-info:

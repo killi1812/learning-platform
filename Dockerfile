@@ -5,7 +5,7 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 USER appuser:appgroup
 
 # Copy pre-built JAR from local build output
-ARG JAR_FILE=build/libs/*[!plain].jar
+ARG JAR_FILE=LearningPlatform/build/libs/*.jar
 COPY ${JAR_FILE} app.jar
 
 EXPOSE 8080

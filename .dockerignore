@@ -3,9 +3,9 @@
 .gradle
 .idea
 .vscode
-build
 target
 out
+frontend/
 *.log
 *.md
 docker-compose*.yml
