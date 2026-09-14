@@ -113,13 +113,49 @@ tasks:
     silent: true
     internal: true
 
-  dev:
-    desc: "Run Spring Boot application locally"
-    dir: "{{ .PROJECT_DIR }}"
-    deps: [dev:services]
+  check-node:
+    desc: "Check if Node.js and npm are installed"
     cmds:
+      - cmd: |
+          if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+            echo "❌ Node.js and npm are required for frontend development. Please install them."
+            exit 1
+          fi
+          echo "✅ Node.js and npm are installed ($(node --version), npm $(npm --version))"
+    silent: true
+    internal: true
+
+  dev:
+    desc: "Run fullstack development environment (services, backend, and frontend)"
+    cmds:
+      - task: dev:services
       - defer: { task: dev:services-down }
+      - task: dev:apps
+    silent: true
+
+  dev:apps:
+    desc: "Run backend and frontend applications concurrently"
+    deps: [dev:backend, dev:frontend]
+    silent: true
+    internal: true
+
+  dev:backend:
+    desc: "Run Spring Boot backend locally"
+    dir: "{{ .PROJECT_DIR }}"
+    cmds:
       - cmd: ./gradlew bootRun || test $? -eq 130
+    silent: true
+
+  dev:frontend:
+    desc: "Run Vue+Vuetify frontend locally"
+    dir: "{{ .FRONTEND_DIR }}"
+    cmds:
+      - cmd: |
+          if [ ! -d "node_modules" ]; then
+            echo "📦 Installing frontend dependencies..."
+            npm install
+          fi
+          npm run dev || test $? -eq 130
     silent: true
 
   colima-status:
@@ -164,14 +200,27 @@ tasks:
 
   build-jar:
     desc: "Build the executable application JAR locally"
+    dir: "{{ .PROJECT_DIR }}"
     cmds:
       - cmd: ./gradlew bootJar
     silent: false
     internal: true
 
-  build:
-    desc: "Build JAR locally and build production Docker image"
+  build:backend:
+    desc: "Build backend production Docker image"
     deps:
       - build-jar
     cmds:
       - cmd: docker build -t dat250-project-app:latest .
+
+  build:frontend:
+    desc: "Build frontend production Docker image"
+    dir: "{{ .FRONTEND_DIR }}"
+    cmds:
+      - cmd: docker build -t dat250-project-frontend:latest .
+
+  build:
+    desc: "Build backend and frontend production Docker images"
+    deps:
+      - build:backend
+      - build:frontend

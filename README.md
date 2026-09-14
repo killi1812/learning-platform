@@ -24,9 +24,12 @@
 ## Run a project
 
 - Run `task dev`
-  - The database will be started in the docker container and stopped after
-  - The code will hot-reload so **No** need for reruns
-- The project starts on **url:** `http://localhost:8080`
+  - The PostgreSQL database will be started in Docker and stopped automatically on exit
+  - Starts both the Spring Boot backend and Vue+Vuetify frontend concurrently
+  - Code will hot-reload automatically
+- **URLs:**
+  - **Frontend UI (Vue 3 + Vuetify):** `http://localhost:3000`
+  - **Backend API (Spring Boot):** `http://localhost:8080`
 
 ### Java version
 
