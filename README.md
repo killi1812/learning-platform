@@ -19,7 +19,7 @@
 
 ## Checking dev env
 
-- Run `task check-env`
+- Run `task check`
 
 ## Run a project
 
