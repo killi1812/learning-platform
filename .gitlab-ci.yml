@@ -1,0 +1,120 @@
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event' && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "master"
+    - if: $CI_COMMIT_BRANCH == "master"
+
+stages:
+  - test
+  - build
+  - package
+
+variables:
+  GRADLE_USER_HOME: "$CI_PROJECT_DIR/.gradle"
+
+# ---------------------------------------------------------
+# Cache definitions
+# ---------------------------------------------------------
+.gradle-cache: &gradle-cache
+  key:
+    files:
+      - LearningPlatform/gradle/wrapper/gradle-wrapper.properties
+      - LearningPlatform/build.gradle
+  paths:
+    - .gradle/caches/
+    - .gradle/wrapper/
+
+.npm-cache: &npm-cache
+  key:
+    files:
+      - frontend/package.json
+  paths:
+    - frontend/.npm/
+
+# ---------------------------------------------------------
+# Test Stage
+# ---------------------------------------------------------
+backend:test:
+  stage: test
+  image: eclipse-temurin:25-jdk
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_DB: appdb
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: postgres
+    POSTGRES_HOST_AUTH_METHOD: trust
+    SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/appdb
+    SPRING_DATASOURCE_USERNAME: postgres
+    SPRING_DATASOURCE_PASSWORD: postgres
+  cache:
+    <<: *gradle-cache
+  before_script:
+    - cd LearningPlatform
+    - chmod +x gradlew
+  script:
+    - ./gradlew test
+  artifacts:
+    when: always
+    reports:
+      junit: LearningPlatform/build/test-results/test/**/TEST-*.xml
+    paths:
+      - LearningPlatform/build/reports/tests/test/
+
+frontend:lint:
+  stage: test
+  image: node:22-alpine
+  cache:
+    <<: *npm-cache
+  before_script:
+    - cd frontend
+    - npm ci --cache .npm --prefer-offline
+  script:
+    - npm run lint
+
+# ---------------------------------------------------------
+# Build Stage
+# ---------------------------------------------------------
+backend:build:
+  stage: build
+  image: eclipse-temurin:25-jdk
+  cache:
+    <<: *gradle-cache
+  before_script:
+    - cd LearningPlatform
+    - chmod +x gradlew
+  script:
+    - ./gradlew bootJar -x test
+  artifacts:
+    name: "backend-jar-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - LearningPlatform/build/libs/*.jar
+    expire_in: 1 week
+
+frontend:build:
+  stage: build
+  image: node:22-alpine
+  cache:
+    <<: *npm-cache
+  before_script:
+    - cd frontend
+    - npm ci --cache .npm --prefer-offline
+  script:
+    - npm run build
+  artifacts:
+    name: "frontend-dist-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - frontend/dist/
+    expire_in: 1 week
+
+# ---------------------------------------------------------
+# Package Stage (Docker images)
+# ---------------------------------------------------------
+docker:build:
+  stage: package
+  image: docker:latest
+  needs:
+    - backend:build
+  script:
+    - docker build -t dat250-project-app:$CI_COMMIT_SHORT_SHA .
+    - docker build -t dat250-project-frontend:$CI_COMMIT_SHORT_SHA ./frontend
