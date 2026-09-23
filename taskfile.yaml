@@ -1,7 +1,7 @@
 version: "3"
 
 vars:
-  BREW_DEPS: "openjdk@25 docker colima npm node"
+  BREW_DEPS: "openjdk@25 docker colima npm node docker-compose"
   PROJECT_DIR: "LearningPlatform"
   FRONTEND_DIR: "frontend"
   OUTPUT_DIR: "bin"
