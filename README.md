@@ -11,7 +11,7 @@
 <!--toc:end-->
 
 
-## Seutp
+## Setup
 
 - To setup the dev environment:
   - Install [Taskfile](https://taskfile.dev/docs/installation)
