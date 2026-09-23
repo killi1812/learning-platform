@@ -198,6 +198,37 @@ tasks:
       - cmd: ./gradlew test
     silent: true
 
+  lint:
+    desc: "Check code correctness and formatting for frontend and backend"
+    deps:
+      - lint:backend
+      - lint:frontend
+
+  lint:backend:
+    desc: "Lint and verify backend Java compilation"
+    dir: "{{ .PROJECT_DIR }}"
+    cmds:
+      - cmd: ./gradlew compileJava compileTestJava
+    silent: true
+
+  lint:frontend:
+    desc: "Lint and verify frontend TypeScript and Prettier formatting"
+    dir: "{{ .FRONTEND_DIR }}"
+    cmds:
+      - cmd: |
+          if [ ! -d "node_modules" ]; then
+            npm install
+          fi
+          npm run lint
+    silent: true
+
+  format:
+    desc: "Format frontend code using Prettier"
+    dir: "{{ .FRONTEND_DIR }}"
+    cmds:
+      - cmd: npm run format
+    silent: true
+
   build-jar:
     desc: "Build the executable application JAR locally"
     dir: "{{ .PROJECT_DIR }}"

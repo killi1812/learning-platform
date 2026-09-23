@@ -1,0 +1,9 @@
+.git
+.gradle
+build
+target
+out
+node_modules
+dist
+package-lock.json
+*.jar
