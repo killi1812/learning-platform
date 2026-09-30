@@ -4,9 +4,13 @@
 .idea
 .vscode
 target
-out
-frontend/
+*.out
+*.old
+client/
 *.log
 *.md
 docker-compose*.yml
 taskfile.yaml
+[Tt]mp
+.wolf
+.client

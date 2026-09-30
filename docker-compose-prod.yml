@@ -10,7 +10,8 @@ services:
     volumes:
       - prod_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB:-appdb}"]
+      test:
+        ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB:-appdb}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -34,12 +35,12 @@ services:
       db:
         condition: service_healthy
 
-  frontend:
-    image: ${FRONTEND_IMAGE:-dat250-project-frontend:latest}
+  client:
+    image: ${CLIENT_IMAGE:-dat250-project-client:latest}
     build:
-      context: ./frontend
+      context: ./client
       dockerfile: Dockerfile
-    container_name: prod-frontend
+    container_name: prod-client
     restart: always
     ports:
       - "3000:80"

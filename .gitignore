@@ -7,6 +7,7 @@ build/
 target/
 out/
 .gradle/
+bin/
 
 # IDE files
 .idea/
@@ -31,6 +32,8 @@ build/
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/
 !**/src/test/**/build/
+*.out
+[Tt]mp
 
 ### STS ###
 .apt_generated
@@ -80,3 +83,7 @@ coverage
 *.local
 
 *.tsbuildinfo
+
+.wolf
+.client
+.env

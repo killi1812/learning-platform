@@ -9,65 +9,53 @@ stages:
   - package
 
 variables:
-  GRADLE_USER_HOME: "$CI_PROJECT_DIR/.gradle"
+  GOPATH: "$CI_PROJECT_DIR/.go"
 
 # ---------------------------------------------------------
 # Cache definitions
 # ---------------------------------------------------------
-.gradle-cache: &gradle-cache
+.go-cache: &go-cache
   key:
     files:
-      - LearningPlatform/gradle/wrapper/gradle-wrapper.properties
-      - LearningPlatform/build.gradle
+      - server/go.mod
+      - server/go.sum
   paths:
-    - .gradle/caches/
-    - .gradle/wrapper/
+    - .go/pkg/mod/
 
 .npm-cache: &npm-cache
   key:
     files:
-      - frontend/package.json
+      - client/package.json
   paths:
-    - frontend/.npm/
+    - client/.npm/
 
 # ---------------------------------------------------------
 # Test Stage
 # ---------------------------------------------------------
 backend:test:
   stage: test
-  image: eclipse-temurin:25-jdk
+  image: golang:1.25-alpine
   services:
-    - name: postgres:17-alpine
-      alias: postgres
+    - name: mongo:latest
+      alias: mongo
   variables:
-    POSTGRES_DB: appdb
-    POSTGRES_USER: postgres
-    POSTGRES_PASSWORD: postgres
-    POSTGRES_HOST_AUTH_METHOD: trust
-    SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/appdb
-    SPRING_DATASOURCE_USERNAME: postgres
-    SPRING_DATASOURCE_PASSWORD: postgres
+    MONGO_CONN: "mongodb://mongo:27017"
+    TEST_EXCLUDE: "/docs"
   cache:
-    <<: *gradle-cache
+    <<: *go-cache
   before_script:
-    - cd LearningPlatform
-    - chmod +x gradlew
+    - cd server
   script:
-    - ./gradlew test
-  artifacts:
-    when: always
-    reports:
-      junit: LearningPlatform/build/test-results/test/**/TEST-*.xml
-    paths:
-      - LearningPlatform/build/reports/tests/test/
+    - go vet ./...
+    - go test -v $(go list ./... | grep -Ev "${TEST_EXCLUDE}")
 
-frontend:lint:
+client:lint:
   stage: test
   image: node:22-alpine
   cache:
     <<: *npm-cache
   before_script:
-    - cd frontend
+    - cd client
     - npm ci --cache .npm --prefer-offline
   script:
     - npm run lint
@@ -77,34 +65,34 @@ frontend:lint:
 # ---------------------------------------------------------
 backend:build:
   stage: build
-  image: eclipse-temurin:25-jdk
+  image: golang:1.25-alpine
   cache:
-    <<: *gradle-cache
+    <<: *go-cache
   before_script:
-    - cd LearningPlatform
-    - chmod +x gradlew
+    - cd server
+    - mkdir -p build
   script:
-    - ./gradlew bootJar -x test
+    - CGO_ENABLED=0 go build -ldflags="-X 'github.com/killi1812/wfrp5e-character_sheet/app.Build=prod' -X 'github.com/killi1812/wfrp5e-character_sheet/app.Version=$CI_COMMIT_SHORT_SHA' -X 'github.com/killi1812/wfrp5e-character_sheet/app.CommitHash=$CI_COMMIT_SHORT_SHA' -X 'github.com/killi1812/wfrp5e-character_sheet/app.BuildTimestamp=$(date '+%Y-%m-%dT%H:%M:%S')'" -o build/wfrp5ecs .
   artifacts:
-    name: "backend-jar-$CI_COMMIT_SHORT_SHA"
+    name: "backend-bin-$CI_COMMIT_SHORT_SHA"
     paths:
-      - LearningPlatform/build/libs/*.jar
+      - server/build/wfrp5ecs
     expire_in: 1 week
 
-frontend:build:
+client:build:
   stage: build
   image: node:22-alpine
   cache:
     <<: *npm-cache
   before_script:
-    - cd frontend
+    - cd client
     - npm ci --cache .npm --prefer-offline
   script:
     - npm run build
   artifacts:
-    name: "frontend-dist-$CI_COMMIT_SHORT_SHA"
+    name: "client-dist-$CI_COMMIT_SHORT_SHA"
     paths:
-      - frontend/dist/
+      - client/dist/
     expire_in: 1 week
 
 # ---------------------------------------------------------
@@ -116,5 +104,5 @@ docker:build:
   needs:
     - backend:build
   script:
-    - docker build -t dat250-project-app:$CI_COMMIT_SHORT_SHA .
-    - docker build -t dat250-project-frontend:$CI_COMMIT_SHORT_SHA ./frontend
+    - docker build -t dat250-project-app:$CI_COMMIT_SHORT_SHA ./server
+    - docker build -t dat250-project-client:$CI_COMMIT_SHORT_SHA ./client

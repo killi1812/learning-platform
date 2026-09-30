@@ -25,10 +25,10 @@
 
 - Run `task dev`
   - The PostgreSQL database will be started in Docker and stopped automatically on exit
-  - Starts both the Spring Boot backend and Vue+Vuetify frontend concurrently
+  - Starts both the Spring Boot backend and Vue+Vuetify client concurrently
   - Code will hot-reload automatically
 - **URLs:**
-  - **Frontend UI (Vue 3 + Vuetify):** `http://localhost:3000`
+  - **Client UI (Vue 3 + Vuetify):** `http://localhost:3000`
   - **Backend API (Spring Boot):** `http://localhost:8080`
 
 ### Java version
