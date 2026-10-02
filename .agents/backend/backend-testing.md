@@ -12,3 +12,12 @@ paths:
 
 ## Naming
 * **Naming:** Append test files with `_test` (e.g. `db_test.go`)
+
+## Testing checklist
+
+- Unit tests for pure logic and edge cases.
+- Integration tests for external dependencies.
+- Regression tests for bug fixes.
+- Deterministic test data and stable assertions.
+
+

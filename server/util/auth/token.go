@@ -4,8 +4,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/killi1812/wfrp5e-character_sheet/app"
-	"github.com/killi1812/wfrp5e-character_sheet/util/cerror"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/cerror"
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
@@ -43,7 +43,7 @@ func ParseToken(authHeader string) (*jwt.Token, *Claims, error) {
 	return token, &claims, nil
 }
 
-func extractToken(authHeader string) (string, error) {
+func ExtractToken(authHeader string) (string, error) {
 	if token, ok := strings.CutPrefix(authHeader, "Bearer "); ok {
 		if token == "" {
 			return "", cerror.ErrInvalidTokenFormat
@@ -57,6 +57,10 @@ func extractToken(authHeader string) (string, error) {
 	}
 
 	return "", cerror.ErrInvalidTokenFormat
+}
+
+func extractToken(authHeader string) (string, error) {
+	return ExtractToken(authHeader)
 }
 
 // GenerateTokens returns a jwt access token and refresh token or an error

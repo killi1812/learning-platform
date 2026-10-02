@@ -22,49 +22,14 @@ bin/
 *.sln
 *.sw?
 
-# Java / Spring
-*.jar
-*.war
-
-HELP.md
-.gradle
-build/
-!gradle/wrapper/gradle-wrapper.jar
-!**/src/main/**/build/
-!**/src/test/**/build/
-*.out
-[Tt]mp
-
-### STS ###
-.apt_generated
-.classpath
-.factorypath
-.project
-.settings
-.springBeans
-.sts4-cache
-bin/
-!**/src/main/**/bin/
-!**/src/test/**/bin/
-
-### IntelliJ IDEA ###
-.idea
-*.iws
-*.iml
-*.ipr
-out/
-!**/src/main/**/out/
-!**/src/test/**/out/
-
-### NetBeans ###
-/nbproject/private/
-/nbbuild/
-/dist/
-/nbdist/
-/.nb-gradle/
-
-### VS Code ###
-.vscode/
+# Temporary and build files
+tmp/
+coverage.out
+.agents/ORIGINAL_REQUEST.md
+.agents/explorer_*
+.agents/orchestrator/
+.agents/sentinel/
+.agents/worker_*
 
 # Logs
 logs
@@ -77,7 +42,9 @@ lerna-debug.log*
 
 node_modules
 .DS_Store
-dist
+client/dist/
+server/web/dist/*
+!server/web/dist/index.html
 dist-ssr
 coverage
 *.local

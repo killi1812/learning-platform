@@ -10,8 +10,9 @@ import (
 	"syscall"
 	"time"
 
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/docs"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/web"
 	"github.com/gin-gonic/gin"
-	"github.com/killi1812/wfrp5e-character_sheet/docs"
 	"go.uber.org/dig"
 	"go.uber.org/zap"
 
@@ -90,15 +91,15 @@ func run(ctx context.Context, wg *sync.WaitGroup) {
 	Invoke(func(p struct {
 		dig.In
 		Apis []Api `group:"apis"`
-	}) {
+	},
+	) {
 		for _, c := range p.Apis {
 			c.RegisterEndpoints(basePath)
 		}
 	})
 
-	router.NoRoute(func(c *gin.Context) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Endpoint not found"})
-	})
+	// serve embedded SPA frontend and handle 404 for API/Swagger
+	web.RegisterSPA(router)
 
 	addr := fmt.Sprintf(":%d", Port)
 	srv := &http.Server{
@@ -106,7 +107,7 @@ func run(ctx context.Context, wg *sync.WaitGroup) {
 		Handler:      router,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
-		IdleTimeout:  10 * time.Second,
+		IdleTimeout:  20 * time.Second,
 	}
 
 	go func() {

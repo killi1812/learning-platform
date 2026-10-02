@@ -8,10 +8,10 @@ import (
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
-	"github.com/killi1812/wfrp5e-character_sheet/app"
-	"github.com/killi1812/wfrp5e-character_sheet/user"
-	authUtil "github.com/killi1812/wfrp5e-character_sheet/util/auth"
-	"github.com/killi1812/wfrp5e-character_sheet/util/cerror"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
+	authUtil "git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/auth"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/cerror"
 	"github.com/stretchr/testify/assert"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -37,7 +37,7 @@ func getTestDb(t *testing.T) *mongo.Database {
 		return nil
 	}
 
-	dbName := "wfrp5e_test_auth_" + uuid.New().String()[:8]
+	dbName := "lp_test_auth_" + uuid.New().String()[:8]
 	db := client.Database(dbName)
 	t.Cleanup(func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -74,9 +74,10 @@ func TestAuthService(t *testing.T) {
 	assert.NoError(t, err)
 
 	t.Run("Login with valid username", func(t *testing.T) {
-		token, err := svc.Login("tester", "validPassword123")
+		token, refresh, err := svc.Login("tester", "validPassword123")
 		assert.NoError(t, err)
 		assert.NotEmpty(t, token)
+		assert.NotEmpty(t, refresh)
 
 		// Verify session was inserted
 		var session user.Session
@@ -86,18 +87,19 @@ func TestAuthService(t *testing.T) {
 	})
 
 	t.Run("Login with valid email", func(t *testing.T) {
-		token, err := svc.Login("tester@example.com", "validPassword123")
+		token, refresh, err := svc.Login("tester@example.com", "validPassword123")
 		assert.NoError(t, err)
 		assert.NotEmpty(t, token)
+		assert.NotEmpty(t, refresh)
 	})
 
 	t.Run("Login with wrong password returns ErrInvalidCredentials", func(t *testing.T) {
-		_, err := svc.Login("tester", "wrongPassword")
+		_, _, err := svc.Login("tester", "wrongPassword")
 		assert.ErrorIs(t, err, cerror.ErrInvalidCredentials)
 	})
 
 	t.Run("Login with unknown identifier returns ErrInvalidCredentials", func(t *testing.T) {
-		_, err := svc.Login("nonexistent", "validPassword123")
+		_, _, err := svc.Login("nonexistent", "validPassword123")
 		assert.ErrorIs(t, err, cerror.ErrInvalidCredentials)
 	})
 
@@ -110,21 +112,22 @@ func TestAuthService(t *testing.T) {
 			Role:         user.ROLE_USER,
 		}
 		_, _ = db.Collection("users").InsertOne(ctx, nilUser)
-		_, err := svc.Login("niluser", "validPassword123")
+		_, _, err := svc.Login("niluser", "validPassword123")
 		assert.Error(t, err)
 	})
 
 	t.Run("RefreshTokens with valid token", func(t *testing.T) {
-		tok, err := svc.Login("tester", "validPassword123")
+		_, refresh, err := svc.Login("tester", "validPassword123")
 		assert.NoError(t, err)
 
-		newToken, err := svc.RefreshTokens("Bearer " + tok)
+		newToken, newRefresh, err := svc.RefreshTokens("Bearer " + refresh)
 		assert.NoError(t, err)
 		assert.NotEmpty(t, newToken)
+		assert.NotEmpty(t, newRefresh)
 	})
 
 	t.Run("RefreshTokens with malformed token", func(t *testing.T) {
-		_, err := svc.RefreshTokens("invalid-token")
+		_, _, err := svc.RefreshTokens("invalid-token")
 		assert.Error(t, err)
 	})
 
@@ -134,50 +137,37 @@ func TestAuthService(t *testing.T) {
 			RegisteredClaims: jwt.RegisteredClaims{ID: "not-a-uuid"},
 		}
 		tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-		signed, _ := tok.SignedString([]byte(app.AccessKey))
-		_, err := svc.RefreshTokens("Bearer " + signed)
+		signed, _ := tok.SignedString([]byte(app.RefreshKey))
+		_, _, err := svc.RefreshTokens("Bearer " + signed)
 		assert.Error(t, err)
 	})
 
 	t.Run("RefreshTokens with unknown user session", func(t *testing.T) {
 		unknownUuid := uuid.New()
-		tok, _, _ := authUtil.GenerateTokens("unknown@test.com", "unknown", "user", unknownUuid)
-		_, err := svc.RefreshTokens("Bearer " + tok)
+		_, ref, _ := authUtil.GenerateTokens("unknown@test.com", "unknown", "user", unknownUuid)
+		_, _, err := svc.RefreshTokens("Bearer " + ref)
 		assert.Error(t, err)
 	})
 
 	t.Run("RefreshTokens with corrupt refresh token in session", func(t *testing.T) {
 		corruptUserUuid := uuid.New()
-		tok, _, _ := authUtil.GenerateTokens("c@test.com", "cuser", "user", corruptUserUuid)
+		_, ref, _ := authUtil.GenerateTokens("c@test.com", "cuser", "user", corruptUserUuid)
 		_, _ = db.Collection("sessions").InsertOne(ctx, user.Session{
 			UserUuid:     corruptUserUuid,
 			RefreshToken: "corrupt.refresh.token",
 		})
-		_, err := svc.RefreshTokens("Bearer " + tok)
-		assert.Error(t, err)
-	})
-
-	t.Run("RefreshTokens with mismatched token uuid", func(t *testing.T) {
-		mismatchUuid := uuid.New()
-		tok, _, _ := authUtil.GenerateTokens("m@test.com", "muser", "user", mismatchUuid)
-		// Insert session with a different token uuid
-		_, otherRefresh, _ := authUtil.GenerateTokens("m@test.com", "muser", "user", mismatchUuid)
-		_, _ = db.Collection("sessions").InsertOne(ctx, user.Session{
-			UserUuid:     mismatchUuid,
-			RefreshToken: otherRefresh,
-		})
-		_, err := svc.RefreshTokens("Bearer " + tok)
+		_, _, err := svc.RefreshTokens("Bearer " + ref)
 		assert.Error(t, err)
 	})
 
 	t.Run("RefreshTokens with user not in users collection", func(t *testing.T) {
 		orphanUuid := uuid.New()
-		tok, ref, _ := authUtil.GenerateTokens("o@test.com", "ouser", "user", orphanUuid)
+		_, ref, _ := authUtil.GenerateTokens("o@test.com", "ouser", "user", orphanUuid)
 		_, _ = db.Collection("sessions").InsertOne(ctx, user.Session{
 			UserUuid:     orphanUuid,
 			RefreshToken: ref,
 		})
-		_, err := svc.RefreshTokens("Bearer " + tok)
+		_, _, err := svc.RefreshTokens("Bearer " + ref)
 		assert.Error(t, err)
 	})
 

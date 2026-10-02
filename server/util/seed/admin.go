@@ -4,14 +4,15 @@ import (
 	"errors"
 	"os"
 
-	"github.com/killi1812/wfrp5e-character_sheet/app"
-	"github.com/killi1812/wfrp5e-character_sheet/user"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 
 	"go.uber.org/zap"
 )
 
 const (
 	_PASSWORD_ENV = "SUPERADMIN_PASSWORD"
+	_EMAIL_ENV    = "SUPERADMIN_EMAIL"
 )
 
 var suadmin *user.User
@@ -23,9 +24,14 @@ func createSuperAdmin() error {
 		userCrud = crud
 	})
 
+	email := os.Getenv(_EMAIL_ENV)
+	if email == "" {
+		email = "superadmin@example.com"
+	}
+
 	// Check if SuperAdmin exists
 	{
-		_, err := userCrud.GetUserByEmail("superadmin@test.hr")
+		_, err := userCrud.GetUserByEmail(email)
 		if err != nil {
 			if errors.Is(err, user.ErrRecordNotFound) {
 				zap.S().Infof("SuperAdmin not found, err %+v", err)
@@ -50,7 +56,7 @@ func createSuperAdmin() error {
 
 	dto := user.NewUserDto{
 		Username: "superadmin",
-		Email:    "superadmin@test.hr",
+		Email:    email,
 		Password: password,
 		Role:     "admin",
 	}
@@ -64,6 +70,6 @@ func createSuperAdmin() error {
 		return err
 	}
 	suadmin = usr
-	zap.S().Infof("superadmin created, %+v\n", usr)
+	zap.S().Infof("superadmin created successfully, username=%s email=%s uuid=%s", usr.Username, usr.Email, usr.Uuid)
 	return nil
 }

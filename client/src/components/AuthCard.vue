@@ -118,8 +118,8 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 
-const username = ref('admin')
-const password = ref('password')
+const username = ref('superadmin')
+const password = ref('Pa$$w0rd')
 const loading = ref(false)
 const checkingStatus = ref(false)
 const backendOnline = ref(false)
@@ -129,7 +129,7 @@ const authResult = ref<{ success: boolean; message: string } | null>(null)
 async function checkBackendStatus() {
   checkingStatus.value = true
   try {
-    const res = await fetch('/api/auth/status')
+    const res = await fetch('/api/info')
     if (res.ok) {
       backendOnline.value = true
     } else {
@@ -160,18 +160,25 @@ async function handleLogin() {
 
     const data = await res.json()
 
-    if (res.ok && data.authenticated) {
-      authenticatedUser.value = data.username
+    if (res.ok && data.accessToken) {
+      localStorage.setItem('accessToken', data.accessToken)
+      if (data.refreshToken) {
+        localStorage.setItem('refreshToken', data.refreshToken)
+      }
+      authenticatedUser.value = username.value
       authResult.value = {
         success: true,
-        message: data.message || 'Authentication successful! Backend connected.',
+        message: 'Authentication successful! Backend connected.',
       }
       backendOnline.value = true
     } else {
       authenticatedUser.value = null
       authResult.value = {
         success: false,
-        message: data.message || 'Authentication failed: Invalid credentials.',
+        message:
+          typeof data === 'string'
+            ? data
+            : data.error || 'Authentication failed: Invalid credentials.',
       }
     }
   } catch (err) {
@@ -186,7 +193,22 @@ async function handleLogin() {
   }
 }
 
-function logout() {
+async function logout() {
+  const token = localStorage.getItem('accessToken')
+  if (token) {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+    } catch {
+      // Ignore network errors on logout
+    }
+  }
+  localStorage.removeItem('accessToken')
+  localStorage.removeItem('refreshToken')
   authenticatedUser.value = null
   authResult.value = null
 }

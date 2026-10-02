@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/killi1812/wfrp5e-character_sheet/app"
-	"github.com/killi1812/wfrp5e-character_sheet/user"
-	"github.com/killi1812/wfrp5e-character_sheet/util/auth"
-	"github.com/killi1812/wfrp5e-character_sheet/util/cerror"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/auth"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/cerror"
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"

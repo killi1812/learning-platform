@@ -10,8 +10,7 @@ import (
 )
 
 const (
-	// TODO: change project name
-	_LOG_FILE             = "template.log"
+	_LOG_FILE             = "learning-platform.log"
 	_LOG_FILE_MAX_SIZE    = 2
 	_LOG_FILE_MAX_AGE     = 30
 	_LOG_FILE_MAX_BACKUPS = 0

@@ -7,5 +7,10 @@ type LoginDto struct {
 }
 
 type TokenDto struct {
-	AccessToken string `json:"accessToken"`
+	AccessToken  string `json:"accessToken"`
+	RefreshToken string `json:"refreshToken,omitempty"`
+}
+
+type RefreshDto struct {
+	RefreshToken string `json:"refreshToken"`
 }

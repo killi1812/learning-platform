@@ -3,7 +3,7 @@ package user
 import (
 	"fmt"
 
-	"github.com/killi1812/wfrp5e-character_sheet/util/cerror"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/cerror"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -52,11 +52,10 @@ func (NewUserDto) FromModel(m *User) NewUserDto {
 }
 
 type UserDto struct {
-	Uuid        string `json:"uuid"`
-	Username    string `json:"username"`
-	Email       string `json:"email"`
-	Role        string `json:"role"`
-	PoliceToken string `json:"policeToken,omitempty"`
+	Uuid     string `json:"uuid"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	Role     string `json:"role"`
 }
 
 func (dto UserDto) ToModel() (*User, error) {

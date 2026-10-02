@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/killi1812/wfrp5e-character_sheet/app"
-	"github.com/killi1812/wfrp5e-character_sheet/info"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/info"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 )

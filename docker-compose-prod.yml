@@ -1,20 +1,15 @@
 services:
   db:
-    image: postgres:17-alpine
-    container_name: prod-db
+    image: mongo:latest
+    container_name: prod-mongo
     restart: always
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-appdb}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
-      - prod_postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test:
-        ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB:-appdb}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - prod_mongo_data:/data/db
+    networks:
+      default:
+        aliases:
+          - mongo
+          - database
 
   app:
     image: ${APP_IMAGE:-dat250-project-app:latest}
@@ -26,26 +21,29 @@ services:
     ports:
       - "8080:8080"
     environment:
-      SPRING_PROFILES_ACTIVE: prod
-      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-appdb}
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
-      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+      PORT: 8080
+      MONGO_CONN: mongodb://db:27017
+      ACCESS_KEY: ${ACCESS_KEY}
+      REFRESH_KEY: ${REFRESH_KEY}
+      SUPERADMIN_PASSWORD: ${SUPERADMIN_PASSWORD}
     depends_on:
-      db:
-        condition: service_healthy
+      - db
 
-  client:
-    image: ${CLIENT_IMAGE:-dat250-project-client:latest}
-    build:
-      context: ./client
-      dockerfile: Dockerfile
-    container_name: prod-client
+  caddy:
+    image: caddy:alpine
+    container_name: prod-caddy
     restart: always
     ports:
-      - "3000:80"
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - prod_caddy_data:/data
+      - prod_caddy_config:/config
     depends_on:
       - app
 
 volumes:
-  prod_postgres_data:
+  prod_mongo_data:
+  prod_caddy_data:
+  prod_caddy_config:

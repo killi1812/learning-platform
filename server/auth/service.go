@@ -5,10 +5,10 @@ import (
 	"errors"
 	"time"
 
-	"github.com/killi1812/wfrp5e-character_sheet/app"
-	"github.com/killi1812/wfrp5e-character_sheet/user"
-	authUtil "github.com/killi1812/wfrp5e-character_sheet/util/auth"
-	"github.com/killi1812/wfrp5e-character_sheet/util/cerror"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
+	authUtil "git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/auth"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/cerror"
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
@@ -18,8 +18,8 @@ import (
 )
 
 type IAuthService interface {
-	Login(identifier, password string) (string, error)
-	RefreshTokens(accessToken string) (string, error)
+	Login(identifier, password string) (string, string, error)
+	RefreshTokens(refreshToken string) (string, string, error)
 	Logout(userUuid string) error
 }
 
@@ -43,7 +43,7 @@ func (s *AuthService) sessionsColl() *mongo.Collection {
 	return s.db.Collection("sessions")
 }
 
-func (s *AuthService) Login(identifier, password string) (string, error) {
+func (s *AuthService) Login(identifier, password string) (string, string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -57,21 +57,21 @@ func (s *AuthService) Login(identifier, password string) (string, error) {
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			s.logger.Debugf("User not found Identifier = %s", identifier)
-			return "", cerror.ErrInvalidCredentials
+			return "", "", cerror.ErrInvalidCredentials
 		}
 		s.logger.Errorf("Failed to query user, error = %+v", err)
-		return "", err
+		return "", "", err
 	}
 
 	if !authUtil.VerifyPassword(usr.PasswordHash, password) {
 		s.logger.Debugf("Invalid password for user Email: %s, uuid: %s", usr.Email, usr.Uuid)
-		return "", cerror.ErrInvalidCredentials
+		return "", "", cerror.ErrInvalidCredentials
 	}
 
 	token, refresh, err := authUtil.GenerateTokens(usr.Email, usr.Username, string(usr.Role), usr.Uuid)
 	if err != nil {
 		s.logger.Errorf("Failed to generate token error = %+v", err)
-		return "", err
+		return "", "", err
 	}
 
 	// Remove previous session if exists
@@ -84,72 +84,65 @@ func (s *AuthService) Login(identifier, password string) (string, error) {
 	_, err = s.sessionsColl().InsertOne(ctx, session)
 	if err != nil {
 		s.logger.Errorf("Failed to create a session, err = %w", err)
-		return "", err
+		return "", "", err
 	}
 
-	return token, nil
+	return token, refresh, nil
 }
 
-func (s *AuthService) RefreshTokens(accessToken string) (string, error) {
-	token, claims, err := authUtil.ParseToken(accessToken)
+func (s *AuthService) RefreshTokens(rawRefreshToken string) (string, string, error) {
+	cleanRefreshToken, err := authUtil.ExtractToken(rawRefreshToken)
 	if err != nil {
-		s.logger.Errorf("Error Parsing claims err = %+v", err)
-		return "", err
-	}
-	if !token.Valid {
-		s.logger.Errorf("Token is not valid")
-		return "", cerror.ErrInvalidTokenFormat
+		cleanRefreshToken = rawRefreshToken
 	}
 
-	parsedUserUuid, err := uuid.Parse(claims.ID)
+	var refreshClaims authUtil.Claims
+	token, err := jwt.ParseWithClaims(cleanRefreshToken, &refreshClaims, func(token *jwt.Token) (any, error) {
+		return []byte(app.RefreshKey), nil
+	})
+	if err != nil || !token.Valid {
+		s.logger.Errorf("Error parsing refresh token claims, err = %+v", err)
+		return "", "", cerror.ErrInvalidTokenFormat
+	}
+
+	parsedUserUuid, err := uuid.Parse(refreshClaims.ID)
 	if err != nil {
 		s.logger.Errorf("Error Parsing uuid err = %+v", err)
-		return "", err
+		return "", "", err
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	var session user.Session
-	err = s.sessionsColl().FindOne(ctx, bson.M{"user_uuid": parsedUserUuid}).Decode(&session)
+	err = s.sessionsColl().FindOne(ctx, bson.M{
+		"user_uuid":     parsedUserUuid,
+		"refresh_token": cleanRefreshToken,
+	}).Decode(&session)
 	if err != nil {
 		s.logger.Errorf("Failed to find session, err = %w", err)
-		return "", err
-	}
-
-	var refreshClaims authUtil.Claims
-	_, err = jwt.ParseWithClaims(session.RefreshToken, &refreshClaims, func(token *jwt.Token) (any, error) {
-		return []byte(app.RefreshKey), nil
-	})
-	if err != nil {
-		s.logger.Errorf("Error parsing refresh token claims, err = %w", err)
-		return "", err
-	}
-
-	if claims.TokenUuid != refreshClaims.TokenUuid {
-		s.logger.Errorf("Error token uuids don't match, claims=%s, refresh=%s", claims.TokenUuid, refreshClaims.TokenUuid)
-		return "", cerror.ErrInvalidTokenFormat
+		return "", "", cerror.ErrInvalidTokenFormat
 	}
 
 	var usr user.User
 	err = s.usersColl().FindOne(ctx, bson.M{"uuid": parsedUserUuid}).Decode(&usr)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
-	newAccessToken, refreshToken, err := authUtil.GenerateTokens(usr.Email, usr.Username, string(usr.Role), usr.Uuid)
+	newAccessToken, newRefreshToken, err := authUtil.GenerateTokens(usr.Email, usr.Username, string(usr.Role), usr.Uuid)
 	if err != nil {
 		s.logger.Errorf("Failed to generate tokens, err = %w", err)
-		return "", err
+		return "", "", err
 	}
 
-	session.RefreshToken = refreshToken
+	session.RefreshToken = newRefreshToken
 	_, err = s.sessionsColl().ReplaceOne(ctx, bson.M{"user_uuid": parsedUserUuid}, session)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
-	return newAccessToken, nil
+	return newAccessToken, newRefreshToken, nil
 }
 
 func (s *AuthService) Logout(userUuidStr string) error {

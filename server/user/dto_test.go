@@ -3,8 +3,8 @@ package user_test
 import (
 	"testing"
 
-	"github.com/killi1812/wfrp5e-character_sheet/user"
-	"github.com/killi1812/wfrp5e-character_sheet/util/cerror"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/cerror"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"

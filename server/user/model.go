@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/killi1812/wfrp5e-character_sheet/util/cerror"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/cerror"
 
 	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/v2/bson"

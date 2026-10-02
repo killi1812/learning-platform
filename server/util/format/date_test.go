@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/killi1812/wfrp5e-character_sheet/util/format"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/format"
 	"github.com/stretchr/testify/assert"
 )
 

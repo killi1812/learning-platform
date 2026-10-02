@@ -52,7 +52,12 @@ func loadString(name string) string {
 		zap.S().Errorf("Env variable %s is empty", name)
 		return rez
 	}
-	zap.S().Debugf("Loaded %s = %s", name, rez)
+	upper := strings.ToUpper(name)
+	if strings.Contains(upper, "KEY") || strings.Contains(upper, "SECRET") || strings.Contains(upper, "CONN") || strings.Contains(upper, "PASSWORD") || strings.Contains(upper, "TOKEN") {
+		zap.S().Debugf("Loaded %s = [REDACTED]", name)
+	} else {
+		zap.S().Debugf("Loaded %s = %s", name, rez)
+	}
 	return rez
 }
 

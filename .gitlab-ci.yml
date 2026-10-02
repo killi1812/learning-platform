@@ -63,22 +63,6 @@ client:lint:
 # ---------------------------------------------------------
 # Build Stage
 # ---------------------------------------------------------
-backend:build:
-  stage: build
-  image: golang:1.25-alpine
-  cache:
-    <<: *go-cache
-  before_script:
-    - cd server
-    - mkdir -p build
-  script:
-    - CGO_ENABLED=0 go build -ldflags="-X 'github.com/killi1812/wfrp5e-character_sheet/app.Build=prod' -X 'github.com/killi1812/wfrp5e-character_sheet/app.Version=$CI_COMMIT_SHORT_SHA' -X 'github.com/killi1812/wfrp5e-character_sheet/app.CommitHash=$CI_COMMIT_SHORT_SHA' -X 'github.com/killi1812/wfrp5e-character_sheet/app.BuildTimestamp=$(date '+%Y-%m-%dT%H:%M:%S')'" -o build/wfrp5ecs .
-  artifacts:
-    name: "backend-bin-$CI_COMMIT_SHORT_SHA"
-    paths:
-      - server/build/wfrp5ecs
-    expire_in: 1 week
-
 client:build:
   stage: build
   image: node:22-alpine
@@ -95,14 +79,36 @@ client:build:
       - client/dist/
     expire_in: 1 week
 
+backend:build:
+  stage: build
+  image: golang:1.25-alpine
+  cache:
+    <<: *go-cache
+  needs:
+    - client:build
+  before_script:
+    - cd server
+    - mkdir -p build web/dist
+    - cp -r ../client/dist/* web/dist/
+  script:
+    - CGO_ENABLED=0 go build -ldflags="-X 'git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app.Build=prod' -X 'git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app.Version=$CI_COMMIT_SHORT_SHA' -X 'git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app.CommitHash=$CI_COMMIT_SHORT_SHA' -X 'git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app.BuildTimestamp=$(date '+%Y-%m-%dT%H:%M:%S')'" -o build/learning-platform .
+  artifacts:
+    name: "backend-bin-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - server/build/learning-platform
+    expire_in: 1 week
+
 # ---------------------------------------------------------
 # Package Stage (Docker images)
 # ---------------------------------------------------------
 docker:build:
   stage: package
   image: docker:latest
+  services:
+    - docker:dind
+  variables:
+    DOCKER_TLS_CERTDIR: ""
   needs:
     - backend:build
   script:
-    - docker build -t dat250-project-app:$CI_COMMIT_SHORT_SHA ./server
-    - docker build -t dat250-project-client:$CI_COMMIT_SHORT_SHA ./client
+    - docker build -t dat250-project-app:$CI_COMMIT_SHORT_SHA -f Dockerfile .

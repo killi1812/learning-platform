@@ -3,12 +3,11 @@ package user
 import (
 	"net/http"
 
-	"github.com/killi1812/wfrp5e-character_sheet/app"
-	"github.com/killi1812/wfrp5e-character_sheet/util/auth"
-	"github.com/killi1812/wfrp5e-character_sheet/util/ginutil"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/auth"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/ginutil"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -104,10 +103,7 @@ func (u *UserCtn) create(c *gin.Context) {
 
 	// Log the response for debugging
 	responseDto := inputDto.FromModel(user)
-	tokenValue := ""
-
 	u.logger.Infof("Response DTO: %+v", responseDto)
-	u.logger.Infof("Response PoliceToken: %q", tokenValue)
 
 	c.JSON(http.StatusCreated, responseDto)
 }
@@ -195,17 +191,10 @@ func (u *UserCtn) delete(c *gin.Context) {
 //	@Failure		500
 //	@Router			/user/my-data [get]
 func (u *UserCtn) getLoggedInUser(c *gin.Context) {
-	_, claims, err := auth.ParseToken(c.Request.Header.Get("Authorization"))
+	userUuid, err := auth.GetUserUUID(c)
 	if err != nil {
-		u.logger.Errorf("Failed to parse token: %v", err)
-		c.AbortWithError(http.StatusUnauthorized, err)
-		return
-	}
-
-	userUuid, err := uuid.Parse(claims.ID)
-	if err != nil {
-		u.logger.Errorf("Error parsing UUID = %s", err)
-		c.AbortWithError(http.StatusBadRequest, err)
+		u.logger.Errorf("Failed to retrieve user UUID from context: %v", err)
+		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
 
@@ -231,10 +220,10 @@ func (u *UserCtn) getLoggedInUser(c *gin.Context) {
 //	@Failure		500
 //	@Router			/user/all-users [get]
 func (u *UserCtn) getAllUsersForSuperAdmin(c *gin.Context) {
-	_, claims, err := auth.ParseToken(c.Request.Header.Get("Authorization"))
-	if err != nil {
-		u.logger.Errorf("Failed to parse token: %v", err)
-		c.AbortWithError(http.StatusUnauthorized, err)
+	claims, ok := auth.GetClaims(c)
+	if !ok || claims == nil {
+		u.logger.Error("Claims not found in context")
+		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
 

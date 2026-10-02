@@ -3,8 +3,8 @@ package auth
 import (
 	"net/http"
 
-	"github.com/killi1812/wfrp5e-character_sheet/app"
-	authUtil "github.com/killi1812/wfrp5e-character_sheet/util/auth"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
+	authUtil "git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/auth"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -26,7 +26,7 @@ func (c *AuthCtn) RegisterEndpoints(api *gin.RouterGroup) {
 	group := api.Group("/auth")
 
 	group.POST("/login", c.login)
-	group.POST("/refresh", authUtil.Protect(), c.refreshToken)
+	group.POST("/refresh", c.refreshToken)
 	group.POST("/logout", authUtil.Protect(), c.logout)
 }
 
@@ -48,7 +48,7 @@ func (l *AuthCtn) login(c *gin.Context) {
 		return
 	}
 
-	accessToken, err := l.auth.Login(loginDto.Username, loginDto.Password)
+	accessToken, refreshToken, err := l.auth.Login(loginDto.Username, loginDto.Password)
 	if err != nil {
 		l.logger.Errorf("Login failed err = %+v", err)
 		c.JSON(http.StatusUnauthorized, err.Error())
@@ -56,30 +56,48 @@ func (l *AuthCtn) login(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, TokenDto{
-		AccessToken: accessToken,
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
 	})
 }
 
 // Refresh godoc
 //
 //	@Summary		Refresh Access Token
-//	@Description	Generates a new access token using a valid refresh token
+//	@Description	Generates a new access token and refresh token using a valid refresh token
 //	@Tags			auth
+//	@Accept			json
 //	@Produce		json
+//	@Param			refreshDto	body	RefreshDto	false	"Refresh token payload"
 //	@Security		BearerAuth
 //	@Success		200	{object}	TokenDto
+//	@Failure		400
+//	@Failure		401
 //	@Router			/auth/refresh [post]
 func (l *AuthCtn) refreshToken(c *gin.Context) {
-	tokenStr := c.Request.Header.Get("Authorization")
-	token, err := l.auth.RefreshTokens(tokenStr)
+	var refreshDto RefreshDto
+	_ = c.ShouldBindJSON(&refreshDto)
+
+	tokenStr := refreshDto.RefreshToken
+	if tokenStr == "" {
+		tokenStr = c.Request.Header.Get("Authorization")
+	}
+
+	if tokenStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing refresh token"})
+		return
+	}
+
+	accessToken, newRefreshToken, err := l.auth.RefreshTokens(tokenStr)
 	if err != nil {
-		l.logger.Errorf("Refresh failed err = %w", err)
-		c.JSON(http.StatusInternalServerError, err.Error())
+		l.logger.Errorf("Refresh failed err = %v", err)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired refresh token"})
 		return
 	}
 
 	c.JSON(http.StatusOK, TokenDto{
-		AccessToken: token,
+		AccessToken:  accessToken,
+		RefreshToken: newRefreshToken,
 	})
 }
 
@@ -93,14 +111,14 @@ func (l *AuthCtn) refreshToken(c *gin.Context) {
 //	@Success		200
 //	@Router			/auth/logout [post]
 func (l *AuthCtn) logout(c *gin.Context) {
-	_, claims, err := authUtil.ParseToken(c.Request.Header.Get("Authorization"))
-	if err != nil {
-		l.logger.Errorf("Logout failed err = %w", err)
-		c.JSON(http.StatusInternalServerError, err.Error())
+	claims, ok := authUtil.GetClaims(c)
+	if !ok || claims == nil {
+		l.logger.Error("Claims not found in context for logout")
+		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
 
-	err = l.auth.Logout(claims.ID)
+	err := l.auth.Logout(claims.ID)
 	if err != nil {
 		l.logger.Errorf("Logout failed err = %w", err)
 		c.JSON(http.StatusInternalServerError, err.Error())

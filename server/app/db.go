@@ -29,5 +29,5 @@ func newMongoDb() *mongo.Database {
 		zap.S().Info("Successfully connected to MongoDB")
 	}
 
-	return client.Database("wfrp5e")
+	return client.Database("learning_platform")
 }

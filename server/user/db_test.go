@@ -31,7 +31,7 @@ func getTestDb(t *testing.T) *mongo.Database {
 		return nil
 	}
 
-	dbName := "wfrp5e_test_usr_" + uuid.New().String()[:8]
+	dbName := "lp_test_usr_" + uuid.New().String()[:8]
 	db := client.Database(dbName)
 	t.Cleanup(func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)

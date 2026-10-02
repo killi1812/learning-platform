@@ -4,4 +4,4 @@ This project uses OpenWolf for context management. The always-on rules live in `
 
 For the full operating protocol (session handoff, memory discipline, bug logging), load the `openwolf` skill, or read `.wolf/OPENWOLF.md`. Regenerate the session handoff with `/handoff`.
 
-Look for all the rules in `.agets/`
+Look for all the rules in `.agents/`

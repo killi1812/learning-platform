@@ -8,7 +8,7 @@ vars:
   SERVER_DIR: "server"
   CLIENT_DIR: "client"
   BINARY_DIR: "./build"
-  PACKAGE: "github.com/killi1812/wfrp5e-character_sheet"
+  PACKAGE: "git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform"
   TEST_EXCLUDE: '{{.TEST_EXCLUDE | default "/docs"}}'
   TEST_PCKGS:
     sh: "go -C {{.SERVER_DIR}} list ./... | grep -Ev '{{.TEST_EXCLUDE}}' | tr '\n' ' '"
@@ -320,10 +320,23 @@ tasks:
       - cmd: npm run format
     silent: true
 
+  build:client-dist:
+    desc: "Build Vue client and copy output to server/web/dist for Go embedding"
+    dir: "{{ .CLIENT_DIR }}"
+    cmds:
+      - cmd: |
+          if [ ! -d "node_modules" ]; then
+            npm install
+          fi
+          npm run build
+      - cmd: cp -r dist/* ../{{.SERVER_DIR}}/web/dist/
+    silent: true
+
   build:bin:
-    desc: "Build the executable Go backend binary locally"
+    desc: "Build executable Go binary locally with embedded frontend"
     aliases: [build-bin]
     dir: "{{ .SERVER_DIR }}"
+    deps: [build:client-dist]
     vars:
       BUILD: "prod"
       VERSION:
@@ -335,13 +348,13 @@ tasks:
       LDFLAGS: "-X '{{.PACKAGE}}/app.Build={{.BUILD}}' -X '{{.PACKAGE}}/app.Version={{.VERSION}}' -X '{{.PACKAGE}}/app.CommitHash={{.COMMIT_HASH}}' -X '{{.PACKAGE}}/app.BuildTimestamp={{.BUILD_TIMESTAMP}}'"
     cmds:
       - cmd: mkdir -p {{.BINARY_DIR}}
-      - cmd: go build -ldflags="{{.LDFLAGS}}" -o {{.BINARY_DIR}}/wfrp5ecs .
+      - cmd: go build -ldflags="{{.LDFLAGS}}" -o {{.BINARY_DIR}}/learning-platform .
     silent: false
     signal: SIGINT
 
   build:backend:
-    desc: "Build backend production Docker image"
-    dir: "{{ .SERVER_DIR }}"
+    desc: "Build production Docker image with embedded frontend"
+    dir: "{{.TASKFILE_DIR}}"
     vars:
       BUILD: "prod"
       VERSION:
@@ -357,19 +370,17 @@ tasks:
           --build-arg VERSION="{{.VERSION}}"
           --build-arg COMMIT_HASH="{{.COMMIT_HASH}}"
           --build-arg BUILD_TIMESTAMP="{{.BUILD_TIMESTAMP}}"
-          -t dat250-project-app:latest .
+          -t dat250-project-app:latest -f Dockerfile .
 
   build:client:
-    desc: "Build client production Docker image"
-    dir: "{{ .CLIENT_DIR }}"
+    desc: "Build client production assets (alias to build:client-dist)"
     cmds:
-      - cmd: docker build -t dat250-project-client:latest .
+      - task: build:client-dist
 
   build:
-    desc: "Build backend and client production Docker images"
+    desc: "Build production Docker image"
     deps:
       - build:backend
-      - build:client
 
   install-tools:
     desc: "Install development tools (air, swag)"

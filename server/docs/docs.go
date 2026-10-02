@@ -78,7 +78,10 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Generates a new access token using a valid refresh token",
+                "description": "Generates a new access token and refresh token using a valid refresh token",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -86,12 +89,28 @@ const docTemplate = `{
                     "auth"
                 ],
                 "summary": "Refresh Access Token",
+                "parameters": [
+                    {
+                        "description": "Refresh token payload",
+                        "name": "refreshDto",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/auth.RefreshDto"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/auth.TokenDto"
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
                     }
                 }
             }
@@ -423,10 +442,21 @@ const docTemplate = `{
                 }
             }
         },
+        "auth.RefreshDto": {
+            "type": "object",
+            "properties": {
+                "refreshToken": {
+                    "type": "string"
+                }
+            }
+        },
         "auth.TokenDto": {
             "type": "object",
             "properties": {
                 "accessToken": {
+                    "type": "string"
+                },
+                "refreshToken": {
                     "type": "string"
                 }
             }
@@ -484,9 +514,6 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "email": {
-                    "type": "string"
-                },
-                "policeToken": {
                     "type": "string"
                 },
                 "role": {

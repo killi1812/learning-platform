@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/killi1812/wfrp5e-character_sheet/app"
-	"github.com/killi1812/wfrp5e-character_sheet/user"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 	"github.com/stretchr/testify/assert"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -33,7 +33,7 @@ func getTestDb(t *testing.T) *mongo.Database {
 		return nil
 	}
 
-	dbName := "wfrp5e_test_seed_" + uuid.New().String()[:8]
+	dbName := "lp_test_seed_" + uuid.New().String()[:8]
 	db := client.Database(dbName)
 	t.Cleanup(func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
