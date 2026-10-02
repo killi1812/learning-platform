@@ -105,10 +105,18 @@ docker:build:
   stage: package
   image: docker:latest
   services:
-    - docker:dind
+    - name: docker:dind
+      alias: docker
   variables:
+    DOCKER_HOST: tcp://docker:2375
     DOCKER_TLS_CERTDIR: ""
+    DOCKER_DRIVER: overlay2
   needs:
     - backend:build
   script:
-    - docker build -t dat250-project-app:$CI_COMMIT_SHORT_SHA -f Dockerfile .
+    - docker build \
+        --build-arg BUILD=prod \
+        --build-arg VERSION=$CI_COMMIT_SHORT_SHA \
+        --build-arg COMMIT_HASH=$CI_COMMIT_SHORT_SHA \
+        --build-arg BUILD_TIMESTAMP=$(date '+%Y-%m-%dT%H:%M:%S') \
+        -t dat250-project-app:$CI_COMMIT_SHORT_SHA -f Dockerfile .

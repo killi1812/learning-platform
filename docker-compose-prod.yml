@@ -18,8 +18,8 @@ services:
       dockerfile: Dockerfile
     container_name: prod-app
     restart: always
-    ports:
-      - "8080:8080"
+    expose:
+      - "8080"
     environment:
       PORT: 8080
       MONGO_CONN: mongodb://db:27017
