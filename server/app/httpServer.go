@@ -84,6 +84,7 @@ func run(ctx context.Context, wg *sync.WaitGroup) {
 
 		// BUG: 500 error when accessing /swagger/index.html/doc.json
 		router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+		zap.S().Debugf("Swagger on url: %d", docs.SwaggerInfo.InstanceName())
 	}
 
 	// setup controllers via dig

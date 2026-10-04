@@ -1,48 +1,16 @@
 package user
 
 import (
-	"context"
-	"os"
 	"testing"
-	"time"
 
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/testutil"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
-	"go.mongodb.org/mongo-driver/v2/mongo"
-	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"go.uber.org/zap"
 )
 
-func getTestDb(t *testing.T) *mongo.Database {
-	uri := os.Getenv("MONGO_CONN")
-	if uri == "" {
-		uri = "mongodb://127.0.0.1:27017"
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	client, err := mongo.Connect(options.Client().ApplyURI(uri))
-	if err != nil {
-		t.Skipf("Skipping DB test: unable to connect to mongo: %v", err)
-		return nil
-	}
-	if err := client.Ping(ctx, nil); err != nil {
-		t.Skipf("Skipping DB test: mongo ping failed: %v", err)
-		return nil
-	}
-
-	dbName := "lp_test_usr_" + uuid.New().String()[:8]
-	db := client.Database(dbName)
-	t.Cleanup(func() {
-		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cleanupCancel()
-		_ = db.Drop(cleanupCtx)
-	})
-	return db
-}
-
 func TestUserCrudService_CRUD(t *testing.T) {
-	db := getTestDb(t)
+	db := testutil.NewSqliteTestDb(t, &User{})
 	logger := zap.NewNop().Sugar()
 	svc := &UserCrudService{db: db, logger: logger}
 
@@ -61,6 +29,16 @@ func TestUserCrudService_CRUD(t *testing.T) {
 		assert.NotEmpty(t, res.PasswordHash)
 		assert.False(t, res.CreatedAt.IsZero())
 		createdUser = res
+	})
+
+	t.Run("Create duplicate username returns error", func(t *testing.T) {
+		uDup := &User{
+			Username: "sigmar",
+			Email:    "another@empire.com",
+			Role:     ROLE_USER,
+		}
+		_, err := svc.Create(uDup, "somepass")
+		assert.Error(t, err)
 	})
 
 	t.Run("Read existing user", func(t *testing.T) {
@@ -149,7 +127,7 @@ func TestUserCrudService_CRUD(t *testing.T) {
 }
 
 func TestNewUserCrudService(t *testing.T) {
-	db := getTestDb(t)
+	db := testutil.NewSqliteTestDb(t, &User{})
 	svc := NewUserCrudService(db, zap.NewNop().Sugar())
 	assert.NotNil(t, svc)
 }

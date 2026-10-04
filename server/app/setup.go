@@ -45,8 +45,9 @@ func Setup() {
 		digContainer = dig.New()
 	}
 
-	// Database setup (MongoDB)
+	// Database setup (PostgreSQL as default + MongoDB under "mongo")
 	{
-		Provide(newMongoDb)
+		Provide(NewGormDb)
+		Provide(NewMongoDb, dig.Name("mongo"))
 	}
 }

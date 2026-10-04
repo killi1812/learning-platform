@@ -1,4 +1,22 @@
 services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: dev-postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-learning_platform}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - dev_postgres_data:/var/lib/postgresql/data
+    networks:
+      default:
+        aliases:
+          - postgres
+          - db
+
   mongodb:
     image: mongo:latest
     container_name: dev-mongo
@@ -11,7 +29,7 @@ services:
       default:
         aliases:
           - mongo
-          - database
 
 volumes:
+  dev_postgres_data:
   dev_mongo_data:

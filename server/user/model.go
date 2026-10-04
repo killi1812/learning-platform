@@ -7,7 +7,6 @@ import (
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/cerror"
 
 	"github.com/google/uuid"
-	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 type UserRole string
@@ -38,17 +37,19 @@ var _VALID_USER_ROLES = map[UserRole]bool{
 type Session struct {
 	UserUuid     uuid.UUID `json:"userUuid" bson:"user_uuid"`
 	RefreshToken string    `json:"refreshToken" bson:"refresh_token"`
+	CreatedAt    time.Time `json:"createdAt,omitempty" bson:"created_at,omitempty"`
+	ExpiresAt    time.Time `json:"expiresAt,omitempty" bson:"expires_at,omitempty"`
 }
 
 type User struct {
-	ID           bson.ObjectID `json:"id,omitempty" bson:"_id,omitempty"`
-	Uuid         uuid.UUID     `json:"uuid" bson:"uuid"`
-	Username     string        `json:"username" bson:"username"`
-	Email        string        `json:"email" bson:"email"`
-	PasswordHash string        `json:"passwordHash" bson:"password_hash"`
-	Role         UserRole      `json:"role" bson:"role"`
-	CreatedAt    time.Time     `json:"createdAt" bson:"created_at"`
-	UpdatedAt    time.Time     `json:"updatedAt" bson:"updated_at"`
+	ID           uint      `json:"id" gorm:"primaryKey;autoIncrement"`
+	Uuid         uuid.UUID `json:"uuid" gorm:"type:uuid;uniqueIndex;not null"`
+	Username     string    `json:"username" gorm:"type:varchar(255);uniqueIndex;not null"`
+	Email        string    `json:"email" gorm:"type:varchar(255);uniqueIndex;not null"`
+	PasswordHash string    `json:"passwordHash" gorm:"type:varchar(255);not null"`
+	Role         UserRole  `json:"role" gorm:"type:varchar(32);not null;default:'user'"`
+	CreatedAt    time.Time `json:"createdAt" gorm:"not null"`
+	UpdatedAt    time.Time `json:"updatedAt" gorm:"not null"`
 }
 
 func (u *User) ValidateRole() error {

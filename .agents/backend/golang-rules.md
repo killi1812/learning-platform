@@ -24,4 +24,5 @@
 our application
 - Scope modules per model name e.g. everything related to user goes under user directory
 - Provide verbose logs with multiple log levels
+- Register services in `main.go` for dependency injection
 

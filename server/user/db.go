@@ -1,9 +1,7 @@
 package user
 
 import (
-	"context"
 	"errors"
-	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -12,9 +10,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/xrash/smetrics"
-	"go.mongodb.org/mongo-driver/v2/bson"
-	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 var ErrRecordNotFound = errors.New("record not found")
@@ -31,7 +28,7 @@ type IUserCrudService interface {
 }
 
 type UserCrudService struct {
-	db     *mongo.Database
+	db     *gorm.DB
 	logger *zap.SugaredLogger
 }
 
@@ -40,69 +37,38 @@ type UserWithScore struct {
 	Score float64
 }
 
-func NewUserCrudService(db *mongo.Database, logger *zap.SugaredLogger) IUserCrudService {
+func NewUserCrudService(db *gorm.DB, logger *zap.SugaredLogger) IUserCrudService {
 	return &UserCrudService{
 		db:     db,
 		logger: logger,
 	}
 }
 
-func (u *UserCrudService) usersColl() *mongo.Collection {
-	return u.db.Collection("users")
-}
-
 func (u *UserCrudService) ReadAll() ([]User, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	cursor, err := u.usersColl().Find(ctx, bson.M{})
-	if err != nil {
-		return nil, err
-	}
-	defer cursor.Close(ctx)
-
 	var users []User
-	if err := cursor.All(ctx, &users); err != nil {
+	if err := u.db.Find(&users).Error; err != nil {
 		return nil, err
 	}
 	return users, nil
 }
 
 func (u *UserCrudService) Delete(userUuid uuid.UUID) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	var existing User
-	err := u.usersColl().FindOne(ctx, bson.M{"uuid": userUuid}).Decode(&existing)
-	if err != nil {
-		if errors.Is(err, mongo.ErrNoDocuments) {
-			return ErrRecordNotFound
-		}
-		return err
-	}
-
-	existing.Username = fmt.Sprintf("deleted_user_%s", userUuid.String()[:8])
-	existing.Email = fmt.Sprintf("deleted_%s@example.com", userUuid.String()[:8])
-	existing.PasswordHash = ""
-	existing.UpdatedAt = time.Now()
-
-	_, err = u.usersColl().ReplaceOne(ctx, bson.M{"uuid": userUuid}, existing)
+	existing, err := u.Read(userUuid)
 	if err != nil {
 		return err
 	}
 
-	_, err = u.usersColl().DeleteOne(ctx, bson.M{"uuid": userUuid})
-	return err
+	if err := u.db.Delete(existing).Error; err != nil {
+		return err
+	}
+	return nil
 }
 
 func (u *UserCrudService) Read(userUuid uuid.UUID) (*User, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
 	var user User
-	err := u.usersColl().FindOne(ctx, bson.M{"uuid": userUuid}).Decode(&user)
+	err := u.db.Where("uuid = ?", userUuid).First(&user).Error
 	if err != nil {
-		if errors.Is(err, mongo.ErrNoDocuments) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrRecordNotFound
 		}
 		return nil, err
@@ -118,23 +84,18 @@ func (u *UserCrudService) Update(userUuid uuid.UUID, user *User) (*User, error) 
 
 	userOld = userOld.Update(user)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	_, err = u.usersColl().ReplaceOne(ctx, bson.M{"uuid": userUuid}, userOld)
-	if err != nil {
+	if err := u.db.Save(userOld).Error; err != nil {
 		return nil, err
 	}
 	return userOld, nil
 }
 
 func (u *UserCrudService) Create(user *User, password string) (*User, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	var existing User
-	err := u.usersColl().FindOne(ctx, bson.M{"username": user.Username}).Decode(&existing)
-	if err == nil {
+	var count int64
+	if err := u.db.Model(&User{}).Where("username = ?", user.Username).Count(&count).Error; err != nil {
+		return nil, err
+	}
+	if count > 0 {
 		return nil, errors.New("username already exists")
 	}
 
@@ -150,12 +111,12 @@ func (u *UserCrudService) Create(user *User, password string) (*User, error) {
 	if user.CreatedAt.IsZero() {
 		user.CreatedAt = time.Now()
 	}
-	res, err := u.usersColl().InsertOne(ctx, user)
-	if err != nil {
-		return nil, err
+	if user.UpdatedAt.IsZero() {
+		user.UpdatedAt = time.Now()
 	}
-	if oid, ok := res.InsertedID.(bson.ObjectID); ok {
-		user.ID = oid
+
+	if err := u.db.Create(user).Error; err != nil {
+		return nil, err
 	}
 
 	return user, nil
@@ -194,13 +155,10 @@ func (u *UserCrudService) SearchUsersByName(query string) ([]User, error) {
 }
 
 func (u *UserCrudService) GetUserByEmail(email string) (*User, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
 	var user User
-	err := u.usersColl().FindOne(ctx, bson.M{"email": email}).Decode(&user)
+	err := u.db.Where("email = ?", email).First(&user).Error
 	if err != nil {
-		if errors.Is(err, mongo.ErrNoDocuments) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrRecordNotFound
 		}
 		return nil, err

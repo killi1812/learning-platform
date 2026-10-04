@@ -1,33 +1,23 @@
 package app
 
 import (
-	"context"
-	"time"
-
+	utilDb "git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/db"
+	utilMongo "git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo"
-	"go.mongodb.org/mongo-driver/v2/mongo/options"
-	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
-func newMongoDb() *mongo.Database {
-	uri := MongoConn
-	if uri == "" {
-		uri = "mongodb://127.0.0.1:27017"
-	}
+// NewGormDb initializes and returns the primary PostgreSQL connection via GORM.
+func NewGormDb() *gorm.DB {
+	return utilDb.NewPostgresDb(DatabaseConn, Build == BuildDev)
+}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+// NewMongoDb initializes and returns the MongoDB connection used for ephemeral session storage.
+func NewMongoDb() *mongo.Database {
+	return utilMongo.NewMongoDb(MongoConn, "learning_platform")
+}
 
-	client, err := mongo.Connect(options.Client().ApplyURI(uri))
-	if err != nil {
-		zap.S().Panicf("failed to create MongoDB client: %+v", err)
-	}
-
-	if err := client.Ping(ctx, nil); err != nil {
-		zap.S().Warnf("MongoDB ping warning (server will retry on demand): %+v", err)
-	} else {
-		zap.S().Info("Successfully connected to MongoDB")
-	}
-
-	return client.Database("learning_platform")
+// HandleMigrations orchestrates GORM schema auto-migrations.
+func HandleMigrations(gormDb *gorm.DB, runMigration bool, models ...any) error {
+	return utilDb.HandleMigrations(gormDb, Build == BuildDev, runMigration, models...)
 }

@@ -48,6 +48,7 @@ style exactly.
 - **Test standard**: Tests need to test actual behaviour don't write hollow tests
 - **Use Interfaces**: First define an interface and then implement the change, don't
 redefine interface if it si not needed
+- **Single source of truth** Don't use multiple fallback only single source of truth
 
 ## Communication Protocol
 

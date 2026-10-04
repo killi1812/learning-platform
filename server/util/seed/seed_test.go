@@ -1,52 +1,21 @@
 package seed
 
 import (
-	"context"
 	"os"
 	"testing"
-	"time"
 
-	"github.com/google/uuid"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/testutil"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 	"github.com/stretchr/testify/assert"
-	"go.mongodb.org/mongo-driver/v2/mongo"
-	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
-func getTestDb(t *testing.T) *mongo.Database {
-	uri := os.Getenv("MONGO_CONN")
-	if uri == "" {
-		uri = "mongodb://127.0.0.1:27017"
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	client, err := mongo.Connect(options.Client().ApplyURI(uri))
-	if err != nil {
-		t.Skipf("Skipping DB test: unable to connect to mongo: %v", err)
-		return nil
-	}
-	if err := client.Ping(ctx, nil); err != nil {
-		t.Skipf("Skipping DB test: mongo ping failed: %v", err)
-		return nil
-	}
-
-	dbName := "lp_test_seed_" + uuid.New().String()[:8]
-	db := client.Database(dbName)
-	t.Cleanup(func() {
-		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cleanupCancel()
-		_ = db.Drop(cleanupCtx)
-	})
-	return db
-}
-
 func TestSeed(t *testing.T) {
-	db := getTestDb(t)
+	db := testutil.NewSqliteTestDb(t, &user.User{})
 	app.Test()
-	app.Provide(func() *mongo.Database { return db })
+	app.Provide(func() *gorm.DB { return db })
 	app.Provide(zap.S)
 	app.Provide(user.NewUserCrudService)
 
@@ -83,14 +52,17 @@ func TestSeed(t *testing.T) {
 	})
 
 	t.Run("DB error on GetUserByEmail returns error", func(t *testing.T) {
-		closedDb := getTestDb(t)
-		_ = closedDb.Client().Disconnect(context.Background())
+		closedDb := testutil.NewSqliteTestDb(t, &user.User{})
+		sqlDB, err := closedDb.DB()
+		assert.NoError(t, err)
+		_ = sqlDB.Close()
+
 		app.Test()
-		app.Provide(func() *mongo.Database { return closedDb })
+		app.Provide(func() *gorm.DB { return closedDb })
 		app.Provide(zap.S)
 		app.Provide(user.NewUserCrudService)
 
-		err := createSuperAdmin()
+		err = createSuperAdmin()
 		assert.Error(t, err)
 	})
 

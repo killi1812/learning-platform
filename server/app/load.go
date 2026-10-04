@@ -26,6 +26,7 @@ func LoadConfig() {
 	RefreshKey = loadString("REFRESH_KEY")
 
 	MongoConn = loadString("MONGO_CONN")
+	DatabaseConn = loadString("DATABASE_CONN")
 
 	zap.S().Debugf("Finished loading env variables")
 }
