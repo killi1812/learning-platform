@@ -1,0 +1,80 @@
+@startuml
+hide circle 
+hide empty members 
+skinparam classAttributeIconSize 0 
+skinparam packageStyle rectangle 
+skinparam shadowing false
+
+class User {
+    email : String {id}
+    name : String 
+}
+
+enum Role <<enum>> {
+    STUDENT
+    TEACHER 
+}
+
+class Enrollment { 
+    role : Role 
+    enrolledAt : DateTime
+}
+
+class Course { 
+    title : String 
+    description : String 
+    term : Term
+    year: int
+}
+
+enum Term <<enum>> {
+    SPRING 
+    AUTUMN 
+}
+
+class Module {
+    title: String
+}
+
+abstract class Content {
+    title: String
+    pisition: int
+    visibleFrom: DateTime [0..1]
+    visibleUntil: DateTime [0..1]
+}
+
+class StaticPage {
+    content: RichText
+}
+class Quiz {
+    maxAttempts: int
+}
+class Assignment {
+    deadline: DateTime
+}
+
+class StudentInteraction {
+    completedAt: DateTime [0..1]
+}
+
+
+User "1" -r- "*" Enrollment 
+Enrollment "*" -r- "1" Course 
+Course "1" *-d- "*" Module : consists of > 
+Course "1" *-d- "*" Group 
+Group "*" -u- "1..*" User : members >
+
+Module "0..1" -- "0..*" Module : dependsOn
+Module "1" -d- "1..*" Content : contents
+
+StudentInteraction "1" -u- "0..*" User 
+StudentInteraction "1" -- "0..*" Content
+
+StaticPage -u-|> Content
+Quiz -u-|> Content
+Assignment -u-|> Content
+
+Role -[hidden]- User
+Term -[hidden]- Course
+
+@enduml 
