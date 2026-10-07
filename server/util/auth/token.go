@@ -16,7 +16,7 @@ type Claims struct {
 	jwt.RegisteredClaims
 	Email     string    `json:"email"`
 	Username  string    `json:"username"`
-	Role      string    `json:"role"`
+	Role      UserRole  `json:"role"`
 	TokenUuid uuid.UUID `json:"uuid"`
 }
 
@@ -72,7 +72,7 @@ func GenerateTokens(email, username, role string, userUuid uuid.UUID) (string, s
 	accessTokenClaims := &Claims{
 		Email:     email,
 		Username:  username,
-		Role:      role,
+		Role:      UserRole(role),
 		TokenUuid: uuidPair,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(_ACCESS_TOKEN_DURATION)),
@@ -89,7 +89,7 @@ func GenerateTokens(email, username, role string, userUuid uuid.UUID) (string, s
 	refreshTokenClaims := &Claims{
 		Username:  username,
 		Email:     email,
-		Role:      role,
+		Role:      UserRole(role),
 		TokenUuid: uuidPair,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(_REFRESH_TOKEN_DURATION)),

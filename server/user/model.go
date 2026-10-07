@@ -4,35 +4,22 @@ import (
 	"errors"
 	"time"
 
-	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/cerror"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/auth"
 
 	"github.com/google/uuid"
 )
 
-type UserRole string
+type UserRole = auth.UserRole
 
 const (
-	ROLE_USER  UserRole = "user"
-	ROLE_ADMIN UserRole = "admin"
+	ROLE_USER  = auth.ROLE_USER
+	ROLE_ADMIN = auth.ROLE_ADMIN
 )
 
-func StrToUserRole(text string) (UserRole, error) {
-	role := UserRole(text)
-	switch role {
-	case ROLE_ADMIN, "superadmin":
-		return ROLE_ADMIN, nil
-	case ROLE_USER:
-		return ROLE_USER, nil
-
-	default:
-		return "", cerror.ErrUnknownRole
-	}
-}
-
-var _VALID_USER_ROLES = map[UserRole]bool{
-	ROLE_USER:  true,
-	ROLE_ADMIN: true,
-}
+var (
+	StrToUserRole     = auth.StrToUserRole
+	_VALID_USER_ROLES = auth.ValidUserRoles
+)
 
 type Session struct {
 	UserUuid     uuid.UUID `json:"userUuid" bson:"user_uuid"`
