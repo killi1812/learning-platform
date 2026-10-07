@@ -16,14 +16,14 @@ type Session struct {
 }
 
 type User struct {
-	ID           uint          `json:"id" gorm:"primaryKey;autoIncrement"`
-	Uuid         uuid.UUID     `json:"uuid" gorm:"type:uuid;uniqueIndex;not null"`
-	Username     string        `json:"username" gorm:"type:varchar(255);uniqueIndex;not null"`
-	Email        string        `json:"email" gorm:"type:varchar(255);uniqueIndex;not null"`
-	PasswordHash string        `json:"passwordHash" gorm:"type:varchar(255);not null"`
-	Role         auth.UserRole `json:"role" gorm:"type:varchar(32);not null;default:'user'"`
-	CreatedAt    time.Time     `json:"createdAt" gorm:"not null"`
-	UpdatedAt    time.Time     `json:"updatedAt" gorm:"not null"`
+	ID           uint      `json:"id" gorm:"primaryKey;autoIncrement"`
+	Uuid         uuid.UUID `json:"uuid" gorm:"type:uuid;uniqueIndex;not null"`
+	Username     string    `json:"username" gorm:"type:varchar(255);uniqueIndex;not null"`
+	Email        string    `json:"email" gorm:"type:varchar(255);uniqueIndex;not null"`
+	PasswordHash string    `json:"passwordHash" gorm:"type:varchar(255);not null"`
+	Role         auth.Role `json:"role" gorm:"type:varchar(32);not null;default:'user'"`
+	CreatedAt    time.Time `json:"createdAt" gorm:"not null"`
+	UpdatedAt    time.Time `json:"updatedAt" gorm:"not null"`
 }
 
 func (u *User) Update(user *User) *User {

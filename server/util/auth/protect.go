@@ -18,7 +18,7 @@ const (
 
 // Protect protects routes allowing access only to given roles
 // if roles are empty it only checks for the validity of tokens
-func Protect(roles ...UserRole) gin.HandlerFunc {
+func Protect(roles ...Role) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -71,7 +71,7 @@ func GetUserUUID(c *gin.Context) (uuid.UUID, error) {
 }
 
 // GetUserRole retrieves user role from claims in gin context
-func GetUserRole(c *gin.Context) (UserRole, error) {
+func GetUserRole(c *gin.Context) (Role, error) {
 	claims, ok := GetClaims(c)
 	if !ok || claims == nil {
 		return "", cerror.ErrUserIsNil

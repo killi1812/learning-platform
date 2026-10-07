@@ -16,7 +16,7 @@ type Claims struct {
 	jwt.RegisteredClaims
 	Email     string    `json:"email"`
 	Username  string    `json:"username"`
-	Role      UserRole  `json:"role"`
+	Role      Role      `json:"role"`
 	TokenUuid uuid.UUID `json:"uuid"`
 }
 
@@ -64,7 +64,7 @@ func extractToken(authHeader string) (string, error) {
 }
 
 // GenerateTokens returns a jwt access token and refresh token or an error
-func GenerateTokens(email, username, role string, userUuid uuid.UUID) (string, string, error) {
+func GenerateTokens(email, username string, role Role, userUuid uuid.UUID) (string, string, error) {
 	if userUuid == uuid.Nil {
 		return "", "", cerror.ErrUserIsNil
 	}
@@ -72,7 +72,7 @@ func GenerateTokens(email, username, role string, userUuid uuid.UUID) (string, s
 	accessTokenClaims := &Claims{
 		Email:     email,
 		Username:  username,
-		Role:      UserRole(role),
+		Role:      role,
 		TokenUuid: uuidPair,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(_ACCESS_TOKEN_DURATION)),
@@ -89,7 +89,7 @@ func GenerateTokens(email, username, role string, userUuid uuid.UUID) (string, s
 	refreshTokenClaims := &Claims{
 		Username:  username,
 		Email:     email,
-		Role:      UserRole(role),
+		Role:      role,
 		TokenUuid: uuidPair,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(_REFRESH_TOKEN_DURATION)),

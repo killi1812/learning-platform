@@ -6,15 +6,15 @@ import (
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/cerror"
 )
 
-type UserRole string
+type Role string
 
 const (
-	ROLE_USER  UserRole = "user"
-	ROLE_ADMIN UserRole = "admin"
+	ROLE_USER  Role = "user"
+	ROLE_ADMIN Role = "admin"
 )
 
-func StrToUserRole(text string) (UserRole, error) {
-	role := UserRole(text)
+func StrToRole(text string) (Role, error) {
+	role := Role(text)
 	switch role {
 	case ROLE_ADMIN, "superadmin":
 		return ROLE_ADMIN, nil
@@ -26,19 +26,17 @@ func StrToUserRole(text string) (UserRole, error) {
 	}
 }
 
-var ValidUserRoles = map[UserRole]bool{
+var ValidUserRoles = map[Role]bool{
 	ROLE_USER:  true,
 	ROLE_ADMIN: true,
 }
 
-var _VALID_USER_ROLES = ValidUserRoles
-
-func (r UserRole) IsValid() bool {
+func (r Role) IsValid() bool {
 	return ValidUserRoles[r]
 }
 
-func ValidateRole(role UserRole) error {
-	if _, ok := _VALID_USER_ROLES[role]; !ok {
+func ValidateRole(role Role) error {
+	if _, ok := ValidUserRoles[role]; !ok {
 		return errors.New("invalid user role")
 	}
 	return nil

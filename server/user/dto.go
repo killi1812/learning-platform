@@ -20,7 +20,7 @@ type NewUserDto struct {
 
 // ToModel create a model from a dto
 func (dto NewUserDto) ToModel() (*User, error) {
-	role, err := auth.StrToUserRole(dto.Role)
+	role, err := auth.StrToRole(dto.Role)
 	if err != nil {
 		zap.S().Errorf("Failed to parse role = %+v, err = %+v", dto.Role, err)
 		return nil, cerror.ErrUnknownRole
@@ -66,7 +66,7 @@ func (dto UserDto) ToModel() (*User, error) {
 		return nil, cerror.ErrBadUuid
 	}
 
-	role, err := auth.StrToUserRole(dto.Role)
+	role, err := auth.StrToRole(dto.Role)
 	if err != nil {
 		zap.S().Errorf("Failed to parse role = %+v, err = %+v", dto.Role, err)
 		return nil, cerror.ErrUnknownRole

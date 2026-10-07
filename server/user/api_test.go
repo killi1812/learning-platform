@@ -100,7 +100,7 @@ func setupUserTestRouter(service IUserCrudService) (*gin.Engine, *UserCtn) {
 	return r, ctn
 }
 
-func generateUserAuthHeader(t *testing.T, userUuid uuid.UUID, role string) string {
+func generateUserAuthHeader(t *testing.T, userUuid uuid.UUID, role auth.Role) string {
 	token, _, err := auth.GenerateTokens("user@example.com", "testuser", role, userUuid)
 	assert.NoError(t, err)
 	return "Bearer " + token
@@ -119,7 +119,7 @@ func TestUserCtn_Get(t *testing.T) {
 		router, _ := setupUserTestRouter(mock)
 
 		req, _ := http.NewRequest(http.MethodGet, "/api/user/"+targetUuid.String(), nil)
-		req.Header.Set("Authorization", generateUserAuthHeader(t, adminUuid, "admin"))
+		req.Header.Set("Authorization", generateUserAuthHeader(t, adminUuid, auth.ROLE_ADMIN))
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
@@ -138,7 +138,7 @@ func TestUserCtn_Get(t *testing.T) {
 		router, _ := setupUserTestRouter(mock)
 
 		req, _ := http.NewRequest(http.MethodGet, "/api/user/"+targetUuid.String(), nil)
-		req.Header.Set("Authorization", generateUserAuthHeader(t, adminUuid, "admin"))
+		req.Header.Set("Authorization", generateUserAuthHeader(t, adminUuid, auth.ROLE_ADMIN))
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
@@ -154,7 +154,7 @@ func TestUserCtn_Get(t *testing.T) {
 		router, _ := setupUserTestRouter(mock)
 
 		req, _ := http.NewRequest(http.MethodGet, "/api/user/"+targetUuid.String(), nil)
-		req.Header.Set("Authorization", generateUserAuthHeader(t, adminUuid, "admin"))
+		req.Header.Set("Authorization", generateUserAuthHeader(t, adminUuid, auth.ROLE_ADMIN))
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
@@ -165,7 +165,7 @@ func TestUserCtn_Get(t *testing.T) {
 		router, _ := setupUserTestRouter(&mockUserCrudService{})
 
 		req, _ := http.NewRequest(http.MethodGet, "/api/user/bad-uuid", nil)
-		req.Header.Set("Authorization", generateUserAuthHeader(t, adminUuid, "admin"))
+		req.Header.Set("Authorization", generateUserAuthHeader(t, adminUuid, auth.ROLE_ADMIN))
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
@@ -196,7 +196,7 @@ func TestUserCtn_Create(t *testing.T) {
 		body, _ := json.Marshal(payload)
 
 		req, _ := http.NewRequest(http.MethodPost, "/api/user/", bytes.NewReader(body))
-		req.Header.Set("Authorization", generateUserAuthHeader(t, adminUuid, "admin"))
+		req.Header.Set("Authorization", generateUserAuthHeader(t, adminUuid, auth.ROLE_ADMIN))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
@@ -216,7 +216,7 @@ func TestUserCtn_Create(t *testing.T) {
 		body, _ := json.Marshal(payload)
 
 		req, _ := http.NewRequest(http.MethodPost, "/api/user/", bytes.NewReader(body))
-		req.Header.Set("Authorization", generateUserAuthHeader(t, adminUuid, "admin"))
+		req.Header.Set("Authorization", generateUserAuthHeader(t, adminUuid, auth.ROLE_ADMIN))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
@@ -227,7 +227,7 @@ func TestUserCtn_Create(t *testing.T) {
 	t.Run("Invalid JSON returns without crash", func(t *testing.T) {
 		router, _ := setupUserTestRouter(&mockUserCrudService{})
 		req, _ := http.NewRequest(http.MethodPost, "/api/user/", bytes.NewReader([]byte("not-json")))
-		req.Header.Set("Authorization", generateUserAuthHeader(t, adminUuid, "admin"))
+		req.Header.Set("Authorization", generateUserAuthHeader(t, adminUuid, auth.ROLE_ADMIN))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
@@ -588,7 +588,7 @@ func TestUserCtn_SearchUsersByName(t *testing.T) {
 		router, _ := setupUserTestRouter(mock)
 
 		req, _ := http.NewRequest(http.MethodGet, "/api/user/search?query=fail", nil)
-		req.Header.Set("Authorization", generateUserAuthHeader(t, adminUuid, "admin"))
+		req.Header.Set("Authorization", generateUserAuthHeader(t, adminUuid, auth.ROLE_ADMIN))
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 

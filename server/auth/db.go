@@ -67,7 +67,7 @@ func (s *AuthService) Login(identifier, password string) (string, string, error)
 		return "", "", cerror.ErrInvalidCredentials
 	}
 
-	token, refresh, err := authUtil.GenerateTokens(usr.Email, usr.Username, string(usr.Role), usr.Uuid)
+	token, refresh, err := authUtil.GenerateTokens(usr.Email, usr.Username, usr.Role, usr.Uuid)
 	if err != nil {
 		s.logger.Errorf("Failed to generate token error = %+v", err)
 		return "", "", err
@@ -135,7 +135,7 @@ func (s *AuthService) RefreshTokens(rawRefreshToken string) (string, string, err
 		return "", "", err
 	}
 
-	newAccessToken, newRefreshToken, err := authUtil.GenerateTokens(usr.Email, usr.Username, string(usr.Role), usr.Uuid)
+	newAccessToken, newRefreshToken, err := authUtil.GenerateTokens(usr.Email, usr.Username, usr.Role, usr.Uuid)
 	if err != nil {
 		s.logger.Errorf("Failed to generate tokens, err = %+v", err)
 		return "", "", err

@@ -11,7 +11,7 @@ import (
 func TestStrToUserRole(t *testing.T) {
 	tests := []struct {
 		input   string
-		want    auth.UserRole
+		want    auth.Role
 		wantErr error
 	}{
 		{"admin", auth.ROLE_ADMIN, nil},
@@ -23,7 +23,7 @@ func TestStrToUserRole(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			got, err := auth.StrToUserRole(tt.input)
+			got, err := auth.StrToRole(tt.input)
 			if tt.wantErr != nil {
 				assert.ErrorIs(t, err, tt.wantErr)
 				assert.Empty(t, got)
@@ -43,7 +43,7 @@ func TestUser_ValidateRole(t *testing.T) {
 	})
 
 	t.Run("Invalid role", func(t *testing.T) {
-		assert.Error(t, auth.ValidateRole(auth.UserRole("invalid_role")))
+		assert.Error(t, auth.ValidateRole(auth.Role("invalid_role")))
 	})
 }
 
@@ -54,7 +54,7 @@ func TestUserRole_IsValid(t *testing.T) {
 	})
 
 	t.Run("Invalid roles", func(t *testing.T) {
-		assert.False(t, auth.UserRole("invalid_role").IsValid())
-		assert.False(t, auth.UserRole("").IsValid())
+		assert.False(t, auth.Role("invalid_role").IsValid())
+		assert.False(t, auth.Role("").IsValid())
 	})
 }
