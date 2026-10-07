@@ -16,7 +16,7 @@ type Claims struct {
 	jwt.RegisteredClaims
 	Email     string    `json:"email"`
 	Username  string    `json:"username"`
-	Role      string    `json:"role"`
+	Role      Role      `json:"role"`
 	TokenUuid uuid.UUID `json:"uuid"`
 }
 
@@ -64,7 +64,7 @@ func extractToken(authHeader string) (string, error) {
 }
 
 // GenerateTokens returns a jwt access token and refresh token or an error
-func GenerateTokens(email, username, role string, userUuid uuid.UUID) (string, string, error) {
+func GenerateTokens(email, username string, role Role, userUuid uuid.UUID) (string, string, error) {
 	if userUuid == uuid.Nil {
 		return "", "", cerror.ErrUserIsNil
 	}

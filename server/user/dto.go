@@ -3,6 +3,7 @@ package user
 import (
 	"fmt"
 
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/auth"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/cerror"
 
 	"github.com/google/uuid"
@@ -19,7 +20,7 @@ type NewUserDto struct {
 
 // ToModel create a model from a dto
 func (dto NewUserDto) ToModel() (*User, error) {
-	role, err := StrToUserRole(dto.Role)
+	role, err := auth.StrToRole(dto.Role)
 	if err != nil {
 		zap.S().Errorf("Failed to parse role = %+v, err = %+v", dto.Role, err)
 		return nil, cerror.ErrUnknownRole
@@ -65,7 +66,7 @@ func (dto UserDto) ToModel() (*User, error) {
 		return nil, cerror.ErrBadUuid
 	}
 
-	role, err := StrToUserRole(dto.Role)
+	role, err := auth.StrToRole(dto.Role)
 	if err != nil {
 		zap.S().Errorf("Failed to parse role = %+v, err = %+v", dto.Role, err)
 		return nil, cerror.ErrUnknownRole

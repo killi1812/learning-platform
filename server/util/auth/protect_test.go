@@ -61,7 +61,7 @@ func (suite *MiddlewareTestSuite) performRequest(method, path, token string, bod
 func (suite *MiddlewareTestSuite) generateToken(userID, username string, userRole string, expiresAt time.Time) string {
 	claims := &auth.Claims{
 		Username: username,
-		Role:     userRole,
+		Role:     auth.Role(userRole),
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID:        userID,
 			ExpiresAt: jwt.NewNumericDate(expiresAt),

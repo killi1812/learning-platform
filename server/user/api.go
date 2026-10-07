@@ -31,7 +31,7 @@ func (u *UserCtn) RegisterEndpoints(api *gin.RouterGroup) {
 	group.GET("/my-data", auth.Protect(), u.getLoggedInUser)
 
 	// register Endpoints
-	group.Use(auth.Protect(string(ROLE_ADMIN)))
+	group.Use(auth.Protect(auth.ROLE_ADMIN))
 	group.POST("/", u.create)
 	group.GET("/:uuid", u.get)
 	group.PUT("/:uuid", u.update)
@@ -227,7 +227,7 @@ func (u *UserCtn) getAllUsersForSuperAdmin(c *gin.Context) {
 		return
 	}
 
-	if claims.Role != string(ROLE_ADMIN) {
+	if claims.Role != auth.ROLE_ADMIN {
 		u.logger.Warnf("Unauthorized access attempt by user with role: %s", claims.Role)
 		c.AbortWithStatus(http.StatusForbidden)
 		return
