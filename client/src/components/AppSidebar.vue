@@ -4,6 +4,7 @@
       <v-list-item title="Dashboard" prepend-icon="mdi-home" />
       <v-list-item title="My Courses" prepend-icon="mdi-book-open" />
       <v-list-item title="Messages" prepend-icon="mdi-message" />
+      <v-list-item title="Groups" prepend-icon="mdi-account-group" />
       <v-list-item title="Grades" prepend-icon="mdi-chart-bar" />
     </v-list>
     <v-divider />
