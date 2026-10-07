@@ -18,8 +18,8 @@ func TestUser_Update(t *testing.T) {
 		Email:        "old@example.com",
 		Role:         auth.ROLE_USER,
 		PasswordHash: "secret",
-		UpdatedAt:    oldTime,
 	}
+	u.UpdatedAt = oldTime
 
 	newData := &user.User{
 		Username: "newname",

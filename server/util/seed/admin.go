@@ -1,3 +1,4 @@
+// Package seed is used to create objects in database on app startup
 package seed
 
 import (
