@@ -1,7 +1,7 @@
 <template>
   <v-app>
-    <AppHeader @toggle-drawer="drawer = !drawer" />
-    <AppSidebar v-model="drawer" />
+    <AppHeader />
+    <AppSidebar />
 
     <v-main class="bg-background">
       <DashboardView />
@@ -10,10 +10,7 @@
 </template>
 
 <script lang="ts" setup>
-import { ref } from 'vue'
 import AppHeader from '@/components/AppHeader.vue'
 import AppSidebar from '@/components/AppSidebar.vue'
 import DashboardView from '@/components/DashboardView.vue'
-
-const drawer = ref(false)
 </script>
