@@ -19,7 +19,7 @@
             <p class="course-term">{{ course.term }}</p>
             <div class="course-progress">
               <span class="progress-label">Progress</span>
-              <v-progress-linear :value="course.progress" color="primary" />
+              <v-progress-linear :model-value="course.progress" color="primary" />
             </div>
           </v-card-text>
           <v-card-actions>
@@ -105,19 +105,19 @@ const courses = ref<Course[]>([
 .campus-header {
   margin-bottom: 3rem;
   padding-bottom: 2rem;
-  border-bottom: 2px solid #e0e0e0;
+  border-bottom: 2px solid rgba(var(--v-theme-on-surface), 0.12);
 
   h1 {
     margin: 0 0 0.5rem 0;
     font-size: 2.5rem;
     font-weight: 600;
-    color: #1f1f1f;
+    color: rgb(var(--v-theme-on-surface));
   }
 
   .campus-description {
     margin: 0;
     font-size: 1.1rem;
-    color: #666;
+    color: rgba(var(--v-theme-on-surface), 0.6);
     line-height: 1.5;
   }
 }
@@ -127,7 +127,7 @@ const courses = ref<Course[]>([
     margin: 0 0 1.5rem 0;
     font-size: 1.5rem;
     font-weight: 500;
-    color: #1f1f1f;
+    color: rgb(var(--v-theme-on-surface));
   }
 }
 
@@ -154,20 +154,20 @@ const courses = ref<Course[]>([
   .course-instructor {
     margin: 0 0 0.5rem 0;
     font-size: 0.95rem;
-    color: #666;
+    color: rgba(var(--v-theme-on-surface), 0.6);
   }
 
   .course-term {
     margin: 0 0 1rem 0;
     font-size: 0.9rem;
-    color: #999;
+    color: rgba(var(--v-theme-on-surface), 0.4);
   }
 
   .course-progress {
     .progress-label {
       display: block;
       font-size: 0.85rem;
-      color: #666;
+      color: rgba(var(--v-theme-on-surface), 0.6);
       margin-bottom: 0.5rem;
     }
   }

@@ -3,7 +3,7 @@
     <AppHeader @toggle-drawer="drawer = !drawer" />
     <AppSidebar v-model="drawer" />
 
-    <v-main class="bg-grey-lighten-4">
+    <v-main class="bg-background">
       <DashboardView />
     </v-main>
   </v-app>
