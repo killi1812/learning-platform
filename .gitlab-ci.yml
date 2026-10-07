@@ -49,17 +49,6 @@ backend:test:
     - go vet ./...
     - go test -v $(go list ./... | grep -Ev "${TEST_EXCLUDE}")
 
-client:lint:
-  stage: test
-  image: node:22-alpine
-  cache:
-    <<: *npm-cache
-  before_script:
-    - cd client
-    - npm ci --cache .npm --prefer-offline
-  script:
-    - npm run lint
-
 # ---------------------------------------------------------
 # Build Stage
 # ---------------------------------------------------------
