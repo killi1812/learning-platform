@@ -1,17 +1,19 @@
 <template>
   <v-app>
-    <v-app-bar title="DAT250 Learning Platform">
-      <template #append>
-        <v-btn icon="mdi-theme-light-dark" @click="$vuetify.theme.cycle()" />
-      </template>
-    </v-app-bar>
+    <AppHeader @toggle-drawer="drawer = !drawer" />
+    <AppSidebar v-model="drawer" />
 
     <v-main class="bg-grey-lighten-4">
-      <AuthCard />
+      <DashboardView />
     </v-main>
   </v-app>
 </template>
 
 <script lang="ts" setup>
-import AuthCard from '@/components/AuthCard.vue'
+import { ref } from 'vue'
+import AppHeader from '@/components/AppHeader.vue'
+import AppSidebar from '@/components/AppSidebar.vue'
+import DashboardView from '@/components/DashboardView.vue'
+
+const drawer = ref(false)
 </script>
