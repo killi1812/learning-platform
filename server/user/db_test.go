@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/testutil"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/auth"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
@@ -20,7 +21,7 @@ func TestUserCrudService_CRUD(t *testing.T) {
 		u := &User{
 			Username: "sigmar",
 			Email:    "sigmar@empire.com",
-			Role:     ROLE_ADMIN,
+			Role:     auth.ROLE_ADMIN,
 		}
 		res, err := svc.Create(u, "hammerofsigmar")
 		assert.NoError(t, err)
@@ -35,7 +36,7 @@ func TestUserCrudService_CRUD(t *testing.T) {
 		uDup := &User{
 			Username: "sigmar",
 			Email:    "another@empire.com",
-			Role:     ROLE_USER,
+			Role:     auth.ROLE_USER,
 		}
 		_, err := svc.Create(uDup, "somepass")
 		assert.Error(t, err)
@@ -70,7 +71,7 @@ func TestUserCrudService_CRUD(t *testing.T) {
 		u2 := &User{
 			Username: "karlfranz",
 			Email:    "karl@empire.com",
-			Role:     ROLE_USER,
+			Role:     auth.ROLE_USER,
 		}
 		_, err := svc.Create(u2, "emperorpass")
 		assert.NoError(t, err)
@@ -99,7 +100,7 @@ func TestUserCrudService_CRUD(t *testing.T) {
 		toUpdate := &User{
 			Username: "sigmar_unifier",
 			Email:    "unifier@empire.com",
-			Role:     ROLE_ADMIN,
+			Role:     auth.ROLE_ADMIN,
 		}
 		updated, err := svc.Update(createdUser.Uuid, toUpdate)
 		assert.NoError(t, err)

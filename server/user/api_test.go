@@ -8,10 +8,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/auth"
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 )
@@ -113,7 +113,7 @@ func TestUserCtn_Get(t *testing.T) {
 	t.Run("Admin gets existing user (200)", func(t *testing.T) {
 		mock := &mockUserCrudService{
 			readFunc: func(id uuid.UUID) (*User, error) {
-				return &User{Uuid: id, Username: "target", Email: "target@test.com", Role: ROLE_USER}, nil
+				return &User{Uuid: id, Username: "target", Email: "target@test.com", Role: auth.ROLE_USER}, nil
 			},
 		}
 		router, _ := setupUserTestRouter(mock)
@@ -424,7 +424,7 @@ func TestUserCtn_GetLoggedInUser(t *testing.T) {
 	t.Run("Authenticated user gets their data (200)", func(t *testing.T) {
 		mock := &mockUserCrudService{
 			readFunc: func(id uuid.UUID) (*User, error) {
-				return &User{Uuid: id, Username: "loggedin", Role: ROLE_USER}, nil
+				return &User{Uuid: id, Username: "loggedin", Role: auth.ROLE_USER}, nil
 			},
 		}
 		router, _ := setupUserTestRouter(mock)
@@ -499,8 +499,8 @@ func TestUserCtn_GetAllUsersForSuperAdmin(t *testing.T) {
 		mock := &mockUserCrudService{
 			getAllUsersFunc: func() ([]User, error) {
 				return []User{
-					{Username: "u1", Role: ROLE_USER},
-					{Username: "u2", Role: ROLE_ADMIN},
+					{Username: "u1", Role: auth.ROLE_USER},
+					{Username: "u2", Role: auth.ROLE_ADMIN},
 				}, nil
 			},
 		}
@@ -552,7 +552,7 @@ func TestUserCtn_SearchUsersByName(t *testing.T) {
 		mock := &mockUserCrudService{
 			searchUsersByNameFunc: func(q string) ([]User, error) {
 				assert.Equal(t, "felix", q)
-				return []User{{Username: "felix", Role: ROLE_USER}}, nil
+				return []User{{Username: "felix", Role: auth.ROLE_USER}}, nil
 			},
 		}
 		router, _ := setupUserTestRouter(mock)

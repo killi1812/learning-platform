@@ -66,7 +66,7 @@ func TestAuthService_Unit(t *testing.T) {
 		Username:     "tester",
 		Email:        "tester@example.com",
 		PasswordHash: hash,
-		Role:         user.ROLE_USER,
+		Role:         authUtil.ROLE_USER,
 	}
 
 	err = gormDb.Create(&testUser).Error
@@ -122,7 +122,7 @@ func TestAuthService_Integration(t *testing.T) {
 		Username:     "tester",
 		Email:        "tester@example.com",
 		PasswordHash: hash,
-		Role:         user.ROLE_USER,
+		Role:         authUtil.ROLE_USER,
 	}
 
 	err = gormDb.Create(&testUser).Error
@@ -157,7 +157,7 @@ func TestAuthService_Integration(t *testing.T) {
 			Username:     "niluser",
 			Email:        "nil@example.com",
 			PasswordHash: hash,
-			Role:         user.ROLE_USER,
+			Role:         authUtil.ROLE_USER,
 		}
 		err := gormDb.Create(&nilUser).Error
 		assert.NoError(t, err)

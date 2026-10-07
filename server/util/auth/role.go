@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"errors"
+
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/cerror"
 )
 
@@ -33,4 +35,11 @@ var _VALID_USER_ROLES = ValidUserRoles
 
 func (r UserRole) IsValid() bool {
 	return ValidUserRoles[r]
+}
+
+func ValidateRole(role UserRole) error {
+	if _, ok := _VALID_USER_ROLES[role]; !ok {
+		return errors.New("invalid user role")
+	}
+	return nil
 }

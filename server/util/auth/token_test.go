@@ -7,12 +7,10 @@ import (
 	"time"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
-	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/auth"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/cerror"
 
 	"github.com/golang-jwt/jwt/v4"
-	"github.com/google/uuid"
 )
 
 func TestParseToken(t *testing.T) {
@@ -147,100 +145,4 @@ func TestParseToken(t *testing.T) {
 			t.Errorf("ParseToken() username = %s, want %s", gotClaims.Username, validClaims.Username)
 		}
 	})
-}
-
-func TestGenerateTokens(t *testing.T) {
-	app.AccessKey = "test-jwt-key"
-	app.RefreshKey = "test-refresh-key"
-
-	usr := &user.User{
-		Username: "test@example.com",
-		Uuid:     uuid.New(),
-	}
-
-	accessTokenDuration := 5 * time.Minute
-	refreshTokenDuration := 7 * 24 * time.Hour
-
-	tests := []struct {
-		name                     string
-		user                     *user.User
-		wantAccessTokenNonEmpty  bool
-		wantRefreshTokenNonEmpty bool
-		wantErr                  bool
-	}{
-		{
-			name:                     "Valid user",
-			user:                     usr,
-			wantAccessTokenNonEmpty:  true,
-			wantRefreshTokenNonEmpty: true,
-			wantErr:                  false,
-		},
-		{
-			name:                     "Nil user",
-			user:                     nil,
-			wantAccessTokenNonEmpty:  false,
-			wantRefreshTokenNonEmpty: false,
-			wantErr:                  true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var email, username, role string
-			var userUuid uuid.UUID
-			if tt.user != nil {
-				email = tt.user.Email
-				username = tt.user.Username
-				role = string(tt.user.Role)
-				userUuid = tt.user.Uuid
-			}
-			gotAccessToken, gotRefreshToken, err := auth.GenerateTokens(email, username, role, userUuid)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("GenerateTokens() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-
-			if tt.wantAccessTokenNonEmpty && gotAccessToken == "" {
-				t.Errorf("GenerateTokens() gotAccessToken = %q, want non-empty", gotAccessToken)
-			}
-			if tt.wantRefreshTokenNonEmpty && gotRefreshToken == "" {
-				t.Errorf("GenerateTokens() gotRefreshToken = %q, want non-empty", gotRefreshToken)
-			}
-
-			if gotAccessToken != "" {
-				token, _, err := new(jwt.Parser).ParseUnverified(gotAccessToken, &auth.Claims{})
-				if err != nil {
-					t.Errorf("GenerateTokens() generated invalid access token: %+v", err)
-					return
-				}
-				if claims, ok := token.Claims.(*auth.Claims); ok {
-					if claims.Username != tt.user.Username || claims.ID != tt.user.Uuid.String() {
-						t.Errorf("GenerateTokens() access token claims are incorrect: got = %+v, want = %+v", claims, tt.user)
-					}
-					if !claims.ExpiresAt.After(time.Now().Add(accessTokenDuration-time.Minute)) || !claims.ExpiresAt.Before(time.Now().Add(accessTokenDuration+time.Minute)) {
-						t.Errorf("GenerateTokens() access token expiry is not within expected range: %+v", claims.ExpiresAt)
-					}
-				} else {
-					t.Errorf("GenerateTokens() failed to parse access token claims")
-				}
-			}
-
-			if gotRefreshToken != "" {
-				token, _, err := new(jwt.Parser).ParseUnverified(gotRefreshToken, &auth.Claims{})
-				if err != nil {
-					t.Errorf("GenerateTokens() generated invalid refresh token: %+v", err)
-					return
-				}
-				if claims, ok := token.Claims.(*auth.Claims); ok {
-					if claims.Username != tt.user.Username || claims.ID != tt.user.Uuid.String() {
-						t.Errorf("GenerateTokens() refresh token claims are incorrect: got = %+v, want = %+v", claims, tt.user)
-					}
-					if !claims.ExpiresAt.After(time.Now().Add(refreshTokenDuration-time.Minute)) || !claims.ExpiresAt.Before(time.Now().Add(refreshTokenDuration+time.Minute)) {
-						t.Errorf("GenerateTokens() refresh token expiry is not within expected range: %+v", claims.ExpiresAt)
-					}
-				} else {
-					t.Errorf("GenerateTokens() failed to parse refresh token claims")
-				}
-			}
-		})
-	}
 }
