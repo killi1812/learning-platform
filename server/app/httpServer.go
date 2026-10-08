@@ -74,15 +74,15 @@ func run(ctx context.Context, wg *sync.WaitGroup) {
 	}
 	router := gin.Default()
 
-	// router.GET("/healthz", func(c *gin.Context) {
-	// 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
-	// })
+	router.GET("/healthz", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
 
-	// router.GET("/ping", func(c *gin.Context) {
-	// 	c.String(http.StatusOK, "pong")
-	// })
+	router.GET("/ping", func(c *gin.Context) {
+		c.String(http.StatusOK, "pong")
+	})
 
-	// router.Run(":8080")
+	router.Run(":8080")
 
 	// setup swagger
 	if Build == BuildDev {
