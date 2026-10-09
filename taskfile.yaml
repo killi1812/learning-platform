@@ -181,6 +181,8 @@ tasks:
     cmds:
       - task: dev:services
       - defer: { task: dev:services-down }
+      - cmd: task generate-swagger
+        ignore_error: true
       - task: dev:apps
     silent: true
 
@@ -322,11 +324,34 @@ tasks:
     internal: true
 
   format:
+    desc: "Format client code, Go backend code, and Swagger documentation"
+    deps:
+      - format:backend
+      - format:client
+
+  format:backend:
+    desc: "Format Go code and generate Swagger documentation"
+    aliases: [format-backend]
+    dir: "{{ .SERVER_DIR }}"
+    cmds:
+      - cmd: swag fmt
+      - cmd: swag init
+      - cmd: go fmt ./...
+    silent: true
+    internal: true
+
+  format:client:
     desc: "Format client code using Prettier"
+    aliases: [format-frontend]
     dir: "{{ .CLIENT_DIR }}"
     cmds:
-      - cmd: npm run format
+      - cmd: |
+          if [ ! -d "node_modules" ]; then
+            npm install
+          fi
+          npm run format
     silent: true
+    internal: true
 
   build:docker:
     desc: "Build production Docker image with embedded frontend"
