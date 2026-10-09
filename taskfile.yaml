@@ -276,6 +276,7 @@ tasks:
       - cmd: go test {{.TEST_PCKGS}} -coverprofile=coverage.out
       - cmd: go tool cover -html=coverage.out
     silent: true
+    internal: true
 
   tidy:
     desc: "Runs go mod tidy"
@@ -327,31 +328,7 @@ tasks:
       - cmd: npm run format
     silent: true
 
-  build:client:
-    desc: "Build Vue client and copy output to server/web/dist for Go embedding"
-    dir: "{{ .CLIENT_DIR }}"
-    cmds:
-      - cmd: |
-          if [ ! -d "node_modules" ]; then
-            npm install
-          fi
-          npm run build
-      - cmd: cp -r dist/* ../{{.SERVER_DIR}}/web/dist/
-    silent: true
-    internal: true
-
-  build:bin:
-    desc: "Build executable Go binary locally with embedded frontend"
-    dir: "{{ .SERVER_DIR }}"
-    deps: [build:client]
-    cmds:
-      - cmd: mkdir -p {{.BINARY_DIR}}
-      - cmd: go build -ldflags="{{.LDFLAGS}}" -o {{.BINARY_DIR}}/learning-platform .
-    silent: false
-    signal: SIGINT
-    internal: true
-
-  build:backend:
+  build:docker:
     desc: "Build production Docker image with embedded frontend"
     dir: "{{.TASKFILE_DIR}}"
     cmds:
@@ -366,8 +343,8 @@ tasks:
 
   build:
     desc: "Build production Docker image"
-    deps:
-      - build:backend
+    cmds:
+      - task: build:docker
 
   install-tools:
     desc: "Install development tools (air, swag)"
