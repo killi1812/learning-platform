@@ -21,7 +21,7 @@ func NewInfoApi(logger *zap.SugaredLogger) app.Api {
 
 func (cnt *InfoCtn) RegisterEndpoints(router *gin.RouterGroup) {
 	router.GET("/info", cnt.getServerInfo)
-	
+
 	router.GET("/healthz", cnt.ExtractedHealthz)
 
 	router.GET("/ping", cnt.ExtractedPing)
@@ -30,27 +30,28 @@ func (cnt *InfoCtn) RegisterEndpoints(router *gin.RouterGroup) {
 }
 
 // ExtractedHealthz godoc
-// @Summary Health check
-// @Description Returns the health status of the server.
-// @Tags info
-// @Produce json
-// @Success 200 {object} map[string]string
-// @Router /healthz [get]
+//
+//	@Summary		Health check
+//	@Description	Returns the health status of the server.
+//	@Tags			info
+//	@Produce		json
+//	@Success		200	{object}	map[string]string
+//	@Router			/healthz [get]
 func (*InfoCtn) ExtractedHealthz(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
 // ExtractedPing godoc
-// @Summary Ping the server
-// @Description Returns pong if the server is reachable.
-// @Tags info
-// @Produce plain
-// @Success 200 {string} string "pong"
-// @Router /ping [get]
+//
+//	@Summary		Ping the server
+//	@Description	Returns pong if the server is reachable.
+//	@Tags			info
+//	@Produce		plain
+//	@Success		200	{string}	string	"pong"
+//	@Router			/ping [get]
 func (*InfoCtn) ExtractedPing(c *gin.Context) {
 	c.String(http.StatusOK, "pong")
 }
-
 
 // getServerInfo godoc
 //

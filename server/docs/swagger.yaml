@@ -131,6 +131,21 @@ paths:
       summary: Refresh Access Token
       tags:
       - auth
+  /healthz:
+    get:
+      description: Returns the health status of the server.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Health check
+      tags:
+      - info
   /info:
     get:
       description: return information about the server build, version, etc ...
@@ -142,6 +157,19 @@ paths:
           schema:
             $ref: '#/definitions/info.ServerInfoDto'
       summary: Get server info
+      tags:
+      - info
+  /ping:
+    get:
+      description: Returns pong if the server is reachable.
+      produces:
+      - text/plain
+      responses:
+        "200":
+          description: pong
+          schema:
+            type: string
+      summary: Ping the server
       tags:
       - info
   /user:

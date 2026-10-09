@@ -18,9 +18,9 @@ var (
 
 // Environment variables
 var (
-	Port        int
-	AccessKey   string
-	RefreshKey  string
+	Port         int
+	AccessKey    string
+	RefreshKey   string
 	MongoConn    string
 	DatabaseConn string
 	RunMigrate   bool

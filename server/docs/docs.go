@@ -115,6 +115,29 @@ const docTemplate = `{
                 }
             }
         },
+        "/healthz": {
+            "get": {
+                "description": "Returns the health status of the server.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "info"
+                ],
+                "summary": "Health check",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/info": {
             "get": {
                 "description": "return information about the server build, version, etc ...",
@@ -130,6 +153,26 @@ const docTemplate = `{
                         "description": "Information about server",
                         "schema": {
                             "$ref": "#/definitions/info.ServerInfoDto"
+                        }
+                    }
+                }
+            }
+        },
+        "/ping": {
+            "get": {
+                "description": "Returns pong if the server is reachable.",
+                "produces": [
+                    "text/plain"
+                ],
+                "tags": [
+                    "info"
+                ],
+                "summary": "Ping the server",
+                "responses": {
+                    "200": {
+                        "description": "pong",
+                        "schema": {
+                            "type": "string"
                         }
                     }
                 }
