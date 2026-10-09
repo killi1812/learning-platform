@@ -181,6 +181,8 @@ tasks:
     cmds:
       - task: dev:services
       - defer: { task: dev:services-down }
+      - cmd: task generate-swagger
+        ignore_error: true
       - task: dev:apps
     silent: true
 
@@ -276,6 +278,7 @@ tasks:
       - cmd: go test {{.TEST_PCKGS}} -coverprofile=coverage.out
       - cmd: go tool cover -html=coverage.out
     silent: true
+    internal: true
 
   tidy:
     desc: "Runs go mod tidy"
@@ -321,37 +324,36 @@ tasks:
     internal: true
 
   format:
-    desc: "Format client code using Prettier"
-    dir: "{{ .CLIENT_DIR }}"
-    cmds:
-      - cmd: npm run format
-    silent: true
+    desc: "Format client code, Go backend code, and Swagger documentation"
+    deps:
+      - format:backend
+      - format:client
 
-  build:client:
-    desc: "Build Vue client and copy output to server/web/dist for Go embedding"
+  format:backend:
+    desc: "Format Go code and generate Swagger documentation"
+    aliases: [format-backend]
+    dir: "{{ .SERVER_DIR }}"
+    cmds:
+      - cmd: swag fmt
+      - cmd: swag init
+      - cmd: go fmt ./...
+    silent: true
+    internal: true
+
+  format:client:
+    desc: "Format client code using Prettier"
+    aliases: [format-frontend]
     dir: "{{ .CLIENT_DIR }}"
     cmds:
       - cmd: |
           if [ ! -d "node_modules" ]; then
             npm install
           fi
-          npm run build
-      - cmd: cp -r dist/* ../{{.SERVER_DIR}}/web/dist/
+          npm run format
     silent: true
     internal: true
 
-  build:bin:
-    desc: "Build executable Go binary locally with embedded frontend"
-    dir: "{{ .SERVER_DIR }}"
-    deps: [build:client]
-    cmds:
-      - cmd: mkdir -p {{.BINARY_DIR}}
-      - cmd: go build -ldflags="{{.LDFLAGS}}" -o {{.BINARY_DIR}}/learning-platform .
-    silent: false
-    signal: SIGINT
-    internal: true
-
-  build:backend:
+  build:docker:
     desc: "Build production Docker image with embedded frontend"
     dir: "{{.TASKFILE_DIR}}"
     cmds:
@@ -366,8 +368,8 @@ tasks:
 
   build:
     desc: "Build production Docker image"
-    deps:
-      - build:backend
+    cmds:
+      - task: build:docker
 
   install-tools:
     desc: "Install development tools (air, swag)"

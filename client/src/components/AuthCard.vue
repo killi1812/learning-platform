@@ -4,12 +4,17 @@
     <v-card class="mb-6" elevation="2" rounded="lg">
       <v-card-item>
         <template #prepend>
-          <v-icon :color="backendOnline ? 'success' : checkingStatus ? 'warning' : 'error'" :icon="backendOnline
-            ? 'mdi-server-network'
-            : checkingStatus
-              ? 'mdi-loading mdi-spin'
-              : 'mdi-server-network-off'
-            " size="large" />
+          <v-icon
+            :color="backendOnline ? 'success' : checkingStatus ? 'warning' : 'error'"
+            :icon="
+              backendOnline
+                ? 'mdi-server-network'
+                : checkingStatus
+                  ? 'mdi-loading mdi-spin'
+                  : 'mdi-server-network-off'
+            "
+            size="large"
+          />
         </template>
         <v-card-title class="text-h6">Backend Connection Status</v-card-title>
         <v-card-subtitle>
@@ -23,11 +28,21 @@
         </v-card-subtitle>
 
         <template #append>
-          <v-chip :color="backendOnline ? 'success' : checkingStatus ? 'warning' : 'error'" label size="small">
+          <v-chip
+            :color="backendOnline ? 'success' : checkingStatus ? 'warning' : 'error'"
+            label
+            size="small"
+          >
             {{ backendOnline ? 'ONLINE' : checkingStatus ? 'CHECKING' : 'OFFLINE' }}
           </v-chip>
-          <v-btn class="ml-2" density="compact" icon="mdi-refresh" :loading="checkingStatus" variant="text"
-            @click="checkBackendStatus" />
+          <v-btn
+            class="ml-2"
+            density="compact"
+            icon="mdi-refresh"
+            :loading="checkingStatus"
+            variant="text"
+            @click="checkBackendStatus"
+          />
         </template>
       </v-card-item>
     </v-card>
@@ -41,16 +56,38 @@
 
       <v-card-text class="pt-4 px-6">
         <!-- Auth Response Alert -->
-        <v-alert v-if="authResult" class="mb-4" closable :color="authResult.success ? 'success' : 'error'"
-          :icon="authResult.success ? 'mdi-check-circle' : 'mdi-alert-circle'" :text="authResult.message"
-          variant="tonal" @click:close="authResult = null" />
+        <v-alert
+          v-if="authResult"
+          class="mb-4"
+          closable
+          :color="authResult.success ? 'success' : 'error'"
+          :icon="authResult.success ? 'mdi-check-circle' : 'mdi-alert-circle'"
+          :text="authResult.message"
+          variant="tonal"
+          @click:close="authResult = null"
+        />
 
         <v-form @submit.prevent="handleLogin">
-          <v-text-field v-model="username" autocomplete="username" label="Username" name="username"
-            prepend-inner-icon="mdi-account" required variant="outlined" />
+          <v-text-field
+            v-model="username"
+            autocomplete="username"
+            label="Username"
+            name="username"
+            prepend-inner-icon="mdi-account"
+            required
+            variant="outlined"
+          />
 
-          <v-text-field v-model="password" autocomplete="current-password" label="Password" name="password"
-            prepend-inner-icon="mdi-lock" required type="password" variant="outlined" />
+          <v-text-field
+            v-model="password"
+            autocomplete="current-password"
+            label="Password"
+            name="password"
+            prepend-inner-icon="mdi-lock"
+            required
+            type="password"
+            variant="outlined"
+          />
 
           <div class="text-caption text-grey mb-4">
             Default credentials: <v-kbd>admin</v-kbd> / <v-kbd>password</v-kbd> or

@@ -115,4 +115,3 @@ func TestHashPassword(t *testing.T) {
 		})
 	}
 }
-

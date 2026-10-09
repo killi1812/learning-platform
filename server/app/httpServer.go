@@ -99,8 +99,10 @@ func run(ctx context.Context, wg *sync.WaitGroup) {
 		}
 	})
 
-	// serve embedded SPA frontend and handle 404 for API/Swagger
-	web.RegisterSPA(router)
+	// serve embedded SPA frontend only in production
+	if Build == BuildProd {
+		web.RegisterSPA(router)
+	}
 
 	addr := fmt.Sprintf(":%d", Port)
 	srv := &http.Server{
