@@ -93,15 +93,12 @@ backend:build:
 docker:build:
   stage: package
   image: docker:latest
-  services:
-    - name: docker:dind
-      alias: docker
   variables:
-    DOCKER_HOST: tcp://docker:2375
-    DOCKER_TLS_CERTDIR: ""
-    DOCKER_DRIVER: overlay2
+    DOCKER_HOST: "unix:///var/run/docker.sock"
   needs:
     - backend:build
+  before_script:
+    - ls -la /var/run/
   script:
     - >-
       docker build
