@@ -18,7 +18,7 @@ export default createVuetify({
       light: {
         colors: {
           primary: '#E85D75',
-          'on-primary': '#FFFFFF',
+          'on-primary': '#000000',
           secondary: '#6BAA5E',
           'on-secondary': '#FFFFFF',
           accent: '#6BAA5E',
@@ -33,7 +33,7 @@ export default createVuetify({
       dark: {
         colors: {
           primary: '#E85D75',
-          'on-primary': '#FFFFFF',
+          'on-primary': '#000000',
           secondary: '#6BAA5E',
           'on-secondary': '#FFFFFF',
           accent: '#6BAA5E',
