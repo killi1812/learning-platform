@@ -18,6 +18,7 @@ func NewPostgresDb(dsn string, isDev bool) *gorm.DB {
 
 	var gormLogLevel logger.LogLevel
 	if isDev {
+		// Info level is debug when it comes to gorm
 		gormLogLevel = logger.Info
 	} else {
 		gormLogLevel = logger.Warn

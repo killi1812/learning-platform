@@ -24,6 +24,7 @@ var signalNotificationCh = make(chan os.Signal, 1)
 
 // Start will start the web server of the app
 func Start() {
+
 	// relay selected signals to channel
 	// - os.Interrupt, ctrl-c
 	// - syscall.SIGTERM, program termination
