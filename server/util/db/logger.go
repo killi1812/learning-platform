@@ -52,7 +52,7 @@ func (l *gormZapLogger) LogMode(level logger.LogLevel) logger.Interface {
 
 func (l *gormZapLogger) Info(c context.Context, msg string, args ...any) {
 	if l.LogLevel >= logger.Info {
-		zap.S().Infof(l.infoStr+msg, args...)
+		zap.S().Debugf(l.infoStr+msg, args...)
 	}
 }
 
@@ -93,9 +93,9 @@ func (l *gormZapLogger) Trace(ctx context.Context, begin time.Time, fc func() (s
 	case l.LogLevel == logger.Info:
 		sql, rows := fc()
 		if rows == -1 {
-			zap.S().Infof(l.traceStr, utils.FileWithLineNum(), float64(elapsed.Nanoseconds())/1e6, "-", sql)
+			zap.S().Debugf(l.traceStr, utils.FileWithLineNum(), float64(elapsed.Nanoseconds())/1e6, "-", sql)
 		} else {
-			zap.S().Infof(l.traceStr, utils.FileWithLineNum(), float64(elapsed.Nanoseconds())/1e6, rows, sql)
+			zap.S().Debugf(l.traceStr, utils.FileWithLineNum(), float64(elapsed.Nanoseconds())/1e6, rows, sql)
 		}
 	}
 }

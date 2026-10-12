@@ -5,12 +5,14 @@ import (
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/auth"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/content"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/course"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/info"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/submission"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/seed"
 
 	"go.uber.org/zap"
-	"gorm.io/gorm"
 )
 
 //	@securityDefinitions.apikey	BearerAuth
@@ -35,10 +37,27 @@ func main() {
 	app.RegisterApi(user.NewUserCtn)
 	app.RegisterApi(auth.NewAuthCtn)
 
-	app.Invoke(func(db *gorm.DB) {
-		err := app.HandleMigrations(db, app.RunMigrate, &user.User{})
-		zap.S().Errorf("Error migrating, err: %w", err)
-	})
+	app.RegisterModel(&user.User{})
+	// Course
+	app.RegisterModel(&course.Course{})
+	app.RegisterModel(&course.Enrollment{})
+	app.RegisterModel(&course.Group{})
+	app.RegisterModel(&course.Module{})
+	// Content
+	app.RegisterModel(&content.Content{})
+	app.RegisterModel(&content.StaticPage{})
+	app.RegisterModel(&content.Quiz{})
+	app.RegisterModel(&content.Question{})
+	app.RegisterModel(&content.Assignment{})
+	app.RegisterModel(&content.CodingExercise{})
+	app.RegisterModel(&content.StudentInteraction{})
+	// Submission
+	app.RegisterModel(&submission.Submission{})
+	app.RegisterModel(&submission.GroupSubmission{})
+	app.RegisterModel(&submission.IndividualSubmission{})
+	app.RegisterModel(&submission.Grade{})
+
+	app.Migrate()
 
 	seed.Insert()
 
