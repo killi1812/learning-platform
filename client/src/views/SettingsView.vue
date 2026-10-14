@@ -36,7 +36,7 @@
         <v-col cols="12" sm="6">
           <v-text-field
             label="User ID"
-            :model-value="currentUser?.sub || currentUser?.uuid || 'N/A'"
+            :model-value="currentUser?.sub || currentUser?.jti || currentUser?.userUuid || 'N/A'"
             readonly
             variant="outlined"
           />

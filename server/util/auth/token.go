@@ -87,6 +87,7 @@ func GenerateTokens(email, username string, role Role, userUuid uuid.UUID, sessi
 		SessionUuid: activeSessionUuid,
 		TokenUuid:   uuidPair,
 		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   userUuid.String(),
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(_ACCESS_TOKEN_DURATION)),
 			ID:        userUuid.String(),
 		},
@@ -105,6 +106,7 @@ func GenerateTokens(email, username string, role Role, userUuid uuid.UUID, sessi
 		SessionUuid: activeSessionUuid,
 		TokenUuid:   uuidPair,
 		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   userUuid.String(),
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(_REFRESH_TOKEN_DURATION)),
 			ID:        userUuid.String(),
 		},

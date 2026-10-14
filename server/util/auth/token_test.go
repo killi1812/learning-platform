@@ -11,6 +11,8 @@ import (
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/cerror"
 
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestParseToken(t *testing.T) {
@@ -146,3 +148,27 @@ func TestParseToken(t *testing.T) {
 		}
 	})
 }
+
+func TestGenerateTokens(t *testing.T) {
+	app.AccessKey = "test-jwt-key"
+	app.RefreshKey = "test-refresh-key"
+
+	userUuid := uuid.New()
+	sessionUuid := uuid.New()
+
+	access, refresh, err := auth.GenerateTokens("user@example.com", "user", auth.ROLE_USER, userUuid, sessionUuid)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, access)
+	assert.NotEmpty(t, refresh)
+
+	// Validate access token claims
+	_, claims, err := auth.ParseToken("Bearer " + access)
+	assert.NoError(t, err)
+	assert.Equal(t, userUuid.String(), claims.Subject)
+	assert.Equal(t, userUuid.String(), claims.ID)
+	assert.Equal(t, sessionUuid, claims.SessionUuid)
+	assert.Equal(t, "user@example.com", claims.Email)
+	assert.Equal(t, "user", claims.Username)
+	assert.Equal(t, auth.ROLE_USER, claims.Role)
+}
+

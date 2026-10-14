@@ -11,6 +11,8 @@ import {
 
 export interface UserClaims {
   sub?: string
+  jti?: string
+  userUuid?: string
   username?: string
   email?: string
   role?: string
