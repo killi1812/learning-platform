@@ -2,6 +2,7 @@ import { ref, computed } from 'vue'
 import {
   loginUser,
   registerUser,
+  refreshUserToken,
   logoutUser,
   logoutAllSessions,
   type LoginRequest,
@@ -23,7 +24,6 @@ export interface UserClaims {
 }
 
 const ACCESS_TOKEN_KEY = 'accessToken'
-const REFRESH_TOKEN_KEY = 'refreshToken'
 const SESSION_ID_KEY = 'sessionId'
 
 function decodeJwtPayload(token: string): UserClaims | undefined {
@@ -81,9 +81,6 @@ export function useAuth() {
 
   function setTokens(tokens: TokenResponse) {
     localStorage.setItem(ACCESS_TOKEN_KEY, tokens.accessToken)
-    if (tokens.refreshToken) {
-      localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refreshToken)
-    }
     if (tokens.sessionId) {
       localStorage.setItem(SESSION_ID_KEY, tokens.sessionId)
     }
@@ -97,7 +94,6 @@ export function useAuth() {
 
   function clearAuth() {
     localStorage.removeItem(ACCESS_TOKEN_KEY)
-    localStorage.removeItem(REFRESH_TOKEN_KEY)
     // NOTE: We intentionally preserve SESSION_ID_KEY so subsequent logins from this
     // device reuse the existing session rather than creating duplicate sessions.
     currentToken.value = undefined
@@ -185,6 +181,21 @@ export function useAuth() {
     }
   }
 
+  async function refresh(): Promise<boolean> {
+    try {
+      const data = await refreshUserToken()
+      if (data?.accessToken) {
+        setTokens(data)
+        return true
+      }
+      clearAuth()
+      return false
+    } catch {
+      clearAuth()
+      return false
+    }
+  }
+
   function hasRole(requiredRole: string): boolean {
     if (!currentUser.value?.role) {
       return false
@@ -200,6 +211,7 @@ export function useAuth() {
     isSubmitting,
     login,
     register,
+    refresh,
     logout,
     logoutAll,
     hasRole,

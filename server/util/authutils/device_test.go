@@ -1,9 +1,9 @@
-package auth_test
+package authutils_test
 
 import (
 	"testing"
 
-	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/auth"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -67,7 +67,7 @@ func TestParseDeviceName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			actual := auth.ParseDeviceName(tt.userAgent)
+			actual := authutils.ParseDeviceName(tt.userAgent)
 			assert.Equal(t, tt.expected, actual)
 		})
 	}

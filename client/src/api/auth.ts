@@ -1,42 +1,20 @@
-import { publicApi, authApi } from './client'
+import { publicApi, authApi, executeRefreshToken } from './client'
+import type {
+  LoginRequest,
+  RegisterRequest,
+  TokenResponse,
+  SessionInfo,
+  ServerInfoResponse,
+} from '@/types/auth'
 
-export interface LoginRequest {
-  username: string
-  password: string
-  email?: string
-  sessionId?: string
-}
-
-export interface RegisterRequest {
-  username: string
-  email: string
-  password: string
-}
-
-export interface TokenResponse {
-  accessToken: string
-  refreshToken?: string
-  sessionId?: string
-}
-
-export interface RefreshRequest {
-  refreshToken: string
-}
-
-export interface SessionInfo {
-  id: string
-  deviceName: string
-  createdAt: string
-  expiresAt: string
-  isCurrent: boolean
-}
-
-export interface ServerInfoResponse {
-  build: string
-  version: string
-  commitHash: string
-  buildTimestamp: string
-}
+export type {
+  LoginRequest,
+  RegisterRequest,
+  TokenResponse,
+  RefreshRequest,
+  SessionInfo,
+  ServerInfoResponse,
+} from '@/types/auth'
 
 /**
  * Authenticates user credentials without requiring authorization headers
@@ -55,13 +33,14 @@ export async function registerUser(credentials: RegisterRequest): Promise<TokenR
 }
 
 /**
- * Refreshes JWT tokens using a refresh token
+ * Refreshes JWT tokens using the HTTP-only refresh token cookie (or optional fallback token)
  */
-export async function refreshUserToken(refreshToken: string): Promise<TokenResponse> {
-  const response = await publicApi.post<TokenResponse>('/auth/refresh', {
-    refreshToken,
-  })
-  return response.data
+export async function refreshUserToken(refreshToken?: string): Promise<TokenResponse> {
+  if (refreshToken) {
+    const response = await publicApi.post<TokenResponse>('/auth/refresh', { refreshToken })
+    return response.data
+  }
+  return executeRefreshToken()
 }
 
 /**
@@ -82,7 +61,7 @@ export async function logoutAllSessions(): Promise<void> {
  * Lists all active user sessions
  */
 export async function listUserSessions(): Promise<SessionInfo[]> {
-  const response = await authApi.get<SessionInfo[]>('/auth/sessions')
+  const response = await authApi.get<SessionInfo[]>('/auth/session')
   return response.data
 }
 
@@ -90,7 +69,7 @@ export async function listUserSessions(): Promise<SessionInfo[]> {
  * Revokes a specific session by ID
  */
 export async function revokeUserSession(sessionId: string): Promise<void> {
-  await authApi.delete(`/auth/sessions/${sessionId}`)
+  await authApi.delete(`/auth/session/${sessionId}`)
 }
 
 /**

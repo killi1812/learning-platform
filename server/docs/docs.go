@@ -17,7 +17,7 @@ const docTemplate = `{
     "paths": {
         "/auth/login": {
             "post": {
-                "description": "Authenticates a user and returns access and refresh tokens",
+                "description": "Authenticates a user and returns access token; sets HTTP-only refresh token cookie",
                 "consumes": [
                     "application/json"
                 ],
@@ -74,7 +74,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Logs out current user session only",
+                "description": "Logs out current user session and clears refresh token cookie",
                 "produces": [
                     "application/json"
                 ],
@@ -120,7 +120,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Logs out all active sessions for current user",
+                "description": "Logs out all active sessions for current user and clears refresh token cookie",
                 "produces": [
                     "application/json"
                 ],
@@ -166,7 +166,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Generates a new access token and refresh token using a valid refresh token",
+                "description": "Generates a new access token and rotates HTTP-only refresh token cookie",
                 "consumes": [
                     "application/json"
                 ],
@@ -179,7 +179,7 @@ const docTemplate = `{
                 "summary": "Refresh Access Token",
                 "parameters": [
                     {
-                        "description": "Refresh token payload",
+                        "description": "Refresh token payload (optional if cookie is present)",
                         "name": "refreshDto",
                         "in": "body",
                         "schema": {
@@ -217,7 +217,7 @@ const docTemplate = `{
         },
         "/auth/register": {
             "post": {
-                "description": "Registers a new user and returns access and refresh tokens",
+                "description": "Registers a new user and returns access token; sets HTTP-only refresh token cookie",
                 "consumes": [
                     "application/json"
                 ],
@@ -267,7 +267,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/auth/sessions": {
+        "/auth/session": {
             "get": {
                 "security": [
                     {
@@ -313,7 +313,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/auth/sessions/{id}": {
+        "/auth/session/{uuid}": {
             "delete": {
                 "security": [
                     {
@@ -332,7 +332,7 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "description": "Session ID (UUID)",
-                        "name": "id",
+                        "name": "uuid",
                         "in": "path",
                         "required": true
                     }

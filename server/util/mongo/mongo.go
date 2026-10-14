@@ -2,6 +2,7 @@ package mongo
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -9,14 +10,20 @@ import (
 	"go.uber.org/zap"
 )
 
+var (
+	ErrEmptyURI    = errors.New("mongodb uri is empty")
+	ErrEmptyDbName = errors.New("mongodb database name is empty")
+)
+
 // NewMongoDb initializes and returns a MongoDB database connection.
-func NewMongoDb(uri, dbName string) *mongo.Database {
+func NewMongoDb(uri, dbName string) (*mongo.Database, error) {
 	if uri == "" {
 		zap.S().Errorf("MongoDB uri is empty")
-		// TODO: return error
+		return nil, ErrEmptyURI
 	}
 	if dbName == "" {
-		// TODO: same as name
+		zap.S().Errorf("MongoDB database name is empty")
+		return nil, ErrEmptyDbName
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -24,7 +31,8 @@ func NewMongoDb(uri, dbName string) *mongo.Database {
 
 	client, err := mongo.Connect(options.Client().ApplyURI(uri))
 	if err != nil {
-		zap.S().Panicf("failed to create MongoDB client: %+v", err)
+		zap.S().Errorf("failed to create MongoDB client: %+v", err)
+		return nil, err
 	}
 
 	if err := client.Ping(ctx, nil); err != nil {
@@ -33,5 +41,5 @@ func NewMongoDb(uri, dbName string) *mongo.Database {
 		zap.S().Info("Successfully connected to MongoDB")
 	}
 
-	return client.Database(dbName)
+	return client.Database(dbName), nil
 }

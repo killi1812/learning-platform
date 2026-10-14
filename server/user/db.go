@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/auth"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
 
 	"github.com/google/uuid"
 	"github.com/xrash/smetrics"
@@ -99,7 +99,7 @@ func (u *UserCrudService) Create(user *User, password string) (*User, error) {
 		return nil, errors.New("username already exists")
 	}
 
-	hash, err := auth.HashPassword(password)
+	hash, err := authutils.HashPassword(password)
 	if err != nil {
 		return nil, err
 	}

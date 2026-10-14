@@ -152,6 +152,7 @@ async function handleLogin() {
       headers: {
         'Content-Type': 'application/json',
       },
+      credentials: 'include',
       body: JSON.stringify({
         username: username.value,
         password: password.value,
@@ -162,9 +163,6 @@ async function handleLogin() {
 
     if (res.ok && data.accessToken) {
       localStorage.setItem('accessToken', data.accessToken)
-      if (data.refreshToken) {
-        localStorage.setItem('refreshToken', data.refreshToken)
-      }
       authenticatedUser.value = username.value
       authResult.value = {
         success: true,
@@ -202,13 +200,13 @@ async function logout() {
         headers: {
           Authorization: `Bearer ${token}`,
         },
+        credentials: 'include',
       })
     } catch {
       // Ignore network errors on logout
     }
   }
   localStorage.removeItem('accessToken')
-  localStorage.removeItem('refreshToken')
   authenticatedUser.value = null
   authResult.value = null
 }

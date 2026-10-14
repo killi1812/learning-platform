@@ -1,4 +1,4 @@
-package auth_test
+package authutils_test
 
 import (
 	"errors"
@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
-	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/auth"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/cerror"
 
 	"github.com/golang-jwt/jwt/v4"
@@ -21,7 +21,7 @@ func TestParseToken(t *testing.T) {
 
 	now := time.Now()
 	accessTokenDuration := 5 * time.Minute
-	validClaims := auth.Claims{
+	validClaims := authutils.Claims{
 		Username: "test@example.com",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(accessTokenDuration)),
@@ -36,7 +36,7 @@ func TestParseToken(t *testing.T) {
 	invalidSignatureTokenString, _ := invalidSignatureToken.SignedString([]byte("wrong-key"))
 	invalidSignatureAuthHeader := "Bearer " + invalidSignatureTokenString
 
-	expiredClaims := auth.Claims{
+	expiredClaims := authutils.Claims{
 		Username: "expired@example.com",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(-time.Minute)),
@@ -51,7 +51,7 @@ func TestParseToken(t *testing.T) {
 		name       string
 		authHeader string
 		wantToken  bool
-		wantClaims *auth.Claims
+		wantClaims *authutils.Claims
 		wantErr    error
 	}{
 		{
@@ -103,7 +103,7 @@ func TestParseToken(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotToken, gotClaims, gotErr := auth.ParseToken(tt.authHeader)
+			gotToken, gotClaims, gotErr := authutils.ParseToken(tt.authHeader)
 
 			if gotErr != nil {
 				if tt.wantErr == nil || !errors.Is(gotErr, tt.wantErr) {
@@ -136,7 +136,7 @@ func TestParseToken(t *testing.T) {
 
 	t.Run("Dev mode accepts token without Bearer prefix", func(t *testing.T) {
 		app.Build = app.BuildDev
-		gotToken, gotClaims, gotErr := auth.ParseToken(validTokenString)
+		gotToken, gotClaims, gotErr := authutils.ParseToken(validTokenString)
 		if gotErr != nil {
 			t.Fatalf("ParseToken() unexpected error in dev mode: %v", gotErr)
 		}
@@ -156,19 +156,18 @@ func TestGenerateTokens(t *testing.T) {
 	userUuid := uuid.New()
 	sessionUuid := uuid.New()
 
-	access, refresh, err := auth.GenerateTokens("user@example.com", "user", auth.ROLE_USER, userUuid, sessionUuid)
+	access, refresh, err := authutils.GenerateTokens("user@example.com", "user", authutils.ROLE_USER, userUuid, sessionUuid)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, access)
 	assert.NotEmpty(t, refresh)
 
 	// Validate access token claims
-	_, claims, err := auth.ParseToken("Bearer " + access)
+	_, claims, err := authutils.ParseToken("Bearer " + access)
 	assert.NoError(t, err)
 	assert.Equal(t, userUuid.String(), claims.Subject)
 	assert.Equal(t, userUuid.String(), claims.ID)
 	assert.Equal(t, sessionUuid, claims.SessionUuid)
 	assert.Equal(t, "user@example.com", claims.Email)
 	assert.Equal(t, "user", claims.Username)
-	assert.Equal(t, auth.ROLE_USER, claims.Role)
+	assert.Equal(t, authutils.ROLE_USER, claims.Role)
 }
-

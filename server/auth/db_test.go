@@ -9,7 +9,7 @@ import (
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/testutil"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
-	authUtil "git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/auth"
+	authUtil "git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/cerror"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
@@ -73,31 +73,31 @@ func TestAuthService_Unit(t *testing.T) {
 	assert.NoError(t, err)
 
 	t.Run("Login with unknown identifier returns ErrInvalidCredentials", func(t *testing.T) {
-		_, _, _, err := svc.Login("nonexistent", "validPassword123", "", "", "")
+		_, err := svc.Login("nonexistent", "validPassword123", "", "", "")
 		assert.ErrorIs(t, err, cerror.ErrInvalidCredentials)
 	})
 
 	t.Run("Login with wrong password returns ErrInvalidCredentials", func(t *testing.T) {
-		_, _, _, err := svc.Login("tester", "wrongPassword", "", "", "")
+		_, err := svc.Login("tester", "wrongPassword", "", "", "")
 		assert.ErrorIs(t, err, cerror.ErrInvalidCredentials)
 	})
 
 	t.Run("Login is case-insensitive for username and email", func(t *testing.T) {
-		tok1, ref1, sess1, err := svc.Login("TESTER", "validPassword123", "", "", "")
+		tokens1, err := svc.Login("TESTER", "validPassword123", "", "", "")
 		assert.NoError(t, err)
-		assert.NotEmpty(t, tok1)
-		assert.NotEmpty(t, ref1)
-		assert.NotEmpty(t, sess1)
+		assert.NotEmpty(t, tokens1.AccessToken)
+		assert.NotEmpty(t, tokens1.RefreshToken)
+		assert.NotEmpty(t, tokens1.SessionId)
 
-		tok2, ref2, sess2, err := svc.Login("Tester@Example.com", "validPassword123", "", "", "")
+		tokens2, err := svc.Login("Tester@Example.com", "validPassword123", "", "", "")
 		assert.NoError(t, err)
-		assert.NotEmpty(t, tok2)
-		assert.NotEmpty(t, ref2)
-		assert.NotEmpty(t, sess2)
+		assert.NotEmpty(t, tokens2.AccessToken)
+		assert.NotEmpty(t, tokens2.RefreshToken)
+		assert.NotEmpty(t, tokens2.SessionId)
 	})
 
 	t.Run("RefreshTokens with malformed token", func(t *testing.T) {
-		_, _, _, err := svc.RefreshTokens("invalid-token")
+		_, err := svc.RefreshTokens("invalid-token")
 		assert.Error(t, err)
 	})
 
@@ -107,26 +107,33 @@ func TestAuthService_Unit(t *testing.T) {
 		}
 		tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 		signed, _ := tok.SignedString([]byte(app.RefreshKey))
-		_, _, _, err := svc.RefreshTokens("Bearer " + signed)
+		_, err := svc.RefreshTokens("Bearer " + signed)
 		assert.Error(t, err)
 	})
 
-	t.Run("LogoutCurrent with invalid uuid string", func(t *testing.T) {
-		err := svc.LogoutCurrent("not-a-uuid", uuid.New())
+	t.Run("RefreshTokens with nil mongoDb returns error", func(t *testing.T) {
+		_, validRefresh, err := authUtil.GenerateTokens("tester@example.com", "tester", authUtil.ROLE_USER, userUuid)
+		assert.NoError(t, err)
+		_, err = svc.RefreshTokens(validRefresh)
 		assert.Error(t, err)
 	})
 
-	t.Run("LogoutAll with invalid uuid string", func(t *testing.T) {
-		err := svc.LogoutAll("not-a-uuid")
-		assert.Error(t, err)
+	t.Run("LogoutCurrent with nil mongoDb returns nil", func(t *testing.T) {
+		err := svc.LogoutCurrent(uuid.New(), uuid.New())
+		assert.NoError(t, err)
+	})
+
+	t.Run("LogoutAll with nil mongoDb returns nil", func(t *testing.T) {
+		err := svc.LogoutAll(uuid.New())
+		assert.NoError(t, err)
 	})
 
 	t.Run("Register new user succeeds and normalizes lowercase", func(t *testing.T) {
-		token, refresh, sessId, err := svc.Register("BrandNew", "BrandNew@Example.Com", "Password123", "Mozilla/5.0", "127.0.0.1")
+		tokens, err := svc.Register("BrandNew", "BrandNew@Example.Com", "Password123", "Mozilla/5.0", "127.0.0.1")
 		assert.NoError(t, err)
-		assert.NotEmpty(t, token)
-		assert.NotEmpty(t, refresh)
-		assert.NotEmpty(t, sessId)
+		assert.NotEmpty(t, tokens.AccessToken)
+		assert.NotEmpty(t, tokens.RefreshToken)
+		assert.NotEmpty(t, tokens.SessionId)
 
 		var created user.User
 		err = gormDb.Where("username = ?", "brandnew").First(&created).Error
@@ -136,19 +143,19 @@ func TestAuthService_Unit(t *testing.T) {
 	})
 
 	t.Run("Register duplicate username returns error", func(t *testing.T) {
-		_, _, _, err := svc.Register("tester", "other@example.com", "Password123", "", "")
+		_, err := svc.Register("tester", "other@example.com", "Password123", "", "")
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, cerror.ErrUserAlreadyExists)
 	})
 
 	t.Run("Register duplicate username with differing case returns error", func(t *testing.T) {
-		_, _, _, err := svc.Register("TESTER", "other2@example.com", "Password123", "", "")
+		_, err := svc.Register("TESTER", "other2@example.com", "Password123", "", "")
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, cerror.ErrUserAlreadyExists)
 	})
 
 	t.Run("Register duplicate email returns error", func(t *testing.T) {
-		_, _, _, err := svc.Register("uniqueusername", "tester@example.com", "Password123", "", "")
+		_, err := svc.Register("uniqueusername", "tester@example.com", "Password123", "", "")
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, cerror.ErrUserAlreadyExists)
 	})
@@ -187,32 +194,32 @@ func TestAuthService_Integration(t *testing.T) {
 
 	t.Run("Login with valid username stores hashed token and device name", func(t *testing.T) {
 		ua := "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36"
-		token, refresh, sessId, err := svc.Login("tester", "validPassword123", ua, "192.168.1.10", "")
+		tokens, err := svc.Login("tester", "validPassword123", ua, "192.168.1.10", "")
 		assert.NoError(t, err)
-		assert.NotEmpty(t, token)
-		assert.NotEmpty(t, refresh)
-		assert.NotEmpty(t, sessId)
+		assert.NotEmpty(t, tokens.AccessToken)
+		assert.NotEmpty(t, tokens.RefreshToken)
+		assert.NotEmpty(t, tokens.SessionId)
 
-		firstRefreshToken = refresh
+		firstRefreshToken = tokens.RefreshToken
 
 		// Verify session was inserted in Mongo
 		var claims authUtil.Claims
-		_, _ = jwt.ParseWithClaims(token, &claims, func(t *jwt.Token) (any, error) {
+		_, _ = jwt.ParseWithClaims(tokens.AccessToken, &claims, func(t *jwt.Token) (any, error) {
 			return []byte(app.AccessKey), nil
 		})
 		firstSessionUuid = claims.SessionUuid
-		assert.Equal(t, firstSessionUuid.String(), sessId)
+		assert.Equal(t, firstSessionUuid.String(), tokens.SessionId)
 
 		var session user.Session
 		findErr := mongoDb.Collection("sessions").FindOne(ctx, bson.M{"session_uuid": firstSessionUuid}).Decode(&session)
 		assert.NoError(t, findErr)
-		assert.Equal(t, hashToken(refresh), session.RefreshToken)
+		assert.Equal(t, hashToken(tokens.RefreshToken), session.RefreshToken)
 		assert.Equal(t, "Chrome on Linux", session.DeviceName)
 		assert.Equal(t, "192.168.1.10", session.IpAddress)
 	})
 
 	t.Run("ListSessions returns active sessions with current indicator", func(t *testing.T) {
-		sessions, err := svc.ListSessions(userUuid.String(), firstSessionUuid)
+		sessions, err := svc.ListSessions(userUuid, firstSessionUuid)
 		assert.NoError(t, err)
 		assert.Len(t, sessions, 1)
 		assert.Equal(t, firstSessionUuid.String(), sessions[0].Id)
@@ -221,13 +228,13 @@ func TestAuthService_Integration(t *testing.T) {
 	})
 
 	t.Run("RefreshTokens preserves SessionUuid and rotates TokenUuid and hashed refresh token", func(t *testing.T) {
-		newToken, newRefresh, _, err := svc.RefreshTokens("Bearer " + firstRefreshToken)
+		newTokens, err := svc.RefreshTokens("Bearer " + firstRefreshToken)
 		assert.NoError(t, err)
-		assert.NotEmpty(t, newToken)
-		assert.NotEmpty(t, newRefresh)
+		assert.NotEmpty(t, newTokens.AccessToken)
+		assert.NotEmpty(t, newTokens.RefreshToken)
 
 		var newClaims authUtil.Claims
-		_, _ = jwt.ParseWithClaims(newToken, &newClaims, func(t *jwt.Token) (any, error) {
+		_, _ = jwt.ParseWithClaims(newTokens.AccessToken, &newClaims, func(t *jwt.Token) (any, error) {
 			return []byte(app.AccessKey), nil
 		})
 		assert.Equal(t, firstSessionUuid, newClaims.SessionUuid)
@@ -236,10 +243,10 @@ func TestAuthService_Integration(t *testing.T) {
 		var session user.Session
 		findErr := mongoDb.Collection("sessions").FindOne(ctx, bson.M{"session_uuid": firstSessionUuid}).Decode(&session)
 		assert.NoError(t, findErr)
-		assert.Equal(t, hashToken(newRefresh), session.RefreshToken)
+		assert.Equal(t, hashToken(newTokens.RefreshToken), session.RefreshToken)
 
 		// Token reuse detection test: using the old firstRefreshToken should be rejected and revoke session
-		_, _, _, reuseErr := svc.RefreshTokens("Bearer " + firstRefreshToken)
+		_, reuseErr := svc.RefreshTokens("Bearer " + firstRefreshToken)
 		assert.Error(t, reuseErr)
 
 		// Session should have been deleted due to reuse detection
@@ -249,42 +256,42 @@ func TestAuthService_Integration(t *testing.T) {
 	})
 
 	t.Run("Multiple logins create separate sessions without destroying previous", func(t *testing.T) {
-		_, _, _, err1 := svc.Login("tester", "validPassword123", "PostmanRuntime/7.36.0", "10.0.0.1", "")
+		_, err1 := svc.Login("tester", "validPassword123", "PostmanRuntime/7.36.0", "10.0.0.1", "")
 		assert.NoError(t, err1)
-		_, _, _, err2 := svc.Login("tester", "validPassword123", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Safari/604.1", "10.0.0.2", "")
+		_, err2 := svc.Login("tester", "validPassword123", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Safari/604.1", "10.0.0.2", "")
 		assert.NoError(t, err2)
 
-		sessions, err := svc.ListSessions(userUuid.String(), uuid.New())
+		sessions, err := svc.ListSessions(userUuid, uuid.New())
 		assert.NoError(t, err)
 		assert.GreaterOrEqual(t, len(sessions), 2)
 
 		// Revoke one session
 		targetId, _ := uuid.Parse(sessions[0].Id)
-		err = svc.RevokeSession(userUuid.String(), targetId)
+		err = svc.RevokeSession(userUuid, targetId)
 		assert.NoError(t, err)
 
-		remainingSessions, err := svc.ListSessions(userUuid.String(), uuid.New())
+		remainingSessions, err := svc.ListSessions(userUuid, uuid.New())
 		assert.NoError(t, err)
 		assert.Equal(t, len(sessions)-1, len(remainingSessions))
 
 		// LogoutAll removes all sessions
-		err = svc.LogoutAll(userUuid.String())
+		err = svc.LogoutAll(userUuid)
 		assert.NoError(t, err)
 
-		finalSessions, err := svc.ListSessions(userUuid.String(), uuid.New())
+		finalSessions, err := svc.ListSessions(userUuid, uuid.New())
 		assert.NoError(t, err)
 		assert.Empty(t, finalSessions)
 	})
 
 	t.Run("Re-login with expired session UUID reactivates existing session document without duplicate", func(t *testing.T) {
 		// Clean up any remaining sessions
-		_ = svc.LogoutAll(userUuid.String())
+		_ = svc.LogoutAll(userUuid)
 
 		// First login
-		tok, _, sessId, err := svc.Login("tester", "validPassword123", "Chrome on Linux", "127.0.0.1", "")
+		loginTokens, err := svc.Login("tester", "validPassword123", "Chrome on Linux", "127.0.0.1", "")
 		assert.NoError(t, err)
-		assert.NotEmpty(t, tok)
-		parsedSessUuid, err := uuid.Parse(sessId)
+		assert.NotEmpty(t, loginTokens.AccessToken)
+		parsedSessUuid, err := uuid.Parse(loginTokens.SessionId)
 		assert.NoError(t, err)
 
 		// Verify 1 active session in DB
@@ -301,15 +308,15 @@ func TestAuthService_Integration(t *testing.T) {
 		assert.NoError(t, err)
 
 		// ListSessions should filter out expired session
-		activeSessions, err := svc.ListSessions(userUuid.String(), uuid.New())
+		activeSessions, err := svc.ListSessions(userUuid, uuid.New())
 		assert.NoError(t, err)
 		assert.Empty(t, activeSessions, "Expired session should not be returned by ListSessions")
 
 		// Re-login passing the persistent sessionId
-		tok2, _, reSessId, err := svc.Login("tester", "validPassword123", "Chrome on Linux", "127.0.0.1", sessId)
+		loginTokens2, err := svc.Login("tester", "validPassword123", "Chrome on Linux", "127.0.0.1", loginTokens.SessionId)
 		assert.NoError(t, err)
-		assert.NotEmpty(t, tok2)
-		assert.Equal(t, sessId, reSessId, "Should reuse the existing session UUID")
+		assert.NotEmpty(t, loginTokens2.AccessToken)
+		assert.Equal(t, loginTokens.SessionId, loginTokens2.SessionId, "Should reuse the existing session UUID")
 
 		// Verify that NO DUPLICATE document was created in Mongo
 		countAfter, err := mongoDb.Collection("sessions").CountDocuments(ctx, bson.M{"user_uuid": userUuid})
@@ -317,10 +324,10 @@ func TestAuthService_Integration(t *testing.T) {
 		assert.Equal(t, int64(1), countAfter, "Should still have exactly 1 session document in Mongo (no duplicate)")
 
 		// Verify ListSessions now shows the reactivated session
-		reactivatedSessions, err := svc.ListSessions(userUuid.String(), parsedSessUuid)
+		reactivatedSessions, err := svc.ListSessions(userUuid, parsedSessUuid)
 		assert.NoError(t, err)
 		assert.Len(t, reactivatedSessions, 1)
-		assert.Equal(t, sessId, reactivatedSessions[0].Id)
+		assert.Equal(t, loginTokens.SessionId, reactivatedSessions[0].Id)
 		assert.True(t, reactivatedSessions[0].IsCurrent)
 		assert.True(t, reactivatedSessions[0].ExpiresAt.After(time.Now()))
 	})
@@ -329,14 +336,14 @@ func TestAuthService_Integration(t *testing.T) {
 		svc.RegisterSessionValidator()
 		defer authUtil.SetSessionValidator(nil)
 
-		tok, _, sessId, err := svc.Login("tester", "validPassword123", "Test Browser", "127.0.0.1", "")
+		loginTokens3, err := svc.Login("tester", "validPassword123", "Test Browser", "127.0.0.1", "")
 		assert.NoError(t, err)
-		parsedSessUuid, err := uuid.Parse(sessId)
+		parsedSessUuid, err := uuid.Parse(loginTokens3.SessionId)
 		assert.NoError(t, err)
 
 		// Parse token claims
 		var claims authUtil.Claims
-		_, _ = jwt.ParseWithClaims(tok, &claims, func(t *jwt.Token) (any, error) {
+		_, _ = jwt.ParseWithClaims(loginTokens3.AccessToken, &claims, func(t *jwt.Token) (any, error) {
 			return []byte(app.AccessKey), nil
 		})
 
@@ -350,7 +357,7 @@ func TestAuthService_Integration(t *testing.T) {
 		assert.NoError(t, findErr)
 
 		// Revoke session
-		err = svc.RevokeSession(userUuid.String(), parsedSessUuid)
+		err = svc.RevokeSession(userUuid, parsedSessUuid)
 		assert.NoError(t, err)
 
 		// Verification in Mongo: session is gone
@@ -371,4 +378,23 @@ func TestNewAuthService(t *testing.T) {
 		Logger:  zap.NewNop().Sugar(),
 	})
 	assert.NotNil(t, svc)
+}
+
+func TestAuthService_RefreshTokens_NilMongoDb(t *testing.T) {
+	gormDb := testutil.NewSqliteTestDb(t, &user.User{})
+	svc := NewAuthService(AuthServiceParams{
+		GormDb:  gormDb,
+		MongoDb: nil,
+		Logger:  zap.NewNop().Sugar(),
+	})
+
+	userUuid := uuid.New()
+	sessionUuid := uuid.New()
+	_, validRefreshToken, err := authUtil.GenerateTokens("test@example.com", "testuser", authUtil.ROLE_USER, userUuid, sessionUuid)
+	assert.NoError(t, err)
+
+	tokens, err := svc.RefreshTokens("Bearer " + validRefreshToken)
+	assert.Error(t, err)
+	assert.Nil(t, tokens)
+	assert.Equal(t, "database connection unavailable", err.Error())
 }

@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
-	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/auth"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 )
@@ -16,7 +16,7 @@ func TestUser_Update(t *testing.T) {
 		Uuid:         uuid.New(),
 		Username:     "oldname",
 		Email:        "old@example.com",
-		Role:         auth.ROLE_USER,
+		Role:         authutils.ROLE_USER,
 		PasswordHash: "secret",
 	}
 	u.UpdatedAt = oldTime
@@ -24,13 +24,13 @@ func TestUser_Update(t *testing.T) {
 	newData := &user.User{
 		Username: "newname",
 		Email:    "new@example.com",
-		Role:     auth.ROLE_ADMIN,
+		Role:     authutils.ROLE_ADMIN,
 	}
 
 	res := u.Update(newData)
 	assert.Equal(t, "newname", res.Username)
 	assert.Equal(t, "new@example.com", res.Email)
-	assert.Equal(t, auth.ROLE_ADMIN, res.Role)
+	assert.Equal(t, authutils.ROLE_ADMIN, res.Role)
 	assert.Equal(t, "secret", res.PasswordHash) // preserved
 	assert.True(t, res.UpdatedAt.After(oldTime))
 }

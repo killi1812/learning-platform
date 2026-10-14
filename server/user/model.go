@@ -3,7 +3,7 @@ package user
 import (
 	"time"
 
-	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/auth"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
 	"gorm.io/gorm"
 
 	"github.com/google/uuid"
@@ -22,11 +22,11 @@ type Session struct {
 
 type User struct {
 	gorm.Model
-	Uuid         uuid.UUID `json:"uuid" gorm:"type:uuid;uniqueIndex;not null"`
-	Username     string    `json:"username" gorm:"type:varchar(255);uniqueIndex;not null"`
-	Email        string    `json:"email" gorm:"type:varchar(255);uniqueIndex;not null"`
-	PasswordHash string    `json:"passwordHash" gorm:"type:varchar(255);not null"`
-	Role         auth.Role `json:"role" gorm:"type:varchar(32);not null;default:'user'"`
+	Uuid         uuid.UUID      `json:"uuid" gorm:"type:uuid;uniqueIndex;not null"`
+	Username     string         `json:"username" gorm:"type:varchar(255);uniqueIndex;not null"`
+	Email        string         `json:"email" gorm:"type:varchar(255);uniqueIndex;not null"`
+	PasswordHash string         `json:"passwordHash" gorm:"type:varchar(255);not null"`
+	Role         authutils.Role `json:"role" gorm:"type:varchar(32);not null;default:'user'"`
 }
 
 func (u *User) Update(user *User) *User {

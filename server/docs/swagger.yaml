@@ -109,7 +109,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Authenticates a user and returns access and refresh tokens
+      description: Authenticates a user and returns access token; sets HTTP-only refresh
+        token cookie
       parameters:
       - description: Login credentials
         in: body
@@ -141,7 +142,7 @@ paths:
       - auth
   /auth/logout:
     post:
-      description: Logs out current user session only
+      description: Logs out current user session and clears refresh token cookie
       produces:
       - application/json
       responses:
@@ -170,7 +171,8 @@ paths:
       - auth
   /auth/logout-all:
     post:
-      description: Logs out all active sessions for current user
+      description: Logs out all active sessions for current user and clears refresh
+        token cookie
       produces:
       - application/json
       responses:
@@ -201,10 +203,10 @@ paths:
     post:
       consumes:
       - application/json
-      description: Generates a new access token and refresh token using a valid refresh
-        token
+      description: Generates a new access token and rotates HTTP-only refresh token
+        cookie
       parameters:
-      - description: Refresh token payload
+      - description: Refresh token payload (optional if cookie is present)
         in: body
         name: refreshDto
         schema:
@@ -237,7 +239,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Registers a new user and returns access and refresh tokens
+      description: Registers a new user and returns access token; sets HTTP-only refresh
+        token cookie
       parameters:
       - description: Registration credentials
         in: body
@@ -267,7 +270,7 @@ paths:
       summary: User registration
       tags:
       - auth
-  /auth/sessions:
+  /auth/session:
     get:
       description: Returns all active sessions for the authenticated user
       produces:
@@ -296,13 +299,13 @@ paths:
       summary: List Active Sessions
       tags:
       - auth
-  /auth/sessions/{id}:
+  /auth/session/{uuid}:
     delete:
       description: Revokes a specific session by its ID
       parameters:
       - description: Session ID (UUID)
         in: path
-        name: id
+        name: uuid
         required: true
         type: string
       produces:

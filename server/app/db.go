@@ -13,7 +13,7 @@ func NewGormDb() *gorm.DB {
 }
 
 // NewMongoDb initializes and returns the MongoDB connection used for ephemeral session storage.
-func NewMongoDb() *mongo.Database {
+func NewMongoDb() (*mongo.Database, error) {
 	return utilMongo.NewMongoDb(MongoConn, "learning_platform")
 }
 

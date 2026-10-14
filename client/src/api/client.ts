@@ -10,6 +10,7 @@ export const publicApi = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true,
 })
 
 /**
@@ -20,6 +21,7 @@ export const authApi = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true,
 })
 
 // Request interceptor: automatically add Bearer token to requests
@@ -42,6 +44,42 @@ interface QueuedPromise {
 let isRefreshing = false
 let failedQueue: QueuedPromise[] = []
 
+export interface RefreshTokenResult {
+  accessToken: string
+  sessionId?: string
+}
+
+let activeRefreshPromise: Promise<RefreshTokenResult> | null = null
+
+/**
+ * Deduplicated token refresh executor. Guarantees that only a single request
+ * to /auth/refresh is in flight at any given time.
+ */
+export async function executeRefreshToken(): Promise<RefreshTokenResult> {
+  if (activeRefreshPromise) {
+    return activeRefreshPromise
+  }
+
+  activeRefreshPromise = (async () => {
+    try {
+      const { data } = await publicApi.post<RefreshTokenResult>('/auth/refresh')
+      localStorage.setItem('accessToken', data.accessToken)
+      if (data.sessionId) {
+        localStorage.setItem('sessionId', data.sessionId)
+      }
+      authApi.defaults.headers.common.Authorization = `Bearer ${data.accessToken}`
+      window.dispatchEvent(
+        new CustomEvent('auth:token-refreshed', { detail: { accessToken: data.accessToken } }),
+      )
+      return data
+    } finally {
+      activeRefreshPromise = null
+    }
+  })()
+
+  return activeRefreshPromise
+}
+
 function processQueue(error: unknown, token: string | null = null) {
   failedQueue.forEach(prom => {
     if (error) {
@@ -55,7 +93,6 @@ function processQueue(error: unknown, token: string | null = null) {
 
 function handleAuthFailure() {
   localStorage.removeItem('accessToken')
-  localStorage.removeItem('refreshToken')
   window.dispatchEvent(new Event('auth:logout'))
 
   const currentPath = window.location.pathname
@@ -77,12 +114,6 @@ authApi.interceptors.response.use(
     const status = error.response?.status
 
     if (status === 401 && originalRequest && !originalRequest._retry) {
-      const refreshToken = localStorage.getItem('refreshToken')
-      if (!refreshToken) {
-        handleAuthFailure()
-        return Promise.reject(error)
-      }
-
       if (isRefreshing) {
         return new Promise<string>((resolve, reject) => {
           failedQueue.push({ resolve, reject })
@@ -98,23 +129,8 @@ authApi.interceptors.response.use(
       isRefreshing = true
 
       try {
-        const { data } = await publicApi.post<{ accessToken: string; refreshToken?: string }>(
-          '/auth/refresh',
-          { refreshToken },
-        )
-
-        localStorage.setItem('accessToken', data.accessToken)
-        if (data.refreshToken) {
-          localStorage.setItem('refreshToken', data.refreshToken)
-        }
-
-        authApi.defaults.headers.common.Authorization = `Bearer ${data.accessToken}`
+        const data = await executeRefreshToken()
         originalRequest.headers.Authorization = `Bearer ${data.accessToken}`
-
-        window.dispatchEvent(
-          new CustomEvent('auth:token-refreshed', { detail: { accessToken: data.accessToken } }),
-        )
-
         processQueue(null, data.accessToken)
         return authApi(originalRequest)
       } catch (refreshErr) {

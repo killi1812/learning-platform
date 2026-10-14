@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
-	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/auth"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/ginutil"
 
 	"github.com/gin-gonic/gin"
@@ -28,10 +28,10 @@ func (u *UserCtn) RegisterEndpoints(api *gin.RouterGroup) {
 	group := api.Group("/user")
 
 	// Protected endpint
-	group.GET("/my-data", auth.Protect(), u.getLoggedInUser)
+	group.GET("/my-data", authutils.Protect(), u.getLoggedInUser)
 
 	// register Endpoints
-	group.Use(auth.Protect(auth.ROLE_ADMIN))
+	group.Use(authutils.Protect(authutils.ROLE_ADMIN))
 	group.POST("/", u.create)
 	group.GET("/:uuid", u.get)
 	group.PUT("/:uuid", u.update)
@@ -191,7 +191,7 @@ func (u *UserCtn) delete(c *gin.Context) {
 //	@Failure		500
 //	@Router			/user/my-data [get]
 func (u *UserCtn) getLoggedInUser(c *gin.Context) {
-	userUuid, err := auth.GetUserUUID(c)
+	userUuid, err := authutils.GetUserUUID(c)
 	if err != nil {
 		u.logger.Errorf("Failed to retrieve user UUID from context: %v", err)
 		c.AbortWithStatus(http.StatusUnauthorized)
@@ -220,14 +220,14 @@ func (u *UserCtn) getLoggedInUser(c *gin.Context) {
 //	@Failure		500
 //	@Router			/user/all-users [get]
 func (u *UserCtn) getAllUsersForSuperAdmin(c *gin.Context) {
-	claims, ok := auth.GetClaims(c)
+	claims, ok := authutils.GetClaims(c)
 	if !ok || claims == nil {
 		u.logger.Error("Claims not found in context")
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
 
-	if claims.Role != auth.ROLE_ADMIN {
+	if claims.Role != authutils.ROLE_ADMIN {
 		u.logger.Warnf("Unauthorized access attempt by user with role: %s", claims.Role)
 		c.AbortWithStatus(http.StatusForbidden)
 		return

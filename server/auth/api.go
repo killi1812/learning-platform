@@ -2,15 +2,16 @@ package auth
 
 import (
 	"errors"
+	"net"
 	"net/http"
 	"strings"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
-	authUtil "git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/auth"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/cerror"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/ginutil"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -34,16 +35,66 @@ func (c *AuthCtn) RegisterEndpoints(api *gin.RouterGroup) {
 	group.POST("/refresh", c.refreshToken)
 
 	// Protected session endpoints
-	group.POST("/logout", authUtil.Protect(), c.logoutCurrent)
-	group.POST("/logout-all", authUtil.Protect(), c.logoutAll)
-	group.GET("/sessions", authUtil.Protect(), c.listSessions)
-	group.DELETE("/sessions/:id", authUtil.Protect(), c.revokeSession)
+	protected := group.Group("").Use(authutils.Protect())
+	protected.POST("/logout", c.logoutCurrent)
+	protected.POST("/logout-all", c.logoutAll)
+	protected.GET("/session", c.listSessions)
+	protected.DELETE("/session/:uuid", c.revokeSession)
+}
+
+const (
+	RefreshTokenCookieName   = "refresh_token"
+	RefreshTokenCookiePath   = "/api/auth"
+	RefreshTokenCookieMaxAge = 7 * 24 * 3600 // 7 days in seconds
+)
+
+func isSecureCookie(c *gin.Context) bool {
+	if c.Request.TLS != nil {
+		return true
+	}
+	if strings.EqualFold(c.Request.Header.Get("X-Forwarded-Proto"), "https") {
+		return true
+	}
+	host := c.Request.Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
+		return false
+	}
+	return app.Build == app.BuildProd
+}
+
+func setRefreshTokenCookie(c *gin.Context, refreshToken string) {
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie(
+		RefreshTokenCookieName,
+		refreshToken,
+		RefreshTokenCookieMaxAge,
+		RefreshTokenCookiePath,
+		"",
+		isSecureCookie(c),
+		true,
+	)
+}
+
+func clearRefreshTokenCookie(c *gin.Context) {
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie(
+		RefreshTokenCookieName,
+		"",
+		-1,
+		RefreshTokenCookiePath,
+		"",
+		isSecureCookie(c),
+		true,
+	)
 }
 
 // Login godoc
 //
 //	@Summary		User login
-//	@Description	Authenticates a user and returns access and refresh tokens
+//	@Description	Authenticates a user and returns access token; sets HTTP-only refresh token cookie
 //	@Tags			auth
 //	@Accept			json
 //	@Produce		json
@@ -61,24 +112,22 @@ func (l *AuthCtn) login(c *gin.Context) {
 		return
 	}
 
-	accessToken, refreshToken, sessionId, err := l.auth.Login(loginDto.Username, loginDto.Password, c.Request.UserAgent(), c.ClientIP(), loginDto.SessionId)
+	tokens, err := l.auth.Login(loginDto.Username, loginDto.Password, c.Request.UserAgent(), c.ClientIP(), loginDto.SessionId)
 	if err != nil {
 		l.logger.Errorf("Login failed err = %+v", err)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid username or password"})
 		return
 	}
 
-	c.JSON(http.StatusOK, TokenDto{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-		SessionId:    sessionId,
-	})
+	setRefreshTokenCookie(c, tokens.RefreshToken)
+	tokens.RefreshToken = ""
+	c.JSON(http.StatusOK, tokens)
 }
 
 // Register godoc
 //
 //	@Summary		User registration
-//	@Description	Registers a new user and returns access and refresh tokens
+//	@Description	Registers a new user and returns access token; sets HTTP-only refresh token cookie
 //	@Tags			auth
 //	@Accept			json
 //	@Produce		json
@@ -96,7 +145,7 @@ func (l *AuthCtn) register(c *gin.Context) {
 		return
 	}
 
-	accessToken, refreshToken, sessionId, err := l.auth.Register(registerDto.Username, registerDto.Email, registerDto.Password, c.Request.UserAgent(), c.ClientIP())
+	tokens, err := l.auth.Register(registerDto.Username, registerDto.Email, registerDto.Password, c.Request.UserAgent(), c.ClientIP())
 	if err != nil {
 		l.logger.Errorf("Registration failed err = %+v", err)
 		if errors.Is(err, cerror.ErrUserAlreadyExists) || strings.Contains(err.Error(), "already exists") {
@@ -107,33 +156,33 @@ func (l *AuthCtn) register(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, TokenDto{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-		SessionId:    sessionId,
-	})
+	setRefreshTokenCookie(c, tokens.RefreshToken)
+	tokens.RefreshToken = ""
+	c.JSON(http.StatusCreated, tokens)
 }
 
 // Refresh godoc
 //
 //	@Summary		Refresh Access Token
-//	@Description	Generates a new access token and refresh token using a valid refresh token
+//	@Description	Generates a new access token and rotates HTTP-only refresh token cookie
 //	@Tags			auth
 //	@Accept			json
 //	@Produce		json
-//	@Param			refreshDto	body	RefreshDto	false	"Refresh token payload"
+//	@Param			refreshDto	body	RefreshDto	false	"Refresh token payload (optional if cookie is present)"
 //	@Security		BearerAuth
 //	@Success		200	{object}	TokenDto
 //	@Failure		400	{object}	map[string]string
 //	@Failure		401	{object}	map[string]string
 //	@Router			/auth/refresh [post]
 func (l *AuthCtn) refreshToken(c *gin.Context) {
-	var refreshDto RefreshDto
-	_ = c.ShouldBindJSON(&refreshDto)
-
-	tokenStr := refreshDto.RefreshToken
-	if tokenStr == "" {
-		tokenStr = c.Request.Header.Get("Authorization")
+	tokenStr, err := c.Cookie(RefreshTokenCookieName)
+	if err != nil || tokenStr == "" {
+		var refreshDto RefreshDto
+		_ = c.ShouldBindJSON(&refreshDto)
+		tokenStr = refreshDto.RefreshToken
+		if tokenStr == "" {
+			tokenStr = c.Request.Header.Get("Authorization")
+		}
 	}
 
 	if tokenStr == "" {
@@ -141,24 +190,23 @@ func (l *AuthCtn) refreshToken(c *gin.Context) {
 		return
 	}
 
-	accessToken, newRefreshToken, sessionId, err := l.auth.RefreshTokens(tokenStr)
+	tokens, err := l.auth.RefreshTokens(tokenStr)
 	if err != nil {
 		l.logger.Errorf("Refresh failed err = %v", err)
+		clearRefreshTokenCookie(c)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired refresh token"})
 		return
 	}
 
-	c.JSON(http.StatusOK, TokenDto{
-		AccessToken:  accessToken,
-		RefreshToken: newRefreshToken,
-		SessionId:    sessionId,
-	})
+	setRefreshTokenCookie(c, tokens.RefreshToken)
+	tokens.RefreshToken = ""
+	c.JSON(http.StatusOK, tokens)
 }
 
 // LogoutCurrent godoc
 //
 //	@Summary		User Logout (Current Device)
-//	@Description	Logs out current user session only
+//	@Description	Logs out current user session and clears refresh token cookie
 //	@Tags			auth
 //	@Produce		json
 //	@Security		BearerAuth
@@ -167,14 +215,23 @@ func (l *AuthCtn) refreshToken(c *gin.Context) {
 //	@Failure		500	{object}	map[string]string
 //	@Router			/auth/logout [post]
 func (l *AuthCtn) logoutCurrent(c *gin.Context) {
-	claims, ok := authUtil.GetClaims(c)
+	clearRefreshTokenCookie(c)
+
+	userUuid, err := authutils.GetUserUUID(c)
+	if err != nil {
+		l.logger.Error("User UUID not found in context for logout")
+		c.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
+
+	claims, ok := authutils.GetClaims(c)
 	if !ok || claims == nil {
 		l.logger.Error("Claims not found in context for logout")
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
 
-	err := l.auth.LogoutCurrent(claims.ID, claims.SessionUuid)
+	err = l.auth.LogoutCurrent(userUuid, claims.SessionUuid)
 	if err != nil {
 		l.logger.Errorf("Logout current failed err = %+v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to logout"})
@@ -187,7 +244,7 @@ func (l *AuthCtn) logoutCurrent(c *gin.Context) {
 // LogoutAll godoc
 //
 //	@Summary		User Logout All Devices
-//	@Description	Logs out all active sessions for current user
+//	@Description	Logs out all active sessions for current user and clears refresh token cookie
 //	@Tags			auth
 //	@Produce		json
 //	@Security		BearerAuth
@@ -196,14 +253,16 @@ func (l *AuthCtn) logoutCurrent(c *gin.Context) {
 //	@Failure		500	{object}	map[string]string
 //	@Router			/auth/logout-all [post]
 func (l *AuthCtn) logoutAll(c *gin.Context) {
-	claims, ok := authUtil.GetClaims(c)
-	if !ok || claims == nil {
-		l.logger.Error("Claims not found in context for logout-all")
+	clearRefreshTokenCookie(c)
+
+	userUuid, err := authutils.GetUserUUID(c)
+	if err != nil {
+		l.logger.Error("User UUID not found in context for logout-all")
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
 
-	err := l.auth.LogoutAll(claims.ID)
+	err = l.auth.LogoutAll(userUuid)
 	if err != nil {
 		l.logger.Errorf("Logout all failed err = %+v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to logout all sessions"})
@@ -223,16 +282,23 @@ func (l *AuthCtn) logoutAll(c *gin.Context) {
 //	@Success		200	{array}		SessionDto
 //	@Failure		401	{object}	map[string]string
 //	@Failure		500	{object}	map[string]string
-//	@Router			/auth/sessions [get]
+//	@Router			/auth/session [get]
 func (l *AuthCtn) listSessions(c *gin.Context) {
-	claims, ok := authUtil.GetClaims(c)
+	userUuid, err := authutils.GetUserUUID(c)
+	if err != nil {
+		l.logger.Error("User UUID not found in context for listSessions")
+		c.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
+
+	claims, ok := authutils.GetClaims(c)
 	if !ok || claims == nil {
 		l.logger.Error("Claims not found in context for listSessions")
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
 
-	sessions, err := l.auth.ListSessions(claims.ID, claims.SessionUuid)
+	sessions, err := l.auth.ListSessions(userUuid, claims.SessionUuid)
 	if err != nil {
 		l.logger.Errorf("List sessions failed err = %+v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list sessions"})
@@ -248,29 +314,27 @@ func (l *AuthCtn) listSessions(c *gin.Context) {
 //	@Description	Revokes a specific session by its ID
 //	@Tags			auth
 //	@Produce		json
-//	@Param			id	path	string	true	"Session ID (UUID)"
+//	@Param			uuid	path	string	true	"Session ID (UUID)"
 //	@Security		BearerAuth
 //	@Success		200	{object}	map[string]string
 //	@Failure		400	{object}	map[string]string
 //	@Failure		401	{object}	map[string]string
 //	@Failure		500	{object}	map[string]string
-//	@Router			/auth/sessions/{id} [delete]
+//	@Router			/auth/session/{uuid} [delete]
 func (l *AuthCtn) revokeSession(c *gin.Context) {
-	claims, ok := authUtil.GetClaims(c)
-	if !ok || claims == nil {
-		l.logger.Error("Claims not found in context for revokeSession")
+	targetSessionUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
+	if !ok {
+		return
+	}
+
+	userUuid, err := authutils.GetUserUUID(c)
+	if err != nil {
+		l.logger.Error("User UUID not found in context for revokeSession")
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
 
-	targetSessionIdStr := c.Param("id")
-	targetSessionUuid, err := uuid.Parse(targetSessionIdStr)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid session ID format"})
-		return
-	}
-
-	err = l.auth.RevokeSession(claims.ID, targetSessionUuid)
+	err = l.auth.RevokeSession(userUuid, targetSessionUuid)
 	if err != nil {
 		l.logger.Errorf("Revoke session failed err = %+v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to revoke session"})

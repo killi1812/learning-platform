@@ -137,17 +137,21 @@ export const router = createRouter({
 })
 
 // Navigation Guard
-router.beforeEach((to, _from, next) => {
-  const { isAuthenticated, currentUser } = useAuth()
+router.beforeEach(async (to, _from, next) => {
+  const { isAuthenticated, currentUser, refresh } = useAuth()
 
   // 1. Check if route requires authentication
   if (to.meta.requiresAuth) {
     if (!isAuthenticated.value) {
-      // Redirect to unauthorized page with destination preserved in query
-      return next({
-        path: '/unauthorized',
-        query: { redirect: to.fullPath },
-      })
+      // Attempt silent token refresh via HTTP-only cookie before redirecting
+      const refreshed = await refresh()
+      if (!refreshed || !isAuthenticated.value) {
+        // Redirect to unauthorized page with destination preserved in query
+        return next({
+          path: '/unauthorized',
+          query: { redirect: to.fullPath },
+        })
+      }
     }
 
     // 2. Check role authorization if specified

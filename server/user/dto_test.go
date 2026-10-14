@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
-	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/auth"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/cerror"
 
 	"github.com/google/uuid"
@@ -26,12 +26,12 @@ func TestNewUserDto_ToModel(t *testing.T) {
 				Username: "testuser",
 				Email:    "test.user@example.com",
 				Password: "password123",
-				Role:     string(auth.ROLE_USER),
+				Role:     string(authutils.ROLE_USER),
 			},
 			want: &user.User{
 				Username: "testuser",
 				Email:    "test.user@example.com",
-				Role:     auth.ROLE_USER,
+				Role:     authutils.ROLE_USER,
 			},
 			wantErr: nil,
 		},
@@ -42,12 +42,12 @@ func TestNewUserDto_ToModel(t *testing.T) {
 				Username: "anotheruser",
 				Email:    "another.user@example.com",
 				Password: "securepass",
-				Role:     string(auth.ROLE_ADMIN),
+				Role:     string(authutils.ROLE_ADMIN),
 			},
 			want: &user.User{
 				Username: "anotheruser",
 				Email:    "another.user@example.com",
-				Role:     auth.ROLE_ADMIN,
+				Role:     authutils.ROLE_ADMIN,
 			},
 			wantErr: nil,
 		},
@@ -67,7 +67,7 @@ func TestNewUserDto_ToModel(t *testing.T) {
 			dto: user.NewUserDto{
 				Uuid:     "this-is-not-a-uuid",
 				Username: "baduuid",
-				Role:     string(auth.ROLE_USER),
+				Role:     string(authutils.ROLE_USER),
 				Email:    "bad.uuid@example.com",
 				Password: "password",
 			},
@@ -101,7 +101,7 @@ func TestNewUserDto_FromModel(t *testing.T) {
 		Username:     "modeluser",
 		Email:        "model.user@example.com",
 		PasswordHash: "somehash",
-		Role:         auth.ROLE_ADMIN,
+		Role:         authutils.ROLE_ADMIN,
 	}
 
 	expectedDto := user.NewUserDto{
@@ -109,7 +109,7 @@ func TestNewUserDto_FromModel(t *testing.T) {
 		Username: "modeluser",
 		Email:    "model.user@example.com",
 		Password: "",
-		Role:     string(auth.ROLE_ADMIN),
+		Role:     string(authutils.ROLE_ADMIN),
 	}
 
 	gotDto := user.NewUserDto{}.FromModel(userModel)
@@ -138,7 +138,7 @@ func TestUserDto_ToModel(t *testing.T) {
 				Uuid:     validUUID,
 				Username: "johndoe",
 				Email:    "john.doe@example.com",
-				Role:     auth.ROLE_USER,
+				Role:     authutils.ROLE_USER,
 			},
 			wantErr: nil,
 		},
@@ -187,14 +187,14 @@ func TestUserDto_FromModel(t *testing.T) {
 		Uuid:     userUUID,
 		Username: "alicesmith",
 		Email:    "alice.smith@example.com",
-		Role:     auth.ROLE_USER,
+		Role:     authutils.ROLE_USER,
 	}
 
 	expectedDto := user.UserDto{
 		Uuid:     userUUID.String(),
 		Username: "alicesmith",
 		Email:    "alice.smith@example.com",
-		Role:     string(auth.ROLE_USER),
+		Role:     string(authutils.ROLE_USER),
 	}
 
 	var gotDto user.UserDto

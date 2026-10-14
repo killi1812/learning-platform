@@ -9,7 +9,7 @@ import (
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/submission"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/testutil"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
-	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/auth"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 )
@@ -44,14 +44,14 @@ func TestAllLmsModels_EndToEndAutoMigrateAndWorkflow(t *testing.T) {
 		Username:     "prof_smith",
 		Email:        "prof@hvl.no",
 		PasswordHash: "secret1",
-		Role:         auth.ROLE_USER,
+		Role:         authutils.ROLE_USER,
 	}
 	student := &user.User{
 		Uuid:         uuid.New(),
 		Username:     "alice",
 		Email:        "alice@hvl.no",
 		PasswordHash: "secret2",
-		Role:         auth.ROLE_USER,
+		Role:         authutils.ROLE_USER,
 	}
 	assert.NoError(t, db.Create(teacher).Error)
 	assert.NoError(t, db.Create(student).Error)
