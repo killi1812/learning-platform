@@ -74,14 +74,15 @@
 import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
+import { getSafeRedirect } from '@/util/redirect'
 
 const router = useRouter()
 const route = useRoute()
 const { isAuthenticated, currentUser } = useAuth()
 
 const attemptedPath = computed(() => {
-  const redirect = route.query.redirect
-  return typeof redirect === 'string' ? redirect : undefined
+  const redirect = getSafeRedirect(route.query.redirect, '')
+  return redirect || undefined
 })
 
 function goToLogin() {

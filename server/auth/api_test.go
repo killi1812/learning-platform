@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
 	authUtil "git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/auth"
@@ -17,22 +18,25 @@ import (
 )
 
 type mockAuthService struct {
-	loginFunc         func(identifier, password string) (string, string, error)
-	registerFunc      func(username, email, password string) (string, string, error)
+	loginFunc         func(identifier, password, userAgent, ip string) (string, string, error)
+	registerFunc      func(username, email, password, userAgent, ip string) (string, string, error)
 	refreshTokensFunc func(refreshToken string) (string, string, error)
-	logoutFunc        func(userUuid string) error
+	logoutCurrentFunc func(userUuid string, sessionUuid uuid.UUID) error
+	logoutAllFunc     func(userUuid string) error
+	listSessionsFunc  func(userUuid string, currentSessionUuid uuid.UUID) ([]SessionDto, error)
+	revokeSessionFunc func(userUuid string, targetSessionUuid uuid.UUID) error
 }
 
-func (m *mockAuthService) Login(identifier, password string) (string, string, error) {
+func (m *mockAuthService) Login(identifier, password, userAgent, ip string) (string, string, error) {
 	if m.loginFunc != nil {
-		return m.loginFunc(identifier, password)
+		return m.loginFunc(identifier, password, userAgent, ip)
 	}
 	return "mock-access-token", "mock-refresh-token", nil
 }
 
-func (m *mockAuthService) Register(username, email, password string) (string, string, error) {
+func (m *mockAuthService) Register(username, email, password, userAgent, ip string) (string, string, error) {
 	if m.registerFunc != nil {
-		return m.registerFunc(username, email, password)
+		return m.registerFunc(username, email, password, userAgent, ip)
 	}
 	return "mock-registered-access-token", "mock-registered-refresh-token", nil
 }
@@ -44,9 +48,38 @@ func (m *mockAuthService) RefreshTokens(refreshToken string) (string, string, er
 	return "mock-refreshed-token", "mock-new-refresh-token", nil
 }
 
-func (m *mockAuthService) Logout(userUuid string) error {
-	if m.logoutFunc != nil {
-		return m.logoutFunc(userUuid)
+func (m *mockAuthService) LogoutCurrent(userUuid string, sessionUuid uuid.UUID) error {
+	if m.logoutCurrentFunc != nil {
+		return m.logoutCurrentFunc(userUuid, sessionUuid)
+	}
+	return nil
+}
+
+func (m *mockAuthService) LogoutAll(userUuid string) error {
+	if m.logoutAllFunc != nil {
+		return m.logoutAllFunc(userUuid)
+	}
+	return nil
+}
+
+func (m *mockAuthService) ListSessions(userUuid string, currentSessionUuid uuid.UUID) ([]SessionDto, error) {
+	if m.listSessionsFunc != nil {
+		return m.listSessionsFunc(userUuid, currentSessionUuid)
+	}
+	return []SessionDto{
+		{
+			Id:         currentSessionUuid.String(),
+			DeviceName: "Chrome on Linux",
+			CreatedAt:  time.Now(),
+			ExpiresAt:  time.Now().Add(7 * 24 * time.Hour),
+			IsCurrent:  true,
+		},
+	}, nil
+}
+
+func (m *mockAuthService) RevokeSession(userUuid string, targetSessionUuid uuid.UUID) error {
+	if m.revokeSessionFunc != nil {
+		return m.revokeSessionFunc(userUuid, targetSessionUuid)
 	}
 	return nil
 }
@@ -68,8 +101,8 @@ func setupAuthTestRouter(service IAuthService) (*gin.Engine, *AuthCtn) {
 	return r, ctn
 }
 
-func generateValidToken(t *testing.T, userUuid uuid.UUID) string {
-	token, _, err := authUtil.GenerateTokens("auth@test.com", "authuser", "user", userUuid)
+func generateValidToken(t *testing.T, userUuid, sessionUuid uuid.UUID) string {
+	token, _, err := authUtil.GenerateTokens("auth@test.com", "authuser", "user", userUuid, sessionUuid)
 	assert.NoError(t, err)
 	return "Bearer " + token
 }
@@ -77,7 +110,7 @@ func generateValidToken(t *testing.T, userUuid uuid.UUID) string {
 func TestAuthCtn_Login(t *testing.T) {
 	t.Run("Valid login returns 200 with TokenDto", func(t *testing.T) {
 		mock := &mockAuthService{
-			loginFunc: func(id, pass string) (string, string, error) {
+			loginFunc: func(id, pass, ua, ip string) (string, string, error) {
 				assert.Equal(t, "user1", id)
 				assert.Equal(t, "pass1", pass)
 				return "jwt-token-abc", "jwt-refresh-xyz", nil
@@ -100,9 +133,9 @@ func TestAuthCtn_Login(t *testing.T) {
 		assert.Equal(t, "jwt-refresh-xyz", tokenResp.RefreshToken)
 	})
 
-	t.Run("Invalid credentials returns 401", func(t *testing.T) {
+	t.Run("Invalid credentials returns 401 with JSON error", func(t *testing.T) {
 		mock := &mockAuthService{
-			loginFunc: func(id, pass string) (string, string, error) {
+			loginFunc: func(id, pass, ua, ip string) (string, string, error) {
 				return "", "", errors.New("invalid credentials")
 			},
 		}
@@ -117,15 +150,18 @@ func TestAuthCtn_Login(t *testing.T) {
 		router.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusUnauthorized, w.Code)
+		assert.Contains(t, w.Body.String(), "Invalid username or password")
 	})
 
-	t.Run("Malformed JSON returns without crashing", func(t *testing.T) {
+	t.Run("Malformed JSON returns 400", func(t *testing.T) {
 		router, _ := setupAuthTestRouter(&mockAuthService{})
 
 		req, _ := http.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader([]byte("bad json")))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
 }
 
@@ -199,62 +235,138 @@ func TestAuthCtn_RefreshToken(t *testing.T) {
 	})
 }
 
-func TestAuthCtn_Logout(t *testing.T) {
+func TestAuthCtn_DualLogout(t *testing.T) {
 	userUuid := uuid.New()
+	sessionUuid := uuid.New()
 
-	t.Run("Valid logout returns 200", func(t *testing.T) {
+	t.Run("Valid single session logout returns 200", func(t *testing.T) {
 		mock := &mockAuthService{
-			logoutFunc: func(id string) error {
-				assert.Equal(t, userUuid.String(), id)
+			logoutCurrentFunc: func(uId string, sId uuid.UUID) error {
+				assert.Equal(t, userUuid.String(), uId)
+				assert.Equal(t, sessionUuid, sId)
 				return nil
 			},
 		}
 		router, _ := setupAuthTestRouter(mock)
 
 		req, _ := http.NewRequest(http.MethodPost, "/api/auth/logout", nil)
-		req.Header.Set("Authorization", generateValidToken(t, userUuid))
+		req.Header.Set("Authorization", generateValidToken(t, userUuid, sessionUuid))
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Contains(t, w.Body.String(), "Logged out successfully")
 	})
 
-	t.Run("Logout with invalid token returns 401", func(t *testing.T) {
-		router, _ := setupAuthTestRouter(&mockAuthService{})
+	t.Run("Valid logout-all returns 200", func(t *testing.T) {
+		mock := &mockAuthService{
+			logoutAllFunc: func(uId string) error {
+				assert.Equal(t, userUuid.String(), uId)
+				return nil
+			},
+		}
+		router, _ := setupAuthTestRouter(mock)
 
-		req, _ := http.NewRequest(http.MethodPost, "/api/auth/logout", nil)
-		req.Header.Set("Authorization", "invalid-token-without-bearer")
+		req, _ := http.NewRequest(http.MethodPost, "/api/auth/logout-all", nil)
+		req.Header.Set("Authorization", generateValidToken(t, userUuid, sessionUuid))
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
-		assert.Equal(t, http.StatusUnauthorized, w.Code)
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Contains(t, w.Body.String(), "All sessions logged out successfully")
 	})
 
-	t.Run("Direct logout handler without context claims returns 401", func(t *testing.T) {
-		_, ctn := setupAuthTestRouter(&mockAuthService{})
+	t.Run("Logout without token returns 401", func(t *testing.T) {
+		router, _ := setupAuthTestRouter(&mockAuthService{})
+
+		req, _ := http.NewRequest(http.MethodPost, "/api/auth/logout", nil)
 		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		c.Request, _ = http.NewRequest(http.MethodPost, "/logout", nil)
-		ctn.logout(c)
+		router.ServeHTTP(w, req)
+
 		assert.Equal(t, http.StatusUnauthorized, w.Code)
 	})
 
 	t.Run("Logout service error returns 500", func(t *testing.T) {
 		mock := &mockAuthService{
-			logoutFunc: func(id string) error {
+			logoutCurrentFunc: func(id string, sId uuid.UUID) error {
 				return errors.New("logout error")
 			},
 		}
 		router, _ := setupAuthTestRouter(mock)
 
 		req, _ := http.NewRequest(http.MethodPost, "/api/auth/logout", nil)
-		req.Header.Set("Authorization", generateValidToken(t, userUuid))
+		req.Header.Set("Authorization", generateValidToken(t, userUuid, sessionUuid))
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusInternalServerError, w.Code)
 	})
+}
 
+func TestAuthCtn_Sessions(t *testing.T) {
+	userUuid := uuid.New()
+	sessionUuid := uuid.New()
+
+	t.Run("List sessions returns 200 with session list", func(t *testing.T) {
+		mock := &mockAuthService{
+			listSessionsFunc: func(uId string, sId uuid.UUID) ([]SessionDto, error) {
+				return []SessionDto{
+					{
+						Id:         sId.String(),
+						DeviceName: "Chrome on Linux",
+						CreatedAt:  time.Now(),
+						ExpiresAt:  time.Now().Add(7 * 24 * time.Hour),
+						IsCurrent:  true,
+					},
+				}, nil
+			},
+		}
+		router, _ := setupAuthTestRouter(mock)
+
+		req, _ := http.NewRequest(http.MethodGet, "/api/auth/sessions", nil)
+		req.Header.Set("Authorization", generateValidToken(t, userUuid, sessionUuid))
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		var sessions []SessionDto
+		assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &sessions))
+		assert.Len(t, sessions, 1)
+		assert.True(t, sessions[0].IsCurrent)
+	})
+
+	t.Run("Revoke specific session returns 200", func(t *testing.T) {
+		targetSession := uuid.New()
+		mock := &mockAuthService{
+			revokeSessionFunc: func(uId string, target uuid.UUID) error {
+				assert.Equal(t, targetSession, target)
+				return nil
+			},
+		}
+		router, _ := setupAuthTestRouter(mock)
+
+		req, _ := http.NewRequest(http.MethodDelete, "/api/auth/sessions/"+targetSession.String(), nil)
+		req.Header.Set("Authorization", generateValidToken(t, userUuid, sessionUuid))
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Contains(t, w.Body.String(), "Session revoked successfully")
+	})
+
+	t.Run("Revoke with invalid session UUID returns 400", func(t *testing.T) {
+		router, _ := setupAuthTestRouter(&mockAuthService{})
+
+		req, _ := http.NewRequest(http.MethodDelete, "/api/auth/sessions/not-a-uuid", nil)
+		req.Header.Set("Authorization", generateValidToken(t, userUuid, sessionUuid))
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+}
+
+func TestAuthCtn_Register(t *testing.T) {
 	t.Run("Valid register returns 201 with tokens", func(t *testing.T) {
 		router, _ := setupAuthTestRouter(&mockAuthService{})
 
@@ -287,7 +399,7 @@ func TestAuthCtn_Logout(t *testing.T) {
 
 	t.Run("Duplicate user registration returns 400 with error message", func(t *testing.T) {
 		mock := &mockAuthService{
-			registerFunc: func(username, email, password string) (string, string, error) {
+			registerFunc: func(username, email, password, ua, ip string) (string, string, error) {
 				return "", "", errors.New("username or email already exists")
 			},
 		}
@@ -303,7 +415,7 @@ func TestAuthCtn_Logout(t *testing.T) {
 		router.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
-		assert.Contains(t, w.Body.String(), "username or email already exists")
+		assert.Contains(t, w.Body.String(), "Username or email already exists")
 	})
 }
 

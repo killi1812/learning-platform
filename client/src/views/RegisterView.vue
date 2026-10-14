@@ -38,7 +38,7 @@
             name="username"
             prepend-inner-icon="mdi-account-outline"
             required
-            :rules="[rules.required, rules.minUsername]"
+            :rules="[rules.required, rules.minUsername, rules.validUsername]"
             variant="outlined"
           />
 
@@ -117,6 +117,7 @@
 import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
+import { getSafeRedirect } from '@/util/redirect'
 
 const router = useRouter()
 const route = useRoute()
@@ -130,9 +131,12 @@ const showPassword = ref(false)
 
 const rules = {
   required: (v: string) => !!v || 'This field is required',
-  minUsername: (v: string) => (v && v.length >= 2) || 'Username must be at least 2 characters',
+  minUsername: (v: string) =>
+    (v && v.length >= 3 && v.length <= 30) || 'Username must be between 3 and 30 characters',
+  validUsername: (v: string) =>
+    /^[a-zA-Z0-9]+$/.test(v) || 'Username must be alphanumeric (no spaces or symbols)',
   email: (v: string) => /.+@.+\..+/.test(v) || 'Please enter a valid email address',
-  minPassword: (v: string) => (v && v.length >= 6) || 'Password must be at least 6 characters',
+  minPassword: (v: string) => (v && v.length >= 8) || 'Password must be at least 8 characters',
   matchPassword: (v: string) => v === password.value || 'Passwords do not match',
 }
 
@@ -147,13 +151,13 @@ async function handleSubmit() {
   }
 
   const success = await register({
-    username: username.value,
-    email: email.value,
+    username: username.value.trim(),
+    email: email.value.trim(),
     password: password.value,
   })
 
   if (success) {
-    const target = typeof route.query.redirect === 'string' ? route.query.redirect : '/dashboard'
+    const target = getSafeRedirect(route.query.redirect)
     router.push(target)
   }
 }

@@ -21,6 +21,14 @@ export interface RefreshRequest {
   refreshToken: string
 }
 
+export interface SessionInfo {
+  id: string
+  deviceName: string
+  createdAt: string
+  expiresAt: string
+  isCurrent: boolean
+}
+
 export interface ServerInfoResponse {
   build: string
   version: string
@@ -55,10 +63,32 @@ export async function refreshUserToken(refreshToken: string): Promise<TokenRespo
 }
 
 /**
- * Logs out the current session using authorized API instance
+ * Logs out the current device session using authorized API instance
  */
 export async function logoutUser(): Promise<void> {
   await authApi.post('/auth/logout')
+}
+
+/**
+ * Logs out all active user sessions across all devices
+ */
+export async function logoutAllSessions(): Promise<void> {
+  await authApi.post('/auth/logout-all')
+}
+
+/**
+ * Lists all active user sessions
+ */
+export async function listUserSessions(): Promise<SessionInfo[]> {
+  const response = await authApi.get<SessionInfo[]>('/auth/sessions')
+  return response.data
+}
+
+/**
+ * Revokes a specific session by ID
+ */
+export async function revokeUserSession(sessionId: string): Promise<void> {
+  await authApi.delete(`/auth/sessions/${sessionId}`)
 }
 
 /**

@@ -117,6 +117,7 @@
 import { ref, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
+import { getSafeRedirect } from '@/util/redirect'
 
 const router = useRouter()
 const route = useRoute()
@@ -149,7 +150,7 @@ async function handleSubmit() {
   })
 
   if (success) {
-    const target = typeof route.query.redirect === 'string' ? route.query.redirect : '/dashboard'
+    const target = getSafeRedirect(route.query.redirect)
     router.push(target)
   }
 }

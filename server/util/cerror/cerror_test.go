@@ -23,6 +23,7 @@ func TestCerrorDefinitions(t *testing.T) {
 		{"ErrInvalidTokenFormat", cerror.ErrInvalidTokenFormat, "invalid token format"},
 		{"ErrUserIsNil", cerror.ErrUserIsNil, "user is nil"},
 		{"ErrBadRole", cerror.ErrBadRole, "role is not allowed"},
+		{"ErrUserAlreadyExists", cerror.ErrUserAlreadyExists, "username or email already exists"},
 	}
 
 	for _, tt := range tests {

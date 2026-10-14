@@ -14,10 +14,11 @@ import (
 
 type Claims struct {
 	jwt.RegisteredClaims
-	Email     string    `json:"email"`
-	Username  string    `json:"username"`
-	Role      Role      `json:"role"`
-	TokenUuid uuid.UUID `json:"uuid"`
+	Email       string    `json:"email"`
+	Username    string    `json:"username"`
+	Role        Role      `json:"role"`
+	SessionUuid uuid.UUID `json:"sessionUuid"`
+	TokenUuid   uuid.UUID `json:"uuid"`
 }
 
 const (
@@ -63,17 +64,28 @@ func extractToken(authHeader string) (string, error) {
 	return ExtractToken(authHeader)
 }
 
-// GenerateTokens returns a jwt access token and refresh token or an error
-func GenerateTokens(email, username string, role Role, userUuid uuid.UUID) (string, string, error) {
+// GenerateTokens returns a jwt access token and refresh token or an error.
+// Optional sessionUuid preserves the persistent session across token refreshes.
+func GenerateTokens(email, username string, role Role, userUuid uuid.UUID, sessionUuid ...uuid.UUID) (string, string, error) {
 	if userUuid == uuid.Nil {
 		return "", "", cerror.ErrUserIsNil
 	}
+
+	activeSessionUuid := uuid.Nil
+	if len(sessionUuid) > 0 {
+		activeSessionUuid = sessionUuid[0]
+	}
+	if activeSessionUuid == uuid.Nil {
+		activeSessionUuid = uuid.New()
+	}
+
 	uuidPair := uuid.New()
 	accessTokenClaims := &Claims{
-		Email:     email,
-		Username:  username,
-		Role:      role,
-		TokenUuid: uuidPair,
+		Email:       email,
+		Username:    username,
+		Role:        role,
+		SessionUuid: activeSessionUuid,
+		TokenUuid:   uuidPair,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(_ACCESS_TOKEN_DURATION)),
 			ID:        userUuid.String(),
@@ -87,10 +99,11 @@ func GenerateTokens(email, username string, role Role, userUuid uuid.UUID) (stri
 	}
 
 	refreshTokenClaims := &Claims{
-		Username:  username,
-		Email:     email,
-		Role:      role,
-		TokenUuid: uuidPair,
+		Username:    username,
+		Email:       email,
+		Role:        role,
+		SessionUuid: activeSessionUuid,
+		TokenUuid:   uuidPair,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(_REFRESH_TOKEN_DURATION)),
 			ID:        userUuid.String(),

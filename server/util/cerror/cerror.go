@@ -17,4 +17,5 @@ var (
 	ErrInvalidTokenFormat = errors.New("invalid token format")
 	ErrUserIsNil          = errors.New("user is nil")
 	ErrBadRole            = errors.New("role is not allowed")
+	ErrUserAlreadyExists  = errors.New("username or email already exists")
 )

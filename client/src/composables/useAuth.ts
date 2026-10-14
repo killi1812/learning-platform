@@ -3,6 +3,7 @@ import {
   loginUser,
   registerUser,
   logoutUser,
+  logoutAllSessions,
   type LoginRequest,
   type RegisterRequest,
   type TokenResponse,
@@ -13,6 +14,7 @@ export interface UserClaims {
   username?: string
   email?: string
   role?: string
+  sessionUuid?: string
   uuid?: string
   exp?: number
   iat?: number
@@ -48,17 +50,28 @@ const currentUser = ref<UserClaims | undefined>(
 const authError = ref<string | undefined>(undefined)
 const isSubmitting = ref(false)
 
+// Sync with global window auth events
+if (typeof window !== 'undefined') {
+  window.addEventListener('auth:logout', () => {
+    currentToken.value = undefined
+    currentUser.value = undefined
+  })
+  window.addEventListener('auth:token-refreshed', (event: Event) => {
+    const customEvent = event as CustomEvent<{ accessToken: string }>
+    if (customEvent.detail?.accessToken) {
+      currentToken.value = customEvent.detail.accessToken
+      currentUser.value = decodeJwtPayload(customEvent.detail.accessToken)
+    }
+  })
+}
+
 export function useAuth() {
   const isAuthenticated = computed(() => {
     if (!currentToken.value) {
       return false
     }
     if (currentUser.value?.exp) {
-      const isExpired = currentUser.value.exp * 1000 < Date.now()
-      if (isExpired) {
-        clearAuth()
-        return false
-      }
+      return currentUser.value.exp * 1000 > Date.now()
     }
     return true
   })
@@ -144,6 +157,18 @@ export function useAuth() {
     }
   }
 
+  async function logoutAll(): Promise<void> {
+    try {
+      if (currentToken.value) {
+        await logoutAllSessions()
+      }
+    } catch {
+      // Ignore network errors during logout
+    } finally {
+      clearAuth()
+    }
+  }
+
   function hasRole(requiredRole: string): boolean {
     if (!currentUser.value?.role) {
       return false
@@ -160,6 +185,7 @@ export function useAuth() {
     login,
     register,
     logout,
+    logoutAll,
     hasRole,
     clearAuth,
   }

@@ -1,9 +1,11 @@
 package auth
 
+import "time"
+
 type LoginDto struct {
-	Username string `json:"username"`
+	Username string `json:"username" binding:"required"`
 	Email    string `json:"email,omitempty"`
-	Password string `json:"password"`
+	Password string `json:"password" binding:"required"`
 }
 
 type TokenDto struct {
@@ -16,7 +18,15 @@ type RefreshDto struct {
 }
 
 type RegisterDto struct {
-	Username string `json:"username" binding:"required,min=2,max=100"`
+	Username string `json:"username" binding:"required,min=3,max=30,alphanum"`
 	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=6"`
+	Password string `json:"password" binding:"required,min=8,max=72"`
+}
+
+type SessionDto struct {
+	Id         string    `json:"id"`
+	DeviceName string    `json:"deviceName"`
+	CreatedAt  time.Time `json:"createdAt"`
+	ExpiresAt  time.Time `json:"expiresAt"`
+	IsCurrent  bool      `json:"isCurrent"`
 }

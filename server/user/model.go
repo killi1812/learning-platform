@@ -10,10 +10,14 @@ import (
 )
 
 type Session struct {
+	SessionUuid  uuid.UUID `json:"sessionUuid" bson:"session_uuid"`
 	UserUuid     uuid.UUID `json:"userUuid" bson:"user_uuid"`
+	TokenUuid    uuid.UUID `json:"tokenUuid" bson:"token_uuid"`
 	RefreshToken string    `json:"refreshToken" bson:"refresh_token"`
-	CreatedAt    time.Time `json:"createdAt,omitempty" bson:"created_at"`
-	ExpiresAt    time.Time `json:"expiresAt,omitempty" bson:"expires_at"`
+	DeviceName   string    `json:"deviceName" bson:"device_name"`
+	IpAddress    string    `json:"ipAddress,omitempty" bson:"ip_address,omitempty"`
+	CreatedAt    time.Time `json:"createdAt" bson:"created_at"`
+	ExpiresAt    time.Time `json:"expiresAt" bson:"expires_at"`
 }
 
 type User struct {
