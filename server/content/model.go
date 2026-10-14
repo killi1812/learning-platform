@@ -22,9 +22,9 @@ const (
 type QuestionType string
 
 const (
-	TypeMultipleChoice   QuestionType = "MULTIPLE_CHOICE"
-	TypeOrdering         QuestionType = "ORDERING"
-	TypeMatching         QuestionType = "MATCHING"
+	TypeMultipleChoice  QuestionType = "MULTIPLE_CHOICE"
+	TypeOrdering        QuestionType = "ORDERING"
+	TypeMatching        QuestionType = "MATCHING"
 	TypeFillInTheBlanks QuestionType = "FILL_IN_THE_BLANKS"
 )
 
@@ -97,8 +97,8 @@ type CodingExercise struct {
 	AllowsGroupSubmission  bool       `json:"allowsGroupSubmission" gorm:"not null;default:false"`
 	AcceptsLateSubmissions bool       `json:"acceptsLateSubmissions" gorm:"not null;default:false"`
 	// TODO: This needs more thinking it is not opnly string. But that is for later
-	VisibleTestCases       string     `json:"visibleTestCases,omitempty" gorm:"type:text"`
-	HiddenTestCases        string     `json:"hiddenTestCases,omitempty" gorm:"type:text"` 
+	VisibleTestCases string `json:"visibleTestCases,omitempty" gorm:"type:text"`
+	HiddenTestCases  string `json:"hiddenTestCases,omitempty" gorm:"type:text"`
 }
 
 // StudentInteraction tracks student engagement with specific content to evaluate prerequisite module completion.

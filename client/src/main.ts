@@ -9,6 +9,7 @@ import { createApp } from 'vue'
 
 // Plugins
 import { registerPlugins } from '@/plugins'
+import router from '@/router'
 
 // Components
 import App from './App.vue'
@@ -21,4 +22,6 @@ const app = createApp(App)
 
 registerPlugins(app)
 
-app.mount('#app')
+router.isReady().then(() => {
+  app.mount('#app')
+})

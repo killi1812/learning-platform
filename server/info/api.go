@@ -20,13 +20,10 @@ func NewInfoApi(logger *zap.SugaredLogger) app.Api {
 }
 
 func (cnt *InfoCtn) RegisterEndpoints(router *gin.RouterGroup) {
+
 	router.GET("/info", cnt.getServerInfo)
-
 	router.GET("/healthz", cnt.ExtractedHealthz)
-
 	router.GET("/ping", cnt.ExtractedPing)
-
-	println("HEALTH CHECKUP WORKS!")
 }
 
 // ExtractedHealthz godoc

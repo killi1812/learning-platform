@@ -36,7 +36,20 @@ func TestParseUUIDParam(t *testing.T) {
 		assert.Equal(t, uuid.Nil, parsed)
 		assert.True(t, c.IsAborted())
 		assert.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Contains(t, w.Body.String(), "Invalid UUID parameter: uuid")
 	})
+}
+
+func TestRespondWithError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	RespondWithError(c, http.StatusForbidden, "Access denied")
+	assert.True(t, c.IsAborted())
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.JSONEq(t, `{"error":"Access denied"}`, w.Body.String())
 }
 
 func TestHandleServiceError(t *testing.T) {
@@ -60,6 +73,7 @@ func TestHandleServiceError(t *testing.T) {
 		assert.True(t, handled)
 		assert.True(t, c.IsAborted())
 		assert.Equal(t, http.StatusNotFound, w.Code)
+		assert.JSONEq(t, `{"error":"not found"}`, w.Body.String())
 	})
 
 	t.Run("other error returns true with 500", func(t *testing.T) {
@@ -70,5 +84,6 @@ func TestHandleServiceError(t *testing.T) {
 		assert.True(t, handled)
 		assert.True(t, c.IsAborted())
 		assert.Equal(t, http.StatusInternalServerError, w.Code)
+		assert.JSONEq(t, `{"error":"Internal server error"}`, w.Body.String())
 	})
 }

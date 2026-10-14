@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
-	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/auth"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/ginutil"
 
 	"github.com/gin-gonic/gin"
@@ -28,10 +28,10 @@ func (u *UserCtn) RegisterEndpoints(api *gin.RouterGroup) {
 	group := api.Group("/user")
 
 	// Protected endpint
-	group.GET("/my-data", auth.Protect(), u.getLoggedInUser)
+	group.GET("/my-data", authutils.Protect(), u.getLoggedInUser)
 
 	// register Endpoints
-	group.Use(auth.Protect(auth.ROLE_ADMIN))
+	group.Use(authutils.Protect(authutils.ROLE_ADMIN))
 	group.POST("/", u.create)
 	group.GET("/:uuid", u.get)
 	group.PUT("/:uuid", u.update)
@@ -47,17 +47,16 @@ func (u *UserCtn) RegisterEndpoints(api *gin.RouterGroup) {
 //	@Tags			user
 //	@Produce		json
 //	@Security		BearerAuth
-//	@Success		200	{object}	UserDto
-//	@Failure		400
-//	@Failure		404
-//	@Failure		500
-//	@Param			uuid	path	string	true	"user uuid"
+//	@Success		200		{object}	UserDto
+//	@Failure		400		{object}	ginutil.ErrorResponse
+//	@Failure		404		{object}	ginutil.ErrorResponse
+//	@Failure		500		{object}	ginutil.ErrorResponse
+//	@Param			uuid	path		string	true	"user uuid"
 //	@Router			/user/{uuid} [get]
 func (u *UserCtn) get(c *gin.Context) {
 	userUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
 	if !ok {
 		u.logger.Errorf("error parsing uuid value = %s", c.Param("uuid"))
-		c.Status(http.StatusInternalServerError)
 		return
 	}
 
@@ -76,28 +75,28 @@ func (u *UserCtn) get(c *gin.Context) {
 //	@Tags		user
 //	@Produce	json
 //	@Security	BearerAuth
-//	@Success	201	{object}	UserDto
-//	@Failure	400
-//	@Failure	404
-//	@Failure	500
-//	@Param		model	body	NewUserDto	true	"Data for new user"
+//	@Success	201		{object}	UserDto
+//	@Failure	400		{object}	ginutil.ErrorResponse
+//	@Failure	500		{object}	ginutil.ErrorResponse
+//	@Param		model	body		NewUserDto	true	"Data for new user"
 //	@Router		/user [post]
 func (u *UserCtn) create(c *gin.Context) {
 	var inputDto NewUserDto
-	if err := c.BindJSON(&inputDto); err != nil {
+	if err := c.ShouldBindJSON(&inputDto); err != nil {
 		u.logger.Errorf("Failed to bind error = %+v", err)
+		ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid request payload: "+err.Error())
 		return
 	}
 
 	newUser, err := inputDto.ToModel()
 	if err != nil {
-		c.AbortWithError(http.StatusBadRequest, err)
+		ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	user, err := u.UserCrud.Create(newUser, inputDto.Password)
 	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, err)
+		ginutil.RespondWithError(c, http.StatusInternalServerError, "Failed to create user")
 		return
 	}
 
@@ -114,12 +113,12 @@ func (u *UserCtn) create(c *gin.Context) {
 //	@Tags		user
 //	@Produce	json
 //	@Security	BearerAuth
-//	@Success	200	{object}	UserDto
-//	@Failure	400
-//	@Failure	404
-//	@Failure	500
-//	@Param		uuid	path	string	true	"uuid of user to be updated"
-//	@Param		model	body	UserDto	true	"Data for updating user"
+//	@Success	200		{object}	UserDto
+//	@Failure	400		{object}	ginutil.ErrorResponse
+//	@Failure	404		{object}	ginutil.ErrorResponse
+//	@Failure	500		{object}	ginutil.ErrorResponse
+//	@Param		uuid	path		string	true	"uuid of user to be updated"
+//	@Param		model	body		UserDto	true	"Data for updating user"
 //	@Router		/user/{uuid} [put]
 func (u *UserCtn) update(c *gin.Context) {
 	userUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
@@ -129,20 +128,20 @@ func (u *UserCtn) update(c *gin.Context) {
 	}
 
 	var inputDto UserDto
-	if err := c.BindJSON(&inputDto); err != nil {
+	if err := c.ShouldBindJSON(&inputDto); err != nil {
 		u.logger.Errorf("Failed to bind error = %+v", err)
+		ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid request payload: "+err.Error())
 		return
 	}
 
 	newUser, err := inputDto.ToModel()
 	if err != nil {
-		c.AbortWithError(http.StatusBadRequest, err)
+		ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	user, err := u.UserCrud.Update(userUuid, newUser)
-	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, err)
+	if ginutil.HandleServiceError(c, err, ErrRecordNotFound) {
 		return
 	}
 
@@ -156,11 +155,11 @@ func (u *UserCtn) update(c *gin.Context) {
 //	@Tags			user
 //	@Produce		json
 //	@Security		BearerAuth
-//	@Success		204
-//	@Failure		400
-//	@Failure		404
-//	@Failure		500
-//	@Param			uuid	path	string	true	"user uuid"
+//	@Success		204		"User deleted successfully"
+//	@Failure		400		{object}	ginutil.ErrorResponse
+//	@Failure		404		{object}	ginutil.ErrorResponse
+//	@Failure		500		{object}	ginutil.ErrorResponse
+//	@Param			uuid	path		string	true	"user uuid"
 //	@Router			/user/{uuid} [delete]
 func (u *UserCtn) delete(c *gin.Context) {
 	userUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
@@ -174,7 +173,7 @@ func (u *UserCtn) delete(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusNoContent, nil)
+	c.Status(http.StatusNoContent)
 }
 
 // GetLoggedInUser godoc
@@ -185,16 +184,15 @@ func (u *UserCtn) delete(c *gin.Context) {
 //	@Produce		json
 //	@Security		BearerAuth
 //	@Success		200	{object}	UserDto
-//	@Failure		400
-//	@Failure		401
-//	@Failure		404
-//	@Failure		500
+//	@Failure		401	{object}	ginutil.ErrorResponse
+//	@Failure		404	{object}	ginutil.ErrorResponse
+//	@Failure		500	{object}	ginutil.ErrorResponse
 //	@Router			/user/my-data [get]
 func (u *UserCtn) getLoggedInUser(c *gin.Context) {
-	userUuid, err := auth.GetUserUUID(c)
+	userUuid, err := authutils.GetUserUUID(c)
 	if err != nil {
 		u.logger.Errorf("Failed to retrieve user UUID from context: %v", err)
-		c.AbortWithStatus(http.StatusUnauthorized)
+		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
@@ -214,29 +212,29 @@ func (u *UserCtn) getLoggedInUser(c *gin.Context) {
 //	@Tags			user
 //	@Produce		json
 //	@Security		BearerAuth
-//	@Success		200	{array}	UserDto
-//	@Failure		401
-//	@Failure		403
-//	@Failure		500
+//	@Success		200	{array}		UserDto
+//	@Failure		401	{object}	ginutil.ErrorResponse
+//	@Failure		403	{object}	ginutil.ErrorResponse
+//	@Failure		500	{object}	ginutil.ErrorResponse
 //	@Router			/user/all-users [get]
 func (u *UserCtn) getAllUsersForSuperAdmin(c *gin.Context) {
-	claims, ok := auth.GetClaims(c)
+	claims, ok := authutils.GetClaims(c)
 	if !ok || claims == nil {
 		u.logger.Error("Claims not found in context")
-		c.AbortWithStatus(http.StatusUnauthorized)
+		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
-	if claims.Role != auth.ROLE_ADMIN {
+	if claims.Role != authutils.ROLE_ADMIN {
 		u.logger.Warnf("Unauthorized access attempt by user with role: %s", claims.Role)
-		c.AbortWithStatus(http.StatusForbidden)
+		ginutil.RespondWithError(c, http.StatusForbidden, "Forbidden: insufficient permissions")
 		return
 	}
 
 	users, err := u.UserCrud.GetAllUsers()
 	if err != nil {
 		u.logger.Errorf("Failed to fetch users: %v", err)
-		c.AbortWithError(http.StatusInternalServerError, err)
+		ginutil.RespondWithError(c, http.StatusInternalServerError, "Failed to fetch users")
 		return
 	}
 
@@ -256,16 +254,16 @@ func (u *UserCtn) getAllUsersForSuperAdmin(c *gin.Context) {
 //	@Tags			user
 //	@Produce		json
 //	@Security		BearerAuth
-//	@Param			query	query	string	true	"Search query"
-//	@Success		200		{array}	UserDto
-//	@Failure		400
-//	@Failure		500
+//	@Param			query	query		string	true	"Search query"
+//	@Success		200		{array}		UserDto
+//	@Failure		400		{object}	ginutil.ErrorResponse
+//	@Failure		500		{object}	ginutil.ErrorResponse
 //	@Router			/user/search [get]
 func (u *UserCtn) searchUsersByName(c *gin.Context) {
 	query := c.Query("query")
 	if query == "" {
 		u.logger.Warn("Search query is empty")
-		c.JSON(http.StatusBadRequest, "Search query is required")
+		ginutil.RespondWithError(c, http.StatusBadRequest, "Search query is required")
 		return
 	}
 
@@ -274,7 +272,7 @@ func (u *UserCtn) searchUsersByName(c *gin.Context) {
 	users, err := u.UserCrud.SearchUsersByName(query)
 	if err != nil {
 		u.logger.Errorf("Failed to search users: %v", err)
-		c.JSON(http.StatusInternalServerError, "Failed to search users")
+		ginutil.RespondWithError(c, http.StatusInternalServerError, "Failed to search users")
 		return
 	}
 

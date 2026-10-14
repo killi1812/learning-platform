@@ -1,9 +1,9 @@
-package auth_test
+package authutils_test
 
 import (
 	"testing"
 
-	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/auth"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -58,7 +58,7 @@ func TestVerifyPassword(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := auth.VerifyPassword(tt.hashedPassword, tt.plainPassword)
+			got := authutils.VerifyPassword(tt.hashedPassword, tt.plainPassword)
 			if got != tt.want {
 				t.Errorf("VerifyPassword() = %v, want %v", got, tt.want)
 			}
@@ -94,7 +94,7 @@ func TestHashPassword(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := auth.HashPassword(tt.password)
+			got, err := authutils.HashPassword(tt.password)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("HashPassword() error = %v, wantErr %v", err, tt.wantErr)
 				return

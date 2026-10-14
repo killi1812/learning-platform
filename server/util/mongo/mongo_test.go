@@ -19,8 +19,23 @@ func TestNewMongoDb(t *testing.T) {
 	}
 
 	t.Run("Default parameter handling", func(t *testing.T) {
-		db := NewMongoDb(uri, "test_learning_platform")
+		db, err := NewMongoDb(uri, "test_learning_platform")
+		assert.NoError(t, err)
 		assert.NotNil(t, db)
 		assert.Equal(t, "test_learning_platform", db.Name())
+	})
+
+	t.Run("Empty URI returns error", func(t *testing.T) {
+		db, err := NewMongoDb("", "test_learning_platform")
+		assert.Error(t, err)
+		assert.Nil(t, db)
+		assert.ErrorIs(t, err, ErrEmptyURI)
+	})
+
+	t.Run("Empty dbName returns error", func(t *testing.T) {
+		db, err := NewMongoDb(uri, "")
+		assert.Error(t, err)
+		assert.Nil(t, db)
+		assert.ErrorIs(t, err, ErrEmptyDbName)
 	})
 }

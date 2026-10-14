@@ -1,4 +1,4 @@
-package auth_test
+package authutils_test
 
 import (
 	"errors"
@@ -7,10 +7,12 @@ import (
 	"time"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
-	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/auth"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/cerror"
 
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestParseToken(t *testing.T) {
@@ -19,7 +21,7 @@ func TestParseToken(t *testing.T) {
 
 	now := time.Now()
 	accessTokenDuration := 5 * time.Minute
-	validClaims := auth.Claims{
+	validClaims := authutils.Claims{
 		Username: "test@example.com",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(accessTokenDuration)),
@@ -34,7 +36,7 @@ func TestParseToken(t *testing.T) {
 	invalidSignatureTokenString, _ := invalidSignatureToken.SignedString([]byte("wrong-key"))
 	invalidSignatureAuthHeader := "Bearer " + invalidSignatureTokenString
 
-	expiredClaims := auth.Claims{
+	expiredClaims := authutils.Claims{
 		Username: "expired@example.com",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(-time.Minute)),
@@ -49,7 +51,7 @@ func TestParseToken(t *testing.T) {
 		name       string
 		authHeader string
 		wantToken  bool
-		wantClaims *auth.Claims
+		wantClaims *authutils.Claims
 		wantErr    error
 	}{
 		{
@@ -101,7 +103,7 @@ func TestParseToken(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotToken, gotClaims, gotErr := auth.ParseToken(tt.authHeader)
+			gotToken, gotClaims, gotErr := authutils.ParseToken(tt.authHeader)
 
 			if gotErr != nil {
 				if tt.wantErr == nil || !errors.Is(gotErr, tt.wantErr) {
@@ -134,7 +136,7 @@ func TestParseToken(t *testing.T) {
 
 	t.Run("Dev mode accepts token without Bearer prefix", func(t *testing.T) {
 		app.Build = app.BuildDev
-		gotToken, gotClaims, gotErr := auth.ParseToken(validTokenString)
+		gotToken, gotClaims, gotErr := authutils.ParseToken(validTokenString)
 		if gotErr != nil {
 			t.Fatalf("ParseToken() unexpected error in dev mode: %v", gotErr)
 		}
@@ -145,4 +147,48 @@ func TestParseToken(t *testing.T) {
 			t.Errorf("ParseToken() username = %s, want %s", gotClaims.Username, validClaims.Username)
 		}
 	})
+}
+
+func TestGenerateTokens(t *testing.T) {
+	app.AccessKey = "test-jwt-key"
+	app.RefreshKey = "test-refresh-key"
+
+	userUuid := uuid.New()
+	sessionUuid := uuid.New()
+
+	access, refresh, err := authutils.GenerateTokens("user@example.com", "user", authutils.ROLE_USER, userUuid, sessionUuid)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, access)
+	assert.NotEmpty(t, refresh)
+
+	// Validate access token claims
+	_, claims, err := authutils.ParseToken("Bearer " + access)
+	assert.NoError(t, err)
+	assert.Equal(t, authutils.TokenTypeAccess, claims.TokenType)
+	assert.Equal(t, userUuid.String(), claims.Subject)
+	assert.Equal(t, userUuid.String(), claims.ID)
+	assert.Equal(t, sessionUuid, claims.SessionUuid)
+	assert.Equal(t, "user@example.com", claims.Email)
+	assert.Equal(t, "user", claims.Username)
+	assert.Equal(t, authutils.ROLE_USER, claims.Role)
+}
+
+func TestParseToken_RefreshTokenRejected(t *testing.T) {
+	app.AccessKey = "test-jwt-key"
+
+	// Create a token with TokenTypeRefresh signed with AccessKey
+	refreshClaims := authutils.Claims{
+		TokenType: authutils.TokenTypeRefresh,
+		Username:  "user@example.com",
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+			ID:        uuid.New().String(),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
+	tokenStr, _ := token.SignedString([]byte(app.AccessKey))
+
+	_, _, err := authutils.ParseToken("Bearer " + tokenStr)
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, cerror.ErrInvalidTokenFormat)
 }

@@ -1,4 +1,4 @@
-package auth
+package authutils
 
 import (
 	"go.uber.org/zap"

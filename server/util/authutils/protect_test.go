@@ -1,6 +1,7 @@
-package auth_test
+package authutils_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -8,10 +9,11 @@ import (
 	"time"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
-	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/auth"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
@@ -28,11 +30,11 @@ func (suite *MiddlewareTestSuite) SetupSuite() {
 	gin.SetMode(gin.TestMode)
 	suite.router = gin.New()
 
-	suite.router.GET("/protected/general", auth.Protect(), func(c *gin.Context) {
+	suite.router.GET("/protected/general", authutils.Protect(), func(c *gin.Context) {
 		c.String(http.StatusOK, "general_access_granted")
 	})
 
-	suite.router.GET("/protected/admin", auth.Protect("admin"), func(c *gin.Context) {
+	suite.router.GET("/protected/admin", authutils.Protect("admin"), func(c *gin.Context) {
 		c.String(http.StatusOK, "admin_access_granted")
 	})
 }
@@ -59,9 +61,9 @@ func (suite *MiddlewareTestSuite) performRequest(method, path, token string, bod
 }
 
 func (suite *MiddlewareTestSuite) generateToken(userID, username string, userRole string, expiresAt time.Time) string {
-	claims := &auth.Claims{
+	claims := &authutils.Claims{
 		Username: username,
-		Role:     auth.Role(userRole),
+		Role:     authutils.Role(userRole),
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID:        userID,
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
@@ -133,7 +135,7 @@ func (suite *MiddlewareTestSuite) TestProtect_ExpiredToken() {
 }
 
 func (suite *MiddlewareTestSuite) TestProtect_WrongSigningKey() {
-	claims := &auth.Claims{
+	claims := &authutils.Claims{
 		Username: "wrongkey@example.com",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID:        "12345",
@@ -166,6 +168,33 @@ func (suite *MiddlewareTestSuite) TestProtect_ValidToken_InsufficientRole() {
 	w := suite.performRequest(http.MethodGet, "/protected/admin", userToken)
 
 	assert.Equal(suite.T(), http.StatusForbidden, w.Code)
+}
+
+func (suite *MiddlewareTestSuite) TestProtect_SessionValidator() {
+	testUserUUID := uuid.New()
+	activeSessionUUID := uuid.New()
+	revokedSessionUUID := uuid.New()
+
+	tokenActive, _, err := authutils.GenerateTokens("active@test.com", "activeuser", authutils.ROLE_USER, testUserUUID, activeSessionUUID)
+	assert.NoError(suite.T(), err)
+
+	tokenRevoked, _, err := authutils.GenerateTokens("revoked@test.com", "revokeduser", authutils.ROLE_USER, testUserUUID, revokedSessionUUID)
+	assert.NoError(suite.T(), err)
+
+	authutils.SetSessionValidator(func(ctx context.Context, uUuid, sUuid uuid.UUID) bool {
+		return sUuid == activeSessionUUID
+	})
+	defer authutils.SetSessionValidator(nil)
+
+	// Active session succeeds
+	wActive := suite.performRequest(http.MethodGet, "/protected/general", tokenActive)
+	assert.Equal(suite.T(), http.StatusOK, wActive.Code)
+	assert.Equal(suite.T(), "general_access_granted", wActive.Body.String())
+
+	// Revoked session rejected with 401
+	wRevoked := suite.performRequest(http.MethodGet, "/protected/general", tokenRevoked)
+	assert.Equal(suite.T(), http.StatusUnauthorized, wRevoked.Code)
+	assert.Contains(suite.T(), wRevoked.Body.String(), "Session revoked or expired")
 }
 
 func TestMiddlewareSuite(t *testing.T) {

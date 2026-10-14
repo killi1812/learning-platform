@@ -7,7 +7,7 @@ import (
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/course"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/testutil"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
-	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/auth"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 )
@@ -26,7 +26,7 @@ func TestCourseAggregate_CRUDAndAssociations(t *testing.T) {
 		Username:     "teacher_anna",
 		Email:        "anna@hvl.no",
 		PasswordHash: "pass",
-		Role:         auth.ROLE_USER,
+		Role:         authutils.ROLE_USER,
 	}
 	assert.NoError(t, db.Create(u).Error)
 

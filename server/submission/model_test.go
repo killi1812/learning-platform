@@ -8,7 +8,7 @@ import (
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/submission"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/testutil"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
-	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/auth"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 )
@@ -31,14 +31,14 @@ func TestSubmissionAggregate_IndividualGroupAndGrading(t *testing.T) {
 		Username:     "teacher_t",
 		Email:        "teacher@hvl.no",
 		PasswordHash: "pass",
-		Role:         auth.ROLE_USER,
+		Role:         authutils.ROLE_USER,
 	}
 	student := &user.User{
 		Uuid:         uuid.New(),
 		Username:     "student_s",
 		Email:        "student@hvl.no",
 		PasswordHash: "pass",
-		Role:         auth.ROLE_USER,
+		Role:         authutils.ROLE_USER,
 	}
 	assert.NoError(t, db.Create(teacher).Error)
 	assert.NoError(t, db.Create(student).Error)

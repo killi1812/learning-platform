@@ -1,4 +1,4 @@
-package auth
+package authutils
 
 import (
 	"strings"
@@ -12,12 +12,21 @@ import (
 	"go.uber.org/zap"
 )
 
+type TokenType string
+
+const (
+	TokenTypeAccess  TokenType = "access"
+	TokenTypeRefresh TokenType = "refresh"
+)
+
 type Claims struct {
 	jwt.RegisteredClaims
-	Email     string    `json:"email"`
-	Username  string    `json:"username"`
-	Role      Role      `json:"role"`
-	TokenUuid uuid.UUID `json:"uuid"`
+	TokenType   TokenType `json:"typ,omitempty"`
+	Email       string    `json:"email"`
+	Username    string    `json:"username"`
+	Role        Role      `json:"role"`
+	SessionUuid uuid.UUID `json:"sessionUuid"`
+	TokenUuid   uuid.UUID `json:"uuid"`
 }
 
 const (
@@ -38,6 +47,11 @@ func ParseToken(authHeader string) (*jwt.Token, *Claims, error) {
 	})
 	if err != nil {
 		return nil, nil, err
+	}
+
+	if claims.TokenType == TokenTypeRefresh {
+		zap.S().Warn("Refresh token presented as access token")
+		return nil, nil, cerror.ErrInvalidTokenFormat
 	}
 
 	return token, &claims, nil
@@ -63,18 +77,31 @@ func extractToken(authHeader string) (string, error) {
 	return ExtractToken(authHeader)
 }
 
-// GenerateTokens returns a jwt access token and refresh token or an error
-func GenerateTokens(email, username string, role Role, userUuid uuid.UUID) (string, string, error) {
+// GenerateTokens returns a jwt access token and refresh token or an error.
+// Optional sessionUuid preserves the persistent session across token refreshes.
+func GenerateTokens(email, username string, role Role, userUuid uuid.UUID, sessionUuid ...uuid.UUID) (string, string, error) {
 	if userUuid == uuid.Nil {
 		return "", "", cerror.ErrUserIsNil
 	}
+
+	activeSessionUuid := uuid.Nil
+	if len(sessionUuid) > 0 {
+		activeSessionUuid = sessionUuid[0]
+	}
+	if activeSessionUuid == uuid.Nil {
+		activeSessionUuid = uuid.New()
+	}
+
 	uuidPair := uuid.New()
 	accessTokenClaims := &Claims{
-		Email:     email,
-		Username:  username,
-		Role:      role,
-		TokenUuid: uuidPair,
+		TokenType:   TokenTypeAccess,
+		Email:       email,
+		Username:    username,
+		Role:        role,
+		SessionUuid: activeSessionUuid,
+		TokenUuid:   uuidPair,
 		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   userUuid.String(),
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(_ACCESS_TOKEN_DURATION)),
 			ID:        userUuid.String(),
 		},
@@ -82,16 +109,19 @@ func GenerateTokens(email, username string, role Role, userUuid uuid.UUID) (stri
 	accessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, accessTokenClaims)
 	accessTokenString, err := accessToken.SignedString([]byte(app.AccessKey))
 	if err != nil {
-		zap.S().Errorf("Failed to generate access token err = %w", err)
+		zap.S().Errorf("Failed to generate access token, err = %+v", err)
 		return "", "", err
 	}
 
 	refreshTokenClaims := &Claims{
-		Username:  username,
-		Email:     email,
-		Role:      role,
-		TokenUuid: uuidPair,
+		TokenType:   TokenTypeRefresh,
+		Username:    username,
+		Email:       email,
+		Role:        role,
+		SessionUuid: activeSessionUuid,
+		TokenUuid:   uuidPair,
 		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   userUuid.String(),
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(_REFRESH_TOKEN_DURATION)),
 			ID:        userUuid.String(),
 		},
@@ -99,7 +129,7 @@ func GenerateTokens(email, username string, role Role, userUuid uuid.UUID) (stri
 	refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshTokenClaims)
 	refreshTokenString, err := refreshToken.SignedString([]byte(app.RefreshKey))
 	if err != nil {
-		zap.S().Errorf("Failed to generate refresh token err = %w", err)
+		zap.S().Errorf("Failed to generate refresh token, err = %+v", err)
 		return "", "", err
 	}
 

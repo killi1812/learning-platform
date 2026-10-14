@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"os"
 	"strconv"
 	"strings"
@@ -25,10 +26,41 @@ func LoadConfig() {
 	AccessKey = loadString("ACCESS_KEY")
 	RefreshKey = loadString("REFRESH_KEY")
 
+	if err := ValidateSecrets(AccessKey, RefreshKey); err != nil {
+		if Build == BuildProd {
+			zap.S().Panicf("Fatal: Insecure JWT configuration in production: %v", err)
+		} else {
+			zap.S().Warnf("⚠️ Insecure JWT configuration in dev: %v", err)
+		}
+	}
+
 	MongoConn = loadString("MONGO_CONN")
 	DatabaseConn = loadString("DATABASE_CONN")
 
 	zap.S().Debugf("Finished loading env variables")
+}
+
+// ValidateSecrets checks that ACCESS_KEY and REFRESH_KEY meet security standards.
+func ValidateSecrets(accessKey, refreshKey string) error {
+	if strings.TrimSpace(accessKey) == "" {
+		return errors.New("ACCESS_KEY must not be empty")
+	}
+	if strings.TrimSpace(refreshKey) == "" {
+		return errors.New("REFRESH_KEY must not be empty")
+	}
+	if accessKey == "your-access-key-here" || refreshKey == "your-refresh-key-here" {
+		return errors.New("JWT keys must not use default placeholder values")
+	}
+	if len(accessKey) < 32 {
+		return errors.New("ACCESS_KEY must be at least 32 characters long")
+	}
+	if len(refreshKey) < 32 {
+		return errors.New("REFRESH_KEY must be at least 32 characters long")
+	}
+	if accessKey == refreshKey {
+		return errors.New("ACCESS_KEY and REFRESH_KEY must be different")
+	}
+	return nil
 }
 
 func loadInt(name string) int {
