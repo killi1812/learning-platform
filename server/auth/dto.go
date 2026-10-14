@@ -5,7 +5,7 @@ import "time"
 type LoginDto struct {
 	Email     string `json:"email" binding:"required,email" example:"user@example.com"`
 	Password  string `json:"password" binding:"required" example:"Pa$$w0rd123"`
-	SessionId string `json:"sessionId,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
+	SessionId string `json:"sessionId,omitempty" binding:"omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
 }
 
 type TokenDto struct {

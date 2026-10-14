@@ -94,11 +94,11 @@ func clearRefreshTokenCookie(c *gin.Context) {
 // Login godoc
 //
 //	@Summary		User login
-//	@Description	Authenticates a user by email and password, returns access token, and sets HTTP-only refresh token cookie
+//	@Description	Authenticates a user by email and password, returns access token, and sets HTTP-only refresh token cookie. sessionId is optional.
 //	@Tags			auth
 //	@Accept			json
 //	@Produce		json
-//	@Param			loginDto	body		LoginDto	true	"Login credentials"
+//	@Param			loginDto	body		LoginDto	true	"Login credentials (sessionId is optional)"
 //	@Success		200			{object}	TokenDto
 //	@Failure		400			{object}	ginutil.ErrorResponse
 //	@Failure		401			{object}	ginutil.ErrorResponse

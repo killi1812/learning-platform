@@ -17,7 +17,7 @@ const docTemplate = `{
     "paths": {
         "/auth/login": {
             "post": {
-                "description": "Authenticates a user by email and password, returns access token, and sets HTTP-only refresh token cookie",
+                "description": "Authenticates a user by email and password, returns access token, and sets HTTP-only refresh token cookie. sessionId is optional.",
                 "consumes": [
                     "application/json"
                 ],
@@ -30,7 +30,7 @@ const docTemplate = `{
                 "summary": "User login",
                 "parameters": [
                     {
-                        "description": "Login credentials",
+                        "description": "Login credentials (sessionId is optional)",
                         "name": "loginDto",
                         "in": "body",
                         "required": true,

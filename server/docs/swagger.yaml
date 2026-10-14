@@ -108,9 +108,9 @@ paths:
       consumes:
       - application/json
       description: Authenticates a user by email and password, returns access token,
-        and sets HTTP-only refresh token cookie
+        and sets HTTP-only refresh token cookie. sessionId is optional.
       parameters:
-      - description: Login credentials
+      - description: Login credentials (sessionId is optional)
         in: body
         name: loginDto
         required: true

@@ -161,6 +161,35 @@ func TestAuthCtn_Login(t *testing.T) {
 		assert.Equal(t, RefreshTokenCookiePath, refreshCookie.Path)
 	})
 
+	t.Run("Valid login without sessionId succeeds (sessionId is optional)", func(t *testing.T) {
+		mock := &mockAuthService{
+			loginFunc: func(email, pass, ua, ip, sessId string) (*AuthResult, error) {
+				assert.Equal(t, "user1@example.com", email)
+				assert.Equal(t, "pass1", pass)
+				assert.Empty(t, sessId)
+				return &AuthResult{
+					AccessToken:  "jwt-token-abc",
+					RefreshToken: "jwt-refresh-xyz",
+					SessionId:    "new-generated-sess",
+				}, nil
+			},
+		}
+		router, _ := setupAuthTestRouter(mock)
+
+		payload := LoginDto{Email: "user1@example.com", Password: "pass1"}
+		body, _ := json.Marshal(payload)
+
+		req, _ := http.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		var tokenResp TokenDto
+		assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &tokenResp))
+		assert.Equal(t, "jwt-token-abc", tokenResp.AccessToken)
+	})
+
 	t.Run("Invalid credentials returns 401 with JSON error", func(t *testing.T) {
 		mock := &mockAuthService{
 			loginFunc: func(email, pass, ua, ip, sessId string) (*AuthResult, error) {
