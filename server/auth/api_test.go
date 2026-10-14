@@ -2,6 +2,7 @@ package auth
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -417,6 +418,37 @@ func TestAuthCtn_DualLogout(t *testing.T) {
 
 		assert.Equal(t, http.StatusInternalServerError, w.Code)
 	})
+
+	t.Run("Logout-all service error returns 500", func(t *testing.T) {
+		mock := &mockAuthService{
+			logoutAllFunc: func(id uuid.UUID) error {
+				return errors.New("logout-all error")
+			},
+		}
+		router, _ := setupAuthTestRouter(mock)
+
+		req, _ := http.NewRequest(http.MethodPost, "/api/auth/logout-all", nil)
+		req.Header.Set("Authorization", generateValidToken(t, userUuid, sessionUuid))
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+
+	t.Run("Direct logout handlers without context claims return 401", func(t *testing.T) {
+		ctn := NewAuthCtn(&mockAuthService{}, zap.NewNop().Sugar()).(*AuthCtn)
+		w1 := httptest.NewRecorder()
+		c1, _ := gin.CreateTestContext(w1)
+		c1.Request = httptest.NewRequest(http.MethodPost, "/logout", nil)
+		ctn.logoutCurrent(c1)
+		assert.Equal(t, http.StatusUnauthorized, w1.Code)
+
+		w2 := httptest.NewRecorder()
+		c2, _ := gin.CreateTestContext(w2)
+		c2.Request = httptest.NewRequest(http.MethodPost, "/logout-all", nil)
+		ctn.logoutAll(c2)
+		assert.Equal(t, http.StatusUnauthorized, w2.Code)
+	})
 }
 
 func TestAuthCtn_Sessions(t *testing.T) {
@@ -451,6 +483,22 @@ func TestAuthCtn_Sessions(t *testing.T) {
 		assert.True(t, sessions[0].IsCurrent)
 	})
 
+	t.Run("List sessions service error returns 500", func(t *testing.T) {
+		mock := &mockAuthService{
+			listSessionsFunc: func(uId, sId uuid.UUID) ([]SessionDto, error) {
+				return nil, errors.New("list error")
+			},
+		}
+		router, _ := setupAuthTestRouter(mock)
+
+		req, _ := http.NewRequest(http.MethodGet, "/api/auth/session", nil)
+		req.Header.Set("Authorization", generateValidToken(t, userUuid, sessionUuid))
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+
 	t.Run("Revoke specific session returns 204", func(t *testing.T) {
 		targetSession := uuid.New()
 		mock := &mockAuthService{
@@ -471,6 +519,23 @@ func TestAuthCtn_Sessions(t *testing.T) {
 		assert.Empty(t, w.Body.String())
 	})
 
+	t.Run("Revoke session service error returns 500", func(t *testing.T) {
+		targetSession := uuid.New()
+		mock := &mockAuthService{
+			revokeSessionFunc: func(uId, target uuid.UUID) error {
+				return errors.New("revoke error")
+			},
+		}
+		router, _ := setupAuthTestRouter(mock)
+
+		req, _ := http.NewRequest(http.MethodDelete, "/api/auth/session/"+targetSession.String(), nil)
+		req.Header.Set("Authorization", generateValidToken(t, userUuid, sessionUuid))
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+
 	t.Run("Revoke with invalid session UUID returns 400", func(t *testing.T) {
 		router, _ := setupAuthTestRouter(&mockAuthService{})
 
@@ -480,6 +545,22 @@ func TestAuthCtn_Sessions(t *testing.T) {
 		router.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("Direct session handlers without context claims return 401", func(t *testing.T) {
+		ctn := NewAuthCtn(&mockAuthService{}, zap.NewNop().Sugar()).(*AuthCtn)
+		w1 := httptest.NewRecorder()
+		c1, _ := gin.CreateTestContext(w1)
+		c1.Request = httptest.NewRequest(http.MethodGet, "/session", nil)
+		ctn.listSessions(c1)
+		assert.Equal(t, http.StatusUnauthorized, w1.Code)
+
+		w2 := httptest.NewRecorder()
+		c2, _ := gin.CreateTestContext(w2)
+		c2.Request = httptest.NewRequest(http.MethodDelete, "/session/"+uuid.New().String(), nil)
+		c2.Params = gin.Params{{Key: "uuid", Value: uuid.New().String()}}
+		ctn.revokeSession(c2)
+		assert.Equal(t, http.StatusUnauthorized, w2.Code)
 	})
 }
 
@@ -545,9 +626,79 @@ func TestAuthCtn_Register(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 		assert.Contains(t, w.Body.String(), "Username or email already exists")
 	})
+
+	t.Run("Generic registration failure returns 500", func(t *testing.T) {
+		mock := &mockAuthService{
+			registerFunc: func(username, email, password, ua, ip string) (*AuthResult, error) {
+				return nil, errors.New("unexpected error")
+			},
+		}
+		router, _ := setupAuthTestRouter(mock)
+
+		body, _ := json.Marshal(RegisterDto{
+			Username: "newuser",
+			Email:    "newuser@example.com",
+			Password: "securePassword123",
+		})
+		req, _ := http.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader(body))
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+		assert.Contains(t, w.Body.String(), "Registration failed")
+	})
 }
 
 func TestNewAuthCtn(t *testing.T) {
 	ctn := NewAuthCtn(&mockAuthService{}, zap.NewNop().Sugar())
 	assert.NotNil(t, ctn)
+}
+
+func TestIsSecureCookie(t *testing.T) {
+	// TLS connection
+	req1 := httptest.NewRequest(http.MethodGet, "https://example.com", nil)
+	req1.TLS = &tls.ConnectionState{}
+	w1 := httptest.NewRecorder()
+	c1, _ := gin.CreateTestContext(w1)
+	c1.Request = req1
+	assert.True(t, isSecureCookie(c1))
+
+	// X-Forwarded-Proto
+	req2 := httptest.NewRequest(http.MethodGet, "http://example.com", nil)
+	req2.Header.Set("X-Forwarded-Proto", "https")
+	w2 := httptest.NewRecorder()
+	c2, _ := gin.CreateTestContext(w2)
+	c2.Request = req2
+	assert.True(t, isSecureCookie(c2))
+
+	// Localhost with port
+	req3 := httptest.NewRequest(http.MethodGet, "http://localhost:8080", nil)
+	w3 := httptest.NewRecorder()
+	c3, _ := gin.CreateTestContext(w3)
+	c3.Request = req3
+	assert.False(t, isSecureCookie(c3))
+
+	// 127.0.0.1
+	req4 := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8080", nil)
+	w4 := httptest.NewRecorder()
+	c4, _ := gin.CreateTestContext(w4)
+	c4.Request = req4
+	assert.False(t, isSecureCookie(c4))
+
+	// [::1]
+	req5 := httptest.NewRequest(http.MethodGet, "http://[::1]:8080", nil)
+	w5 := httptest.NewRecorder()
+	c5, _ := gin.CreateTestContext(w5)
+	c5.Request = req5
+	assert.False(t, isSecureCookie(c5))
+
+	// Remote host in prod
+	oldBuild := app.Build
+	defer func() { app.Build = oldBuild }()
+	app.Build = app.BuildProd
+	req6 := httptest.NewRequest(http.MethodGet, "http://example.com:8080", nil)
+	w6 := httptest.NewRecorder()
+	c6, _ := gin.CreateTestContext(w6)
+	c6.Request = req6
+	assert.True(t, isSecureCookie(c6))
 }

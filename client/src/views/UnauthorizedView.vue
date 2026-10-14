@@ -2,7 +2,7 @@
   <div class="unauthorized-page d-flex align-center justify-center">
     <v-container max-width="540">
       <v-card class="pa-6 pa-sm-8 text-center" elevation="8" rounded="xl">
-        <v-avatar color="warning-lighten-4" size="80" class="mb-4">
+        <v-avatar color="warning" variant="tonal" size="80" class="mb-4">
           <v-icon color="warning" icon="mdi-shield-lock-outline" size="48" />
         </v-avatar>
 
@@ -28,7 +28,7 @@
 
         <v-card
           v-if="attemptedPath"
-          class="mb-6 pa-3 bg-grey-lighten-4 text-left"
+          class="mb-6 pa-3 bg-surface-variant text-left"
           variant="flat"
           rounded="lg"
         >

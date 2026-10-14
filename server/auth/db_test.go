@@ -128,6 +128,27 @@ func TestAuthService_Unit(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
+	t.Run("ListSessions with nil mongoDb returns empty slice", func(t *testing.T) {
+		sessions, err := svc.ListSessions(uuid.New(), uuid.New())
+		assert.NoError(t, err)
+		assert.Empty(t, sessions)
+	})
+
+	t.Run("RevokeSession with nil mongoDb returns nil", func(t *testing.T) {
+		err := svc.RevokeSession(uuid.New(), uuid.New())
+		assert.NoError(t, err)
+	})
+
+	t.Run("RegisterSessionValidator with nil mongoDb does nothing", func(t *testing.T) {
+		svc.RegisterSessionValidator()
+	})
+
+	t.Run("Login with invalid requestedSessionId falls back to new session", func(t *testing.T) {
+		tokens, err := svc.Login("tester@example.com", "validPassword123", "Test Browser", "127.0.0.1", "invalid-uuid-string")
+		assert.NoError(t, err)
+		assert.NotEmpty(t, tokens.SessionId)
+	})
+
 	t.Run("Register new user succeeds and normalizes lowercase", func(t *testing.T) {
 		tokens, err := svc.Register("BrandNew", "BrandNew@Example.Com", "Password123", "Mozilla/5.0", "127.0.0.1")
 		assert.NoError(t, err)
@@ -367,6 +388,62 @@ func TestAuthService_Integration(t *testing.T) {
 			"expires_at":   bson.M{"$gt": time.Now()},
 		}).Decode(&session)
 		assert.ErrorIs(t, findErrAfter, mongo.ErrNoDocuments)
+	})
+
+	t.Run("Register with mongoDb inserts user and session document", func(t *testing.T) {
+		res, err := svc.Register("mongoreg", "mongoreg@example.com", "Password123", "Firefox on Linux", "10.0.0.5")
+		assert.NoError(t, err)
+		assert.NotEmpty(t, res.AccessToken)
+		assert.NotEmpty(t, res.RefreshToken)
+		assert.NotEmpty(t, res.SessionId)
+
+		sessUuid, err := uuid.Parse(res.SessionId)
+		assert.NoError(t, err)
+
+		var session user.Session
+		findErr := mongoDb.Collection("sessions").FindOne(ctx, bson.M{"session_uuid": sessUuid}).Decode(&session)
+		assert.NoError(t, findErr)
+		assert.Equal(t, "Web Browser on Linux", session.DeviceName)
+		assert.Equal(t, "10.0.0.5", session.IpAddress)
+	})
+
+	t.Run("Login with requestedSessionId belonging to different user generates new session", func(t *testing.T) {
+		otherUserUuid := uuid.New()
+		otherSessionUuid := uuid.New()
+		_, err := mongoDb.Collection("sessions").InsertOne(ctx, user.Session{
+			SessionUuid:  otherSessionUuid,
+			UserUuid:     otherUserUuid,
+			RefreshToken: "some-hash",
+			ExpiresAt:    time.Now().Add(24 * time.Hour),
+		})
+		assert.NoError(t, err)
+
+		tokens, err := svc.Login("tester@example.com", "validPassword123", "Test Browser", "127.0.0.1", otherSessionUuid.String())
+		assert.NoError(t, err)
+		assert.NotEqual(t, otherSessionUuid.String(), tokens.SessionId, "Should generate a new session UUID instead of hijacking another user's session")
+	})
+
+	t.Run("LogoutCurrent deletes only specific session from Mongo", func(t *testing.T) {
+		loginTokens, err := svc.Login("tester@example.com", "validPassword123", "Chrome", "127.0.0.1", "")
+		assert.NoError(t, err)
+		sessUuid, err := uuid.Parse(loginTokens.SessionId)
+		assert.NoError(t, err)
+
+		err = svc.LogoutCurrent(userUuid, sessUuid)
+		assert.NoError(t, err)
+
+		var session user.Session
+		findErr := mongoDb.Collection("sessions").FindOne(ctx, bson.M{"session_uuid": sessUuid}).Decode(&session)
+		assert.ErrorIs(t, findErr, mongo.ErrNoDocuments)
+	})
+
+	t.Run("NewAuthService with MongoDb registers session validator", func(t *testing.T) {
+		fullSvc := NewAuthService(AuthServiceParams{
+			GormDb:  gormDb,
+			MongoDb: mongoDb,
+			Logger:  logger,
+		})
+		assert.NotNil(t, fullSvc)
 	})
 }
 

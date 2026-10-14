@@ -106,7 +106,7 @@
           class="border rounded-lg mb-2 pa-3"
         >
           <template #prepend>
-            <v-avatar color="primary-lighten-5" rounded="lg" class="mr-3">
+            <v-avatar color="primary" variant="tonal" rounded="lg" class="mr-3">
               <v-icon color="primary" :icon="getDeviceIcon(session.deviceName)" />
             </v-avatar>
           </template>
