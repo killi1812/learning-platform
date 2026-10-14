@@ -1,4 +1,5 @@
 import { ref, computed } from 'vue'
+import { getApiErrorMessage } from '@/api/client'
 import {
   loginUser,
   registerUser,
@@ -80,12 +81,9 @@ export function useAuth() {
 
   function setTokens(tokens: TokenResponse) {
     localStorage.setItem(ACCESS_TOKEN_KEY, tokens.accessToken)
-    if (tokens.sessionId) {
-      localStorage.setItem(SESSION_ID_KEY, tokens.sessionId)
-    }
     currentToken.value = tokens.accessToken
     currentUser.value = decodeJwtPayload(tokens.accessToken)
-    if (currentUser.value?.sessionUuid && !tokens.sessionId) {
+    if (currentUser.value?.sessionUuid) {
       localStorage.setItem(SESSION_ID_KEY, currentUser.value.sessionUuid)
     }
     authError.value = undefined
@@ -105,7 +103,8 @@ export function useAuth() {
     try {
       const storedSessionId = localStorage.getItem(SESSION_ID_KEY) || undefined
       const payload: LoginRequest = {
-        ...credentials,
+        email: credentials.email,
+        password: credentials.password,
         sessionId: credentials.sessionId || storedSessionId,
       }
       const data = await loginUser(payload)
@@ -117,13 +116,10 @@ export function useAuth() {
       return false
     } catch (err: unknown) {
       clearAuth()
-      const axiosError = err as { response?: { data?: string | { error?: string } } }
-      const message =
-        typeof axiosError.response?.data === 'string'
-          ? axiosError.response.data
-          : axiosError.response?.data?.error ||
-            'Authentication failed. Please check your credentials.'
-      authError.value = message
+      authError.value = getApiErrorMessage(
+        err,
+        'Authentication failed. Please check your credentials.',
+      )
       return false
     } finally {
       isSubmitting.value = false
@@ -143,13 +139,10 @@ export function useAuth() {
       return false
     } catch (err: unknown) {
       clearAuth()
-      const axiosError = err as { response?: { data?: string | { error?: string } } }
-      const message =
-        typeof axiosError.response?.data === 'string'
-          ? axiosError.response.data
-          : axiosError.response?.data?.error ||
-            'Registration failed. Please check your details and try again.'
-      authError.value = message
+      authError.value = getApiErrorMessage(
+        err,
+        'Registration failed. Please check your details and try again.',
+      )
       return false
     } finally {
       isSubmitting.value = false

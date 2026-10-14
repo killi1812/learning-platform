@@ -42,15 +42,16 @@
         <!-- Login Form -->
         <v-form ref="formRef" @submit.prevent="handleSubmit">
           <v-text-field
-            v-model="username"
-            autocomplete="username"
+            v-model="email"
+            autocomplete="email"
             class="mb-2"
             density="comfortable"
-            label="Username or Email"
-            name="username"
-            prepend-inner-icon="mdi-account-outline"
+            label="Email Address"
+            name="email"
+            prepend-inner-icon="mdi-email-outline"
             required
-            :rules="[rules.required]"
+            :rules="[rules.required, rules.email]"
+            type="email"
             variant="outlined"
           />
 
@@ -123,13 +124,14 @@ const router = useRouter()
 const route = useRoute()
 const { login, isSubmitting, authError } = useAuth()
 
-const username = ref<string>()
+const email = ref<string>()
 const password = ref<string>()
 const showPassword = ref(false)
 const rememberMe = ref(true)
 
 const rules = {
   required: (value: string) => !!value || 'This field is required',
+  email: (value: string) => /.+@.+\..+/.test(value) || 'Please enter a valid email address',
 }
 
 const redirectReason = computed(() => {
@@ -140,12 +142,12 @@ const redirectReason = computed(() => {
 })
 
 async function handleSubmit() {
-  if (!username.value || !password.value) {
+  if (!email.value || !password.value) {
     return
   }
 
   const success = await login({
-    username: username.value,
+    email: email.value.trim(),
     password: password.value,
   })
 

@@ -1,4 +1,5 @@
-import axios, { type InternalAxiosRequestConfig } from 'axios'
+import axios, { type InternalAxiosRequestConfig, isAxiosError } from 'axios'
+import type { ApiErrorResponse } from '@/types/api'
 
 export const API_BASE_URL = '/api'
 
@@ -46,10 +47,35 @@ let failedQueue: QueuedPromise[] = []
 
 export interface RefreshTokenResult {
   accessToken: string
-  sessionId?: string
 }
 
 let activeRefreshPromise: Promise<RefreshTokenResult> | null = null
+
+/**
+ * Safely extracts a user-friendly error message from an API error or network failure
+ */
+export function getApiErrorMessage(
+  err: unknown,
+  fallback = 'An unexpected error occurred. Please try again.',
+): string {
+  if (isAxiosError<ApiErrorResponse>(err) && err.response?.data) {
+    if (typeof err.response.data === 'string') {
+      return err.response.data
+    }
+    if (
+      typeof err.response.data === 'object' &&
+      'error' in err.response.data &&
+      typeof err.response.data.error === 'string' &&
+      err.response.data.error.trim().length > 0
+    ) {
+      return err.response.data.error
+    }
+  }
+  if (err instanceof Error && err.message) {
+    return err.message
+  }
+  return fallback
+}
 
 /**
  * Deduplicated token refresh executor. Guarantees that only a single request
@@ -64,9 +90,6 @@ export async function executeRefreshToken(): Promise<RefreshTokenResult> {
     try {
       const { data } = await publicApi.post<RefreshTokenResult>('/auth/refresh')
       localStorage.setItem('accessToken', data.accessToken)
-      if (data.sessionId) {
-        localStorage.setItem('sessionId', data.sessionId)
-      }
       authApi.defaults.headers.common.Authorization = `Bearer ${data.accessToken}`
       window.dispatchEvent(
         new CustomEvent('auth:token-refreshed', { detail: { accessToken: data.accessToken } }),

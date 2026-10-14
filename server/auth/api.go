@@ -94,34 +94,33 @@ func clearRefreshTokenCookie(c *gin.Context) {
 // Login godoc
 //
 //	@Summary		User login
-//	@Description	Authenticates a user and returns access token; sets HTTP-only refresh token cookie
+//	@Description	Authenticates a user by email and password, returns access token, and sets HTTP-only refresh token cookie
 //	@Tags			auth
 //	@Accept			json
 //	@Produce		json
 //	@Param			loginDto	body		LoginDto	true	"Login credentials"
 //	@Success		200			{object}	TokenDto
-//	@Failure		400			{object}	map[string]string
-//	@Failure		401			{object}	map[string]string
+//	@Failure		400			{object}	ginutil.ErrorResponse
+//	@Failure		401			{object}	ginutil.ErrorResponse
 //	@Router			/auth/login [post]
 func (l *AuthCtn) login(c *gin.Context) {
 	var loginDto LoginDto
 
 	if err := c.ShouldBindJSON(&loginDto); err != nil {
 		l.logger.Errorf("Invalid login request err = %+v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid login payload"})
+		ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid login payload")
 		return
 	}
 
-	tokens, err := l.auth.Login(loginDto.Username, loginDto.Password, c.Request.UserAgent(), c.ClientIP(), loginDto.SessionId)
+	tokens, err := l.auth.Login(loginDto.Email, loginDto.Password, c.Request.UserAgent(), c.ClientIP(), loginDto.SessionId)
 	if err != nil {
 		l.logger.Errorf("Login failed err = %+v", err)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid username or password"})
+		ginutil.RespondWithError(c, http.StatusUnauthorized, "Invalid email or password")
 		return
 	}
 
 	setRefreshTokenCookie(c, tokens.RefreshToken)
-	tokens.RefreshToken = ""
-	c.JSON(http.StatusOK, tokens)
+	c.JSON(http.StatusOK, TokenDto{AccessToken: tokens.AccessToken})
 }
 
 // Register godoc
@@ -133,15 +132,15 @@ func (l *AuthCtn) login(c *gin.Context) {
 //	@Produce		json
 //	@Param			registerDto	body		RegisterDto	true	"Registration credentials"
 //	@Success		201			{object}	TokenDto
-//	@Failure		400			{object}	map[string]string
-//	@Failure		500			{object}	map[string]string
+//	@Failure		400			{object}	ginutil.ErrorResponse
+//	@Failure		500			{object}	ginutil.ErrorResponse
 //	@Router			/auth/register [post]
 func (l *AuthCtn) register(c *gin.Context) {
 	var registerDto RegisterDto
 
 	if err := c.ShouldBindJSON(&registerDto); err != nil {
 		l.logger.Errorf("Invalid register request err = %+v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid registration payload. Check username, email format, and password length."})
+		ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid registration payload. Check username, email format, and password length.")
 		return
 	}
 
@@ -149,16 +148,15 @@ func (l *AuthCtn) register(c *gin.Context) {
 	if err != nil {
 		l.logger.Errorf("Registration failed err = %+v", err)
 		if errors.Is(err, cerror.ErrUserAlreadyExists) || strings.Contains(err.Error(), "already exists") {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Username or email already exists"})
+			ginutil.RespondWithError(c, http.StatusBadRequest, "Username or email already exists")
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Registration failed. Please try again."})
+		ginutil.RespondWithError(c, http.StatusInternalServerError, "Registration failed. Please try again.")
 		return
 	}
 
 	setRefreshTokenCookie(c, tokens.RefreshToken)
-	tokens.RefreshToken = ""
-	c.JSON(http.StatusCreated, tokens)
+	c.JSON(http.StatusCreated, TokenDto{AccessToken: tokens.AccessToken})
 }
 
 // Refresh godoc
@@ -166,27 +164,20 @@ func (l *AuthCtn) register(c *gin.Context) {
 //	@Summary		Refresh Access Token
 //	@Description	Generates a new access token and rotates HTTP-only refresh token cookie
 //	@Tags			auth
-//	@Accept			json
 //	@Produce		json
-//	@Param			refreshDto	body	RefreshDto	false	"Refresh token payload (optional if cookie is present)"
 //	@Security		BearerAuth
 //	@Success		200	{object}	TokenDto
-//	@Failure		400	{object}	map[string]string
-//	@Failure		401	{object}	map[string]string
+//	@Failure		400	{object}	ginutil.ErrorResponse
+//	@Failure		401	{object}	ginutil.ErrorResponse
 //	@Router			/auth/refresh [post]
 func (l *AuthCtn) refreshToken(c *gin.Context) {
 	tokenStr, err := c.Cookie(RefreshTokenCookieName)
 	if err != nil || tokenStr == "" {
-		var refreshDto RefreshDto
-		_ = c.ShouldBindJSON(&refreshDto)
-		tokenStr = refreshDto.RefreshToken
-		if tokenStr == "" {
-			tokenStr = c.Request.Header.Get("Authorization")
-		}
+		tokenStr = c.Request.Header.Get("Authorization")
 	}
 
 	if tokenStr == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing refresh token"})
+		ginutil.RespondWithError(c, http.StatusBadRequest, "Missing refresh token")
 		return
 	}
 
@@ -194,13 +185,12 @@ func (l *AuthCtn) refreshToken(c *gin.Context) {
 	if err != nil {
 		l.logger.Errorf("Refresh failed err = %v", err)
 		clearRefreshTokenCookie(c)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired refresh token"})
+		ginutil.RespondWithError(c, http.StatusUnauthorized, "Invalid or expired refresh token")
 		return
 	}
 
 	setRefreshTokenCookie(c, tokens.RefreshToken)
-	tokens.RefreshToken = ""
-	c.JSON(http.StatusOK, tokens)
+	c.JSON(http.StatusOK, TokenDto{AccessToken: tokens.AccessToken})
 }
 
 // LogoutCurrent godoc
@@ -210,9 +200,9 @@ func (l *AuthCtn) refreshToken(c *gin.Context) {
 //	@Tags			auth
 //	@Produce		json
 //	@Security		BearerAuth
-//	@Success		200	{object}	map[string]string
-//	@Failure		401	{object}	map[string]string
-//	@Failure		500	{object}	map[string]string
+//	@Success		204	"Successfully logged out"
+//	@Failure		401	{object}	ginutil.ErrorResponse
+//	@Failure		500	{object}	ginutil.ErrorResponse
 //	@Router			/auth/logout [post]
 func (l *AuthCtn) logoutCurrent(c *gin.Context) {
 	clearRefreshTokenCookie(c)
@@ -220,25 +210,25 @@ func (l *AuthCtn) logoutCurrent(c *gin.Context) {
 	userUuid, err := authutils.GetUserUUID(c)
 	if err != nil {
 		l.logger.Error("User UUID not found in context for logout")
-		c.AbortWithStatus(http.StatusUnauthorized)
+		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
 	claims, ok := authutils.GetClaims(c)
 	if !ok || claims == nil {
 		l.logger.Error("Claims not found in context for logout")
-		c.AbortWithStatus(http.StatusUnauthorized)
+		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
 	err = l.auth.LogoutCurrent(userUuid, claims.SessionUuid)
 	if err != nil {
 		l.logger.Errorf("Logout current failed err = %+v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to logout"})
+		ginutil.RespondWithError(c, http.StatusInternalServerError, "Failed to logout")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
+	c.Status(http.StatusNoContent)
 }
 
 // LogoutAll godoc
@@ -248,9 +238,9 @@ func (l *AuthCtn) logoutCurrent(c *gin.Context) {
 //	@Tags			auth
 //	@Produce		json
 //	@Security		BearerAuth
-//	@Success		200	{object}	map[string]string
-//	@Failure		401	{object}	map[string]string
-//	@Failure		500	{object}	map[string]string
+//	@Success		204	"All sessions successfully logged out"
+//	@Failure		401	{object}	ginutil.ErrorResponse
+//	@Failure		500	{object}	ginutil.ErrorResponse
 //	@Router			/auth/logout-all [post]
 func (l *AuthCtn) logoutAll(c *gin.Context) {
 	clearRefreshTokenCookie(c)
@@ -258,18 +248,18 @@ func (l *AuthCtn) logoutAll(c *gin.Context) {
 	userUuid, err := authutils.GetUserUUID(c)
 	if err != nil {
 		l.logger.Error("User UUID not found in context for logout-all")
-		c.AbortWithStatus(http.StatusUnauthorized)
+		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
 	err = l.auth.LogoutAll(userUuid)
 	if err != nil {
 		l.logger.Errorf("Logout all failed err = %+v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to logout all sessions"})
+		ginutil.RespondWithError(c, http.StatusInternalServerError, "Failed to logout all sessions")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "All sessions logged out successfully"})
+	c.Status(http.StatusNoContent)
 }
 
 // ListSessions godoc
@@ -280,28 +270,28 @@ func (l *AuthCtn) logoutAll(c *gin.Context) {
 //	@Produce		json
 //	@Security		BearerAuth
 //	@Success		200	{array}		SessionDto
-//	@Failure		401	{object}	map[string]string
-//	@Failure		500	{object}	map[string]string
+//	@Failure		401	{object}	ginutil.ErrorResponse
+//	@Failure		500	{object}	ginutil.ErrorResponse
 //	@Router			/auth/session [get]
 func (l *AuthCtn) listSessions(c *gin.Context) {
 	userUuid, err := authutils.GetUserUUID(c)
 	if err != nil {
 		l.logger.Error("User UUID not found in context for listSessions")
-		c.AbortWithStatus(http.StatusUnauthorized)
+		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
 	claims, ok := authutils.GetClaims(c)
 	if !ok || claims == nil {
 		l.logger.Error("Claims not found in context for listSessions")
-		c.AbortWithStatus(http.StatusUnauthorized)
+		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
 	sessions, err := l.auth.ListSessions(userUuid, claims.SessionUuid)
 	if err != nil {
 		l.logger.Errorf("List sessions failed err = %+v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list sessions"})
+		ginutil.RespondWithError(c, http.StatusInternalServerError, "Failed to list sessions")
 		return
 	}
 
@@ -316,10 +306,10 @@ func (l *AuthCtn) listSessions(c *gin.Context) {
 //	@Produce		json
 //	@Param			uuid	path	string	true	"Session ID (UUID)"
 //	@Security		BearerAuth
-//	@Success		200	{object}	map[string]string
-//	@Failure		400	{object}	map[string]string
-//	@Failure		401	{object}	map[string]string
-//	@Failure		500	{object}	map[string]string
+//	@Success		204	"Session successfully revoked"
+//	@Failure		400	{object}	ginutil.ErrorResponse
+//	@Failure		401	{object}	ginutil.ErrorResponse
+//	@Failure		500	{object}	ginutil.ErrorResponse
 //	@Router			/auth/session/{uuid} [delete]
 func (l *AuthCtn) revokeSession(c *gin.Context) {
 	targetSessionUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
@@ -330,16 +320,16 @@ func (l *AuthCtn) revokeSession(c *gin.Context) {
 	userUuid, err := authutils.GetUserUUID(c)
 	if err != nil {
 		l.logger.Error("User UUID not found in context for revokeSession")
-		c.AbortWithStatus(http.StatusUnauthorized)
+		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
 	err = l.auth.RevokeSession(userUuid, targetSessionUuid)
 	if err != nil {
 		l.logger.Errorf("Revoke session failed err = %+v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to revoke session"})
+		ginutil.RespondWithError(c, http.StatusInternalServerError, "Failed to revoke session")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Session revoked successfully"})
+	c.Status(http.StatusNoContent)
 }

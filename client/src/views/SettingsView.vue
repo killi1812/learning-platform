@@ -162,6 +162,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { listUserSessions, revokeUserSession, type SessionInfo } from '@/api/auth'
+import { getApiErrorMessage } from '@/api/client'
 
 const router = useRouter()
 const { currentUser, logout, logoutAll } = useAuth()
@@ -179,10 +180,7 @@ async function fetchSessions() {
   try {
     sessions.value = await listUserSessions()
   } catch (err: unknown) {
-    const errorMsg =
-      (err as { response?: { data?: { error?: string } } }).response?.data?.error ||
-      'Failed to load active sessions'
-    sessionError.value = errorMsg
+    sessionError.value = getApiErrorMessage(err, 'Failed to load active sessions')
   } finally {
     isLoadingSessions.value = false
   }
@@ -195,10 +193,7 @@ async function handleRevoke(sessionId: string) {
     await revokeUserSession(sessionId)
     sessions.value = sessions.value.filter(s => s.id !== sessionId)
   } catch (err: unknown) {
-    const errorMsg =
-      (err as { response?: { data?: { error?: string } } }).response?.data?.error ||
-      'Failed to revoke session'
-    sessionError.value = errorMsg
+    sessionError.value = getApiErrorMessage(err, 'Failed to revoke session')
   } finally {
     revokingId.value = undefined
   }

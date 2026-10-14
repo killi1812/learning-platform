@@ -23,9 +23,9 @@ import (
 )
 
 type ILoginService interface {
-	Login(identifier, password, userAgent, ip, requestedSessionId string) (*TokenDto, error)
-	Register(username, email, password, userAgent, ip string) (*TokenDto, error)
-	RefreshTokens(refreshToken string) (*TokenDto, error)
+	Login(email, password, userAgent, ip, requestedSessionId string) (*AuthResult, error)
+	Register(username, email, password, userAgent, ip string) (*AuthResult, error)
+	RefreshTokens(refreshToken string) (*AuthResult, error)
 	LogoutCurrent(userUuid uuid.UUID, sessionUuid uuid.UUID) error
 	LogoutAll(userUuid uuid.UUID) error
 }
@@ -94,13 +94,13 @@ func hashToken(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func (s *AuthService) Login(identifier, password, userAgent, ip, requestedSessionId string) (*TokenDto, error) {
-	normIdentifier := strings.ToLower(strings.TrimSpace(identifier))
+func (s *AuthService) Login(email, password, userAgent, ip, requestedSessionId string) (*AuthResult, error) {
+	normEmail := strings.ToLower(strings.TrimSpace(email))
 	var usr user.User
-	err := s.db.Where("username = ? OR email = ?", normIdentifier, normIdentifier).First(&usr).Error
+	err := s.db.Where("email = ?", normEmail).First(&usr).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			s.logger.Debugf("User not found Identifier = %s", normIdentifier)
+			s.logger.Debugf("User not found Email = %s", normEmail)
 			return nil, cerror.ErrInvalidCredentials
 		}
 		s.logger.Errorf("Failed to query user, error = %+v", err)
@@ -193,14 +193,14 @@ func (s *AuthService) Login(identifier, password, userAgent, ip, requestedSessio
 		}
 	}
 
-	return &TokenDto{
+	return &AuthResult{
 		AccessToken:  token,
 		RefreshToken: refresh,
 		SessionId:    sessionUuid.String(),
 	}, nil
 }
 
-func (s *AuthService) Register(username, email, password, userAgent, ip string) (*TokenDto, error) {
+func (s *AuthService) Register(username, email, password, userAgent, ip string) (*AuthResult, error) {
 	normUsername := strings.ToLower(strings.TrimSpace(username))
 	normEmail := strings.ToLower(strings.TrimSpace(email))
 
@@ -272,14 +272,14 @@ func (s *AuthService) Register(username, email, password, userAgent, ip string) 
 		}
 	}
 
-	return &TokenDto{
+	return &AuthResult{
 		AccessToken:  token,
 		RefreshToken: refresh,
 		SessionId:    sessionUuid.String(),
 	}, nil
 }
 
-func (s *AuthService) RefreshTokens(rawRefreshToken string) (*TokenDto, error) {
+func (s *AuthService) RefreshTokens(rawRefreshToken string) (*AuthResult, error) {
 	cleanRefreshToken, err := authUtil.ExtractToken(rawRefreshToken)
 	if err != nil {
 		cleanRefreshToken = rawRefreshToken
@@ -366,7 +366,7 @@ func (s *AuthService) RefreshTokens(rawRefreshToken string) (*TokenDto, error) {
 		return nil, err
 	}
 
-	return &TokenDto{
+	return &AuthResult{
 		AccessToken:  newAccessToken,
 		RefreshToken: newRefreshToken,
 		SessionId:    refreshClaims.SessionUuid.String(),

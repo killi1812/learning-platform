@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/cerror"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/ginutil"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -45,19 +46,19 @@ func Protect(roles ...Role) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, "Missing token")
+			ginutil.RespondWithError(c, http.StatusUnauthorized, "Missing token")
 			return
 		}
 
 		token, claims, err := ParseToken(authHeader)
 		if err != nil {
 			zap.S().Infof("Auth failed with err = %+v", err)
-			c.AbortWithStatusJSON(http.StatusUnauthorized, "Invalid token format")
+			ginutil.RespondWithError(c, http.StatusUnauthorized, "Invalid token format")
 			return
 		}
 
 		if !token.Valid {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, "Invalid token")
+			ginutil.RespondWithError(c, http.StatusUnauthorized, "Invalid token")
 			return
 		}
 
@@ -65,13 +66,13 @@ func Protect(roles ...Role) gin.HandlerFunc {
 		if validator != nil && claims.SessionUuid != uuid.Nil {
 			userUuid, err := uuid.Parse(claims.ID)
 			if err != nil || !validator(c.Request.Context(), userUuid, claims.SessionUuid) {
-				c.AbortWithStatusJSON(http.StatusUnauthorized, "Session revoked or expired")
+				ginutil.RespondWithError(c, http.StatusUnauthorized, "Session revoked or expired")
 				return
 			}
 		}
 
 		if len(roles) != 0 && !slices.Contains(roles, claims.Role) {
-			c.AbortWithStatus(http.StatusForbidden)
+			ginutil.RespondWithError(c, http.StatusForbidden, "Forbidden: insufficient permissions")
 			return
 		}
 

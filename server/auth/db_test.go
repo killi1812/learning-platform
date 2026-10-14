@@ -72,18 +72,18 @@ func TestAuthService_Unit(t *testing.T) {
 	err = gormDb.Create(&testUser).Error
 	assert.NoError(t, err)
 
-	t.Run("Login with unknown identifier returns ErrInvalidCredentials", func(t *testing.T) {
-		_, err := svc.Login("nonexistent", "validPassword123", "", "", "")
+	t.Run("Login with unknown email returns ErrInvalidCredentials", func(t *testing.T) {
+		_, err := svc.Login("nonexistent@example.com", "validPassword123", "", "", "")
 		assert.ErrorIs(t, err, cerror.ErrInvalidCredentials)
 	})
 
 	t.Run("Login with wrong password returns ErrInvalidCredentials", func(t *testing.T) {
-		_, err := svc.Login("tester", "wrongPassword", "", "", "")
+		_, err := svc.Login("tester@example.com", "wrongPassword", "", "", "")
 		assert.ErrorIs(t, err, cerror.ErrInvalidCredentials)
 	})
 
-	t.Run("Login is case-insensitive for username and email", func(t *testing.T) {
-		tokens1, err := svc.Login("TESTER", "validPassword123", "", "", "")
+	t.Run("Login is case-insensitive for email", func(t *testing.T) {
+		tokens1, err := svc.Login("TESTER@EXAMPLE.COM", "validPassword123", "", "", "")
 		assert.NoError(t, err)
 		assert.NotEmpty(t, tokens1.AccessToken)
 		assert.NotEmpty(t, tokens1.RefreshToken)
@@ -192,9 +192,9 @@ func TestAuthService_Integration(t *testing.T) {
 	var firstSessionUuid uuid.UUID
 	var firstRefreshToken string
 
-	t.Run("Login with valid username stores hashed token and device name", func(t *testing.T) {
+	t.Run("Login with valid email stores hashed token and device name", func(t *testing.T) {
 		ua := "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36"
-		tokens, err := svc.Login("tester", "validPassword123", ua, "192.168.1.10", "")
+		tokens, err := svc.Login("tester@example.com", "validPassword123", ua, "192.168.1.10", "")
 		assert.NoError(t, err)
 		assert.NotEmpty(t, tokens.AccessToken)
 		assert.NotEmpty(t, tokens.RefreshToken)
@@ -256,9 +256,9 @@ func TestAuthService_Integration(t *testing.T) {
 	})
 
 	t.Run("Multiple logins create separate sessions without destroying previous", func(t *testing.T) {
-		_, err1 := svc.Login("tester", "validPassword123", "PostmanRuntime/7.36.0", "10.0.0.1", "")
+		_, err1 := svc.Login("tester@example.com", "validPassword123", "PostmanRuntime/7.36.0", "10.0.0.1", "")
 		assert.NoError(t, err1)
-		_, err2 := svc.Login("tester", "validPassword123", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Safari/604.1", "10.0.0.2", "")
+		_, err2 := svc.Login("tester@example.com", "validPassword123", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Safari/604.1", "10.0.0.2", "")
 		assert.NoError(t, err2)
 
 		sessions, err := svc.ListSessions(userUuid, uuid.New())
@@ -288,7 +288,7 @@ func TestAuthService_Integration(t *testing.T) {
 		_ = svc.LogoutAll(userUuid)
 
 		// First login
-		loginTokens, err := svc.Login("tester", "validPassword123", "Chrome on Linux", "127.0.0.1", "")
+		loginTokens, err := svc.Login("tester@example.com", "validPassword123", "Chrome on Linux", "127.0.0.1", "")
 		assert.NoError(t, err)
 		assert.NotEmpty(t, loginTokens.AccessToken)
 		parsedSessUuid, err := uuid.Parse(loginTokens.SessionId)
@@ -313,7 +313,7 @@ func TestAuthService_Integration(t *testing.T) {
 		assert.Empty(t, activeSessions, "Expired session should not be returned by ListSessions")
 
 		// Re-login passing the persistent sessionId
-		loginTokens2, err := svc.Login("tester", "validPassword123", "Chrome on Linux", "127.0.0.1", loginTokens.SessionId)
+		loginTokens2, err := svc.Login("tester@example.com", "validPassword123", "Chrome on Linux", "127.0.0.1", loginTokens.SessionId)
 		assert.NoError(t, err)
 		assert.NotEmpty(t, loginTokens2.AccessToken)
 		assert.Equal(t, loginTokens.SessionId, loginTokens2.SessionId, "Should reuse the existing session UUID")
@@ -336,7 +336,7 @@ func TestAuthService_Integration(t *testing.T) {
 		svc.RegisterSessionValidator()
 		defer authUtil.SetSessionValidator(nil)
 
-		loginTokens3, err := svc.Login("tester", "validPassword123", "Test Browser", "127.0.0.1", "")
+		loginTokens3, err := svc.Login("tester@example.com", "validPassword123", "Test Browser", "127.0.0.1", "")
 		assert.NoError(t, err)
 		parsedSessUuid, err := uuid.Parse(loginTokens3.SessionId)
 		assert.NoError(t, err)

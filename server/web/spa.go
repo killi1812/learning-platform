@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/ginutil"
 	"github.com/gin-gonic/gin"
 )
 
@@ -26,7 +27,7 @@ func RegisterSPA(router *gin.Engine) {
 
 		// Never handle API or Swagger routes as SPA fallback
 		if strings.HasPrefix(path, "/api") || strings.HasPrefix(path, "/swagger") {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Endpoint not found"})
+			ginutil.RespondWithError(c, http.StatusNotFound, "Endpoint not found")
 			return
 		}
 
@@ -46,7 +47,7 @@ func RegisterSPA(router *gin.Engine) {
 		// Fallback to index.html for client-side routing
 		indexFile, err := subFS.Open("index.html")
 		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Frontend not found"})
+			ginutil.RespondWithError(c, http.StatusNotFound, "Frontend not found")
 			return
 		}
 		_ = indexFile.Close()

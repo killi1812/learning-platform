@@ -2,21 +2,17 @@ definitions:
   auth.LoginDto:
     properties:
       email:
+        example: user@example.com
         type: string
       password:
+        example: Pa$$w0rd123
         type: string
       sessionId:
-        type: string
-      username:
+        example: 550e8400-e29b-41d4-a716-446655440000
         type: string
     required:
+    - email
     - password
-    - username
-    type: object
-  auth.RefreshDto:
-    properties:
-      refreshToken:
-        type: string
     type: object
   auth.RegisterDto:
     properties:
@@ -52,9 +48,11 @@ definitions:
     properties:
       accessToken:
         type: string
-      refreshToken:
-        type: string
-      sessionId:
+    type: object
+  ginutil.ErrorResponse:
+    properties:
+      error:
+        example: Invalid email or password
         type: string
     type: object
   info.ServerInfoDto:
@@ -109,8 +107,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Authenticates a user and returns access token; sets HTTP-only refresh
-        token cookie
+      description: Authenticates a user by email and password, returns access token,
+        and sets HTTP-only refresh token cookie
       parameters:
       - description: Login credentials
         in: body
@@ -128,15 +126,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/ginutil.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/ginutil.ErrorResponse'
       summary: User login
       tags:
       - auth
@@ -146,24 +140,16 @@ paths:
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties:
-              type: string
-            type: object
+        "204":
+          description: Successfully logged out
         "401":
           description: Unauthorized
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/ginutil.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/ginutil.ErrorResponse'
       security:
       - BearerAuth: []
       summary: User Logout (Current Device)
@@ -176,24 +162,16 @@ paths:
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties:
-              type: string
-            type: object
+        "204":
+          description: All sessions successfully logged out
         "401":
           description: Unauthorized
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/ginutil.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/ginutil.ErrorResponse'
       security:
       - BearerAuth: []
       summary: User Logout All Devices
@@ -201,16 +179,8 @@ paths:
       - auth
   /auth/refresh:
     post:
-      consumes:
-      - application/json
       description: Generates a new access token and rotates HTTP-only refresh token
         cookie
-      parameters:
-      - description: Refresh token payload (optional if cookie is present)
-        in: body
-        name: refreshDto
-        schema:
-          $ref: '#/definitions/auth.RefreshDto'
       produces:
       - application/json
       responses:
@@ -221,15 +191,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/ginutil.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/ginutil.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Refresh Access Token
@@ -258,15 +224,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/ginutil.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/ginutil.ErrorResponse'
       summary: User registration
       tags:
       - auth
@@ -285,15 +247,11 @@ paths:
         "401":
           description: Unauthorized
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/ginutil.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/ginutil.ErrorResponse'
       security:
       - BearerAuth: []
       summary: List Active Sessions
@@ -311,30 +269,20 @@ paths:
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties:
-              type: string
-            type: object
+        "204":
+          description: Session successfully revoked
         "400":
           description: Bad Request
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/ginutil.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/ginutil.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/ginutil.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Revoke Session
@@ -399,10 +347,12 @@ paths:
             $ref: '#/definitions/user.UserDto'
         "400":
           description: Bad Request
-        "404":
-          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
         "500":
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Create new user
@@ -421,13 +371,19 @@ paths:
       - application/json
       responses:
         "204":
-          description: No Content
+          description: User deleted successfully
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
         "404":
           description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
         "500":
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
       security:
       - BearerAuth: []
       summary: delete user with uuid
@@ -450,10 +406,16 @@ paths:
             $ref: '#/definitions/user.UserDto'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
         "404":
           description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
         "500":
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
       security:
       - BearerAuth: []
       summary: get user with uuid
@@ -481,10 +443,16 @@ paths:
             $ref: '#/definitions/user.UserDto'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
         "404":
           description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
         "500":
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Update user with new dat
@@ -504,10 +472,16 @@ paths:
             type: array
         "401":
           description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
         "403":
           description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
         "500":
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Get all users for admin
@@ -523,14 +497,18 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/user.UserDto'
-        "400":
-          description: Bad Request
         "401":
           description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
         "404":
           description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
         "500":
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Get logged-in user data
@@ -557,8 +535,12 @@ paths:
             type: array
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
         "500":
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Search users by name

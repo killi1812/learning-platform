@@ -1,7 +1,6 @@
 export interface LoginRequest {
-  username: string
+  email: string
   password: string
-  email?: string
   sessionId?: string
 }
 
@@ -13,7 +12,6 @@ export interface RegisterRequest {
 
 export interface TokenResponse {
   accessToken: string
-  sessionId?: string
 }
 
 export interface SessionInfo {
