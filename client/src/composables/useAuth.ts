@@ -18,7 +18,6 @@ export interface UserClaims {
   email?: string
   role?: string
   sessionUuid?: string
-  uuid?: string
   exp?: number
   iat?: number
 }

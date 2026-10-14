@@ -425,4 +425,3 @@ func TestAuthService_RefreshTokens_AccessTokenRejected(t *testing.T) {
 	assert.Nil(t, tokens)
 	assert.ErrorIs(t, err, cerror.ErrInvalidTokenFormat)
 }
-

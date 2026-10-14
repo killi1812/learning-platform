@@ -13,12 +13,7 @@ export interface RegisterRequest {
 
 export interface TokenResponse {
   accessToken: string
-  refreshToken?: string
   sessionId?: string
-}
-
-export interface RefreshRequest {
-  refreshToken: string
 }
 
 export interface SessionInfo {

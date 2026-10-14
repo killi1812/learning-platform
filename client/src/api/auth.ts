@@ -11,7 +11,6 @@ export type {
   LoginRequest,
   RegisterRequest,
   TokenResponse,
-  RefreshRequest,
   SessionInfo,
   ServerInfoResponse,
 } from '@/types/auth'
@@ -33,13 +32,9 @@ export async function registerUser(credentials: RegisterRequest): Promise<TokenR
 }
 
 /**
- * Refreshes JWT tokens using the HTTP-only refresh token cookie (or optional fallback token)
+ * Refreshes JWT tokens using the HTTP-only refresh token cookie
  */
-export async function refreshUserToken(refreshToken?: string): Promise<TokenResponse> {
-  if (refreshToken) {
-    const response = await publicApi.post<TokenResponse>('/auth/refresh', { refreshToken })
-    return response.data
-  }
+export async function refreshUserToken(): Promise<TokenResponse> {
   return executeRefreshToken()
 }
 
