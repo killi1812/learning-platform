@@ -33,7 +33,10 @@ func NewSqliteDb(dsn string, isDev bool, models ...any) *gorm.DB {
 	}
 
 	if len(models) > 0 {
-		if err := db.AutoMigrate(models...); err != nil {
+		silentDb := db.Session(&gorm.Session{
+			Logger: logger.Default.LogMode(logger.Silent),
+		})
+		if err := silentDb.AutoMigrate(models...); err != nil {
 			zap.S().Panicf("failed to auto-migrate sqlite database %s: %+v", dsn, err)
 		}
 	}
