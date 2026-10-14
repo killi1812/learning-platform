@@ -1,16 +1,20 @@
 <template>
   <v-app>
-    <AppHeader />
-    <AppSidebar />
+    <AppHeader v-if="showNavigation" />
+    <AppSidebar v-if="showNavigation" />
 
     <v-main class="bg-background">
-      <DashboardView />
+      <router-view />
     </v-main>
   </v-app>
 </template>
 
 <script lang="ts" setup>
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 import AppHeader from '@/components/AppHeader.vue'
 import AppSidebar from '@/components/AppSidebar.vue'
-import DashboardView from '@/components/DashboardView.vue'
+
+const route = useRoute()
+const showNavigation = computed(() => !route.meta.hideNavigation)
 </script>
