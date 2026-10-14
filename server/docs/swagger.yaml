@@ -13,6 +13,22 @@ definitions:
       refreshToken:
         type: string
     type: object
+  auth.RegisterDto:
+    properties:
+      email:
+        type: string
+      password:
+        minLength: 6
+        type: string
+      username:
+        maxLength: 100
+        minLength: 2
+        type: string
+    required:
+    - email
+    - password
+    - username
+    type: object
   auth.TokenDto:
     properties:
       accessToken:
@@ -129,6 +145,30 @@ paths:
       security:
       - BearerAuth: []
       summary: Refresh Access Token
+      tags:
+      - auth
+  /auth/register:
+    post:
+      consumes:
+      - application/json
+      description: Registers a new user and returns access and refresh tokens
+      parameters:
+      - description: Registration credentials
+        in: body
+        name: registerDto
+        required: true
+        schema:
+          $ref: '#/definitions/auth.RegisterDto'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/auth.TokenDto'
+        "400":
+          description: Bad Request
+      summary: User registration
       tags:
       - auth
   /healthz:

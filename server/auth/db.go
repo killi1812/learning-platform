@@ -21,6 +21,7 @@ import (
 
 type IAuthService interface {
 	Login(identifier, password string) (string, string, error)
+	Register(username, email, password string) (string, string, error)
 	RefreshTokens(refreshToken string) (string, string, error)
 	Logout(userUuid string) error
 }
@@ -89,6 +90,61 @@ func (s *AuthService) Login(identifier, password string) (string, string, error)
 	if err != nil {
 		s.logger.Errorf("Failed to create a session, err = %+v", err)
 		return "", "", err
+	}
+
+	return token, refresh, nil
+}
+
+func (s *AuthService) Register(username, email, password string) (string, string, error) {
+	var count int64
+	if err := s.db.Model(&user.User{}).Where("username = ? OR email = ?", username, email).Count(&count).Error; err != nil {
+		s.logger.Errorf("Failed to check existing user, err = %+v", err)
+		return "", "", err
+	}
+	if count > 0 {
+		return "", "", errors.New("username or email already exists")
+	}
+
+	hash, err := authUtil.HashPassword(password)
+	if err != nil {
+		s.logger.Errorf("Failed to hash password, err = %+v", err)
+		return "", "", err
+	}
+
+	usr := user.User{
+		Uuid:         uuid.New(),
+		Username:     username,
+		Email:        email,
+		PasswordHash: hash,
+		Role:         authUtil.ROLE_USER,
+	}
+
+	if err := s.db.Create(&usr).Error; err != nil {
+		s.logger.Errorf("Failed to create user in db, err = %+v", err)
+		return "", "", err
+	}
+
+	token, refresh, err := authUtil.GenerateTokens(usr.Email, usr.Username, usr.Role, usr.Uuid)
+	if err != nil {
+		s.logger.Errorf("Failed to generate token, err = %+v", err)
+		return "", "", err
+	}
+
+	if s.mongoDb != nil {
+		session := user.Session{
+			UserUuid:     usr.Uuid,
+			RefreshToken: refresh,
+			CreatedAt:    time.Now(),
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		_, err = s.sessionsColl().InsertOne(ctx, session)
+		if err != nil {
+			s.logger.Errorf("Failed to create a session, err = %+v", err)
+			return "", "", err
+		}
 	}
 
 	return token, refresh, nil

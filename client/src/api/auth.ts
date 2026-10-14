@@ -6,6 +6,12 @@ export interface LoginRequest {
   email?: string
 }
 
+export interface RegisterRequest {
+  username: string
+  email: string
+  password: string
+}
+
 export interface TokenResponse {
   accessToken: string
   refreshToken?: string
@@ -27,6 +33,14 @@ export interface ServerInfoResponse {
  */
 export async function loginUser(credentials: LoginRequest): Promise<TokenResponse> {
   const response = await publicApi.post<TokenResponse>('/auth/login', credentials)
+  return response.data
+}
+
+/**
+ * Registers a new user account without requiring authorization headers
+ */
+export async function registerUser(credentials: RegisterRequest): Promise<TokenResponse> {
+  const response = await publicApi.post<TokenResponse>('/auth/register', credentials)
   return response.data
 }
 

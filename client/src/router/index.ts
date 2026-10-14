@@ -3,6 +3,7 @@ import { useAuth } from '@/composables/useAuth'
 
 import DashboardView from '@/components/DashboardView.vue'
 import LoginView from '@/views/LoginView.vue'
+import RegisterView from '@/views/RegisterView.vue'
 import UnauthorizedView from '@/views/UnauthorizedView.vue'
 import CoursesView from '@/views/CoursesView.vue'
 import SettingsView from '@/views/SettingsView.vue'
@@ -21,6 +22,16 @@ export const routes: RouteRecordRaw[] = [
       guestOnly: true,
       hideNavigation: true,
       title: 'Sign In',
+    },
+  },
+  {
+    path: '/register',
+    name: 'Register',
+    component: RegisterView,
+    meta: {
+      guestOnly: true,
+      hideNavigation: true,
+      title: 'Sign Up',
     },
   },
   {

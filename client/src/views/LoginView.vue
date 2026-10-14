@@ -96,6 +96,18 @@
             Sign In
           </v-btn>
         </v-form>
+
+        <v-divider class="my-5" />
+
+        <div class="text-center text-body-2 text-medium-emphasis">
+          Don't have an account?
+          <router-link
+            to="/register"
+            class="text-primary font-weight-bold text-decoration-none ml-1"
+          >
+            Sign Up
+          </router-link>
+        </div>
       </v-card>
     </v-container>
   </div>

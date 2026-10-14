@@ -1,5 +1,12 @@
 import { ref, computed } from 'vue'
-import { loginUser, logoutUser, type LoginRequest, type TokenResponse } from '@/api/auth'
+import {
+  loginUser,
+  registerUser,
+  logoutUser,
+  type LoginRequest,
+  type RegisterRequest,
+  type TokenResponse,
+} from '@/api/auth'
 
 export interface UserClaims {
   sub?: string
@@ -99,6 +106,32 @@ export function useAuth() {
     }
   }
 
+  async function register(credentials: RegisterRequest): Promise<boolean> {
+    isSubmitting.value = true
+    authError.value = undefined
+    try {
+      const data = await registerUser(credentials)
+      if (data?.accessToken) {
+        setTokens(data)
+        return true
+      }
+      authError.value = 'Invalid response from server'
+      return false
+    } catch (err: unknown) {
+      clearAuth()
+      const axiosError = err as { response?: { data?: string | { error?: string } } }
+      const message =
+        typeof axiosError.response?.data === 'string'
+          ? axiosError.response.data
+          : axiosError.response?.data?.error ||
+            'Registration failed. Please check your details and try again.'
+      authError.value = message
+      return false
+    } finally {
+      isSubmitting.value = false
+    }
+  }
+
   async function logout(): Promise<void> {
     try {
       if (currentToken.value) {
@@ -125,6 +158,7 @@ export function useAuth() {
     authError,
     isSubmitting,
     login,
+    register,
     logout,
     hasRole,
     clearAuth,

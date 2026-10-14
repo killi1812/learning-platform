@@ -101,6 +101,31 @@ func TestAuthService_Unit(t *testing.T) {
 		err := svc.Logout("not-a-uuid")
 		assert.Error(t, err)
 	})
+
+	t.Run("Register new user succeeds and returns tokens", func(t *testing.T) {
+		token, refresh, err := svc.Register("brandnew", "brandnew@example.com", "Password123")
+		assert.NoError(t, err)
+		assert.NotEmpty(t, token)
+		assert.NotEmpty(t, refresh)
+
+		var created user.User
+		err = gormDb.Where("username = ?", "brandnew").First(&created).Error
+		assert.NoError(t, err)
+		assert.Equal(t, "brandnew@example.com", created.Email)
+		assert.True(t, authUtil.VerifyPassword(created.PasswordHash, "Password123"))
+	})
+
+	t.Run("Register duplicate username returns error", func(t *testing.T) {
+		_, _, err := svc.Register("tester", "other@example.com", "Password123")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "already exists")
+	})
+
+	t.Run("Register duplicate email returns error", func(t *testing.T) {
+		_, _, err := svc.Register("uniqueusername", "tester@example.com", "Password123")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "already exists")
+	})
 }
 
 func TestAuthService_Integration(t *testing.T) {

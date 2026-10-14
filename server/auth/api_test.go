@@ -18,6 +18,7 @@ import (
 
 type mockAuthService struct {
 	loginFunc         func(identifier, password string) (string, string, error)
+	registerFunc      func(username, email, password string) (string, string, error)
 	refreshTokensFunc func(refreshToken string) (string, string, error)
 	logoutFunc        func(userUuid string) error
 }
@@ -27,6 +28,13 @@ func (m *mockAuthService) Login(identifier, password string) (string, string, er
 		return m.loginFunc(identifier, password)
 	}
 	return "mock-access-token", "mock-refresh-token", nil
+}
+
+func (m *mockAuthService) Register(username, email, password string) (string, string, error) {
+	if m.registerFunc != nil {
+		return m.registerFunc(username, email, password)
+	}
+	return "mock-registered-access-token", "mock-registered-refresh-token", nil
 }
 
 func (m *mockAuthService) RefreshTokens(refreshToken string) (string, string, error) {
@@ -245,6 +253,57 @@ func TestAuthCtn_Logout(t *testing.T) {
 		router.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+
+	t.Run("Valid register returns 201 with tokens", func(t *testing.T) {
+		router, _ := setupAuthTestRouter(&mockAuthService{})
+
+		body, _ := json.Marshal(RegisterDto{
+			Username: "newuser",
+			Email:    "newuser@example.com",
+			Password: "securePassword123",
+		})
+		req, _ := http.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader(body))
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusCreated, w.Code)
+		var resp TokenDto
+		err := json.Unmarshal(w.Body.Bytes(), &resp)
+		assert.NoError(t, err)
+		assert.Equal(t, "mock-registered-access-token", resp.AccessToken)
+		assert.Equal(t, "mock-registered-refresh-token", resp.RefreshToken)
+	})
+
+	t.Run("Invalid register payload returns 400", func(t *testing.T) {
+		router, _ := setupAuthTestRouter(&mockAuthService{})
+
+		req, _ := http.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader([]byte("invalid json")))
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("Duplicate user registration returns 400 with error message", func(t *testing.T) {
+		mock := &mockAuthService{
+			registerFunc: func(username, email, password string) (string, string, error) {
+				return "", "", errors.New("username or email already exists")
+			},
+		}
+		router, _ := setupAuthTestRouter(mock)
+
+		body, _ := json.Marshal(RegisterDto{
+			Username: "existing",
+			Email:    "existing@example.com",
+			Password: "securePassword123",
+		})
+		req, _ := http.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader(body))
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Contains(t, w.Body.String(), "username or email already exists")
 	})
 }
 

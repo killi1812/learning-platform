@@ -26,6 +26,7 @@ func (c *AuthCtn) RegisterEndpoints(api *gin.RouterGroup) {
 	group := api.Group("/auth")
 
 	group.POST("/login", c.login)
+	group.POST("/register", c.register)
 	group.POST("/refresh", c.refreshToken)
 	group.POST("/logout", authUtil.Protect(), c.logout)
 }
@@ -56,6 +57,39 @@ func (l *AuthCtn) login(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, TokenDto{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+	})
+}
+
+// Register godoc
+//
+//	@Summary		User registration
+//	@Description	Registers a new user and returns access and refresh tokens
+//	@Tags			auth
+//	@Accept			json
+//	@Produce		json
+//	@Param			registerDto	body		RegisterDto	true	"Registration credentials"
+//	@Success		201			{object}	TokenDto
+//	@Failure		400
+//	@Router			/auth/register [post]
+func (l *AuthCtn) register(c *gin.Context) {
+	var registerDto RegisterDto
+
+	if err := c.BindJSON(&registerDto); err != nil {
+		l.logger.Errorf("Invalid register request err = %+v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload"})
+		return
+	}
+
+	accessToken, refreshToken, err := l.auth.Register(registerDto.Username, registerDto.Email, registerDto.Password)
+	if err != nil {
+		l.logger.Errorf("Registration failed err = %+v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, TokenDto{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 	})
