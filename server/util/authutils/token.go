@@ -12,8 +12,16 @@ import (
 	"go.uber.org/zap"
 )
 
+type TokenType string
+
+const (
+	TokenTypeAccess  TokenType = "access"
+	TokenTypeRefresh TokenType = "refresh"
+)
+
 type Claims struct {
 	jwt.RegisteredClaims
+	TokenType   TokenType `json:"typ,omitempty"`
 	Email       string    `json:"email"`
 	Username    string    `json:"username"`
 	Role        Role      `json:"role"`
@@ -39,6 +47,11 @@ func ParseToken(authHeader string) (*jwt.Token, *Claims, error) {
 	})
 	if err != nil {
 		return nil, nil, err
+	}
+
+	if claims.TokenType == TokenTypeRefresh {
+		zap.S().Warn("Refresh token presented as access token")
+		return nil, nil, cerror.ErrInvalidTokenFormat
 	}
 
 	return token, &claims, nil
@@ -81,6 +94,7 @@ func GenerateTokens(email, username string, role Role, userUuid uuid.UUID, sessi
 
 	uuidPair := uuid.New()
 	accessTokenClaims := &Claims{
+		TokenType:   TokenTypeAccess,
 		Email:       email,
 		Username:    username,
 		Role:        role,
@@ -95,11 +109,12 @@ func GenerateTokens(email, username string, role Role, userUuid uuid.UUID, sessi
 	accessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, accessTokenClaims)
 	accessTokenString, err := accessToken.SignedString([]byte(app.AccessKey))
 	if err != nil {
-		zap.S().Errorf("Failed to generate access token err = %w", err)
+		zap.S().Errorf("Failed to generate access token, err = %+v", err)
 		return "", "", err
 	}
 
 	refreshTokenClaims := &Claims{
+		TokenType:   TokenTypeRefresh,
 		Username:    username,
 		Email:       email,
 		Role:        role,
@@ -114,7 +129,7 @@ func GenerateTokens(email, username string, role Role, userUuid uuid.UUID, sessi
 	refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshTokenClaims)
 	refreshTokenString, err := refreshToken.SignedString([]byte(app.RefreshKey))
 	if err != nil {
-		zap.S().Errorf("Failed to generate refresh token err = %w", err)
+		zap.S().Errorf("Failed to generate refresh token, err = %+v", err)
 		return "", "", err
 	}
 

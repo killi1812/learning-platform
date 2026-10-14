@@ -294,6 +294,11 @@ func (s *AuthService) RefreshTokens(rawRefreshToken string) (*TokenDto, error) {
 		return nil, cerror.ErrInvalidTokenFormat
 	}
 
+	if refreshClaims.TokenType == authUtil.TokenTypeAccess {
+		s.logger.Warn("Access token presented as refresh token")
+		return nil, cerror.ErrInvalidTokenFormat
+	}
+
 	parsedUserUuid, err := uuid.Parse(refreshClaims.ID)
 	if err != nil {
 		s.logger.Errorf("Error Parsing uuid err = %+v", err)

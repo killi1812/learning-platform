@@ -7,7 +7,7 @@ const (
 
 var (
 	// Build describes app build type
-	Build = BuildDev
+	Build = BuildProd
 	// Version is a semver version of the app
 	Version = "0.0.0"
 	// CommitHash is latest build commit hash

@@ -398,3 +398,31 @@ func TestAuthService_RefreshTokens_NilMongoDb(t *testing.T) {
 	assert.Nil(t, tokens)
 	assert.Equal(t, "database connection unavailable", err.Error())
 }
+
+func TestAuthService_RefreshTokens_AccessTokenRejected(t *testing.T) {
+	app.RefreshKey = "test-refresh-key"
+	gormDb := testutil.NewSqliteTestDb(t, &user.User{})
+	svc := NewAuthService(AuthServiceParams{
+		GormDb:  gormDb,
+		MongoDb: nil,
+		Logger:  zap.NewNop().Sugar(),
+	})
+
+	// Create a token with TokenTypeAccess signed with RefreshKey
+	accessClaims := authUtil.Claims{
+		TokenType: authUtil.TokenTypeAccess,
+		Username:  "testuser",
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+			ID:        uuid.New().String(),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
+	tokenStr, _ := token.SignedString([]byte(app.RefreshKey))
+
+	tokens, err := svc.RefreshTokens("Bearer " + tokenStr)
+	assert.Error(t, err)
+	assert.Nil(t, tokens)
+	assert.ErrorIs(t, err, cerror.ErrInvalidTokenFormat)
+}
+

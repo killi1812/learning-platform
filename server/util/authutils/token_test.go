@@ -164,10 +164,31 @@ func TestGenerateTokens(t *testing.T) {
 	// Validate access token claims
 	_, claims, err := authutils.ParseToken("Bearer " + access)
 	assert.NoError(t, err)
+	assert.Equal(t, authutils.TokenTypeAccess, claims.TokenType)
 	assert.Equal(t, userUuid.String(), claims.Subject)
 	assert.Equal(t, userUuid.String(), claims.ID)
 	assert.Equal(t, sessionUuid, claims.SessionUuid)
 	assert.Equal(t, "user@example.com", claims.Email)
 	assert.Equal(t, "user", claims.Username)
 	assert.Equal(t, authutils.ROLE_USER, claims.Role)
+}
+
+func TestParseToken_RefreshTokenRejected(t *testing.T) {
+	app.AccessKey = "test-jwt-key"
+
+	// Create a token with TokenTypeRefresh signed with AccessKey
+	refreshClaims := authutils.Claims{
+		TokenType: authutils.TokenTypeRefresh,
+		Username:  "user@example.com",
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+			ID:        uuid.New().String(),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
+	tokenStr, _ := token.SignedString([]byte(app.AccessKey))
+
+	_, _, err := authutils.ParseToken("Bearer " + tokenStr)
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, cerror.ErrInvalidTokenFormat)
 }
