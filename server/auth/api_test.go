@@ -18,34 +18,34 @@ import (
 )
 
 type mockAuthService struct {
-	loginFunc         func(identifier, password, userAgent, ip string) (string, string, error)
-	registerFunc      func(username, email, password, userAgent, ip string) (string, string, error)
-	refreshTokensFunc func(refreshToken string) (string, string, error)
+	loginFunc         func(identifier, password, userAgent, ip, requestedSessionId string) (string, string, string, error)
+	registerFunc      func(username, email, password, userAgent, ip string) (string, string, string, error)
+	refreshTokensFunc func(refreshToken string) (string, string, string, error)
 	logoutCurrentFunc func(userUuid string, sessionUuid uuid.UUID) error
 	logoutAllFunc     func(userUuid string) error
 	listSessionsFunc  func(userUuid string, currentSessionUuid uuid.UUID) ([]SessionDto, error)
 	revokeSessionFunc func(userUuid string, targetSessionUuid uuid.UUID) error
 }
 
-func (m *mockAuthService) Login(identifier, password, userAgent, ip string) (string, string, error) {
+func (m *mockAuthService) Login(identifier, password, userAgent, ip, requestedSessionId string) (string, string, string, error) {
 	if m.loginFunc != nil {
-		return m.loginFunc(identifier, password, userAgent, ip)
+		return m.loginFunc(identifier, password, userAgent, ip, requestedSessionId)
 	}
-	return "mock-access-token", "mock-refresh-token", nil
+	return "mock-access-token", "mock-refresh-token", "mock-session-id", nil
 }
 
-func (m *mockAuthService) Register(username, email, password, userAgent, ip string) (string, string, error) {
+func (m *mockAuthService) Register(username, email, password, userAgent, ip string) (string, string, string, error) {
 	if m.registerFunc != nil {
 		return m.registerFunc(username, email, password, userAgent, ip)
 	}
-	return "mock-registered-access-token", "mock-registered-refresh-token", nil
+	return "mock-registered-access-token", "mock-registered-refresh-token", "mock-registered-session-id", nil
 }
 
-func (m *mockAuthService) RefreshTokens(refreshToken string) (string, string, error) {
+func (m *mockAuthService) RefreshTokens(refreshToken string) (string, string, string, error) {
 	if m.refreshTokensFunc != nil {
 		return m.refreshTokensFunc(refreshToken)
 	}
-	return "mock-refreshed-token", "mock-new-refresh-token", nil
+	return "mock-refreshed-token", "mock-new-refresh-token", "mock-refreshed-session-id", nil
 }
 
 func (m *mockAuthService) LogoutCurrent(userUuid string, sessionUuid uuid.UUID) error {
@@ -110,15 +110,16 @@ func generateValidToken(t *testing.T, userUuid, sessionUuid uuid.UUID) string {
 func TestAuthCtn_Login(t *testing.T) {
 	t.Run("Valid login returns 200 with TokenDto", func(t *testing.T) {
 		mock := &mockAuthService{
-			loginFunc: func(id, pass, ua, ip string) (string, string, error) {
+			loginFunc: func(id, pass, ua, ip, sessId string) (string, string, string, error) {
 				assert.Equal(t, "user1", id)
 				assert.Equal(t, "pass1", pass)
-				return "jwt-token-abc", "jwt-refresh-xyz", nil
+				assert.Equal(t, "sess-123", sessId)
+				return "jwt-token-abc", "jwt-refresh-xyz", "sess-123", nil
 			},
 		}
 		router, _ := setupAuthTestRouter(mock)
 
-		payload := LoginDto{Username: "user1", Password: "pass1"}
+		payload := LoginDto{Username: "user1", Password: "pass1", SessionId: "sess-123"}
 		body, _ := json.Marshal(payload)
 
 		req, _ := http.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(body))
@@ -131,12 +132,13 @@ func TestAuthCtn_Login(t *testing.T) {
 		assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &tokenResp))
 		assert.Equal(t, "jwt-token-abc", tokenResp.AccessToken)
 		assert.Equal(t, "jwt-refresh-xyz", tokenResp.RefreshToken)
+		assert.Equal(t, "sess-123", tokenResp.SessionId)
 	})
 
 	t.Run("Invalid credentials returns 401 with JSON error", func(t *testing.T) {
 		mock := &mockAuthService{
-			loginFunc: func(id, pass, ua, ip string) (string, string, error) {
-				return "", "", errors.New("invalid credentials")
+			loginFunc: func(id, pass, ua, ip, sessId string) (string, string, string, error) {
+				return "", "", "", errors.New("invalid credentials")
 			},
 		}
 		router, _ := setupAuthTestRouter(mock)
@@ -168,8 +170,8 @@ func TestAuthCtn_Login(t *testing.T) {
 func TestAuthCtn_RefreshToken(t *testing.T) {
 	t.Run("Valid refresh with Authorization header returns 200 with new tokens", func(t *testing.T) {
 		mock := &mockAuthService{
-			refreshTokensFunc: func(token string) (string, string, error) {
-				return "new-refreshed-token", "new-refresh-token", nil
+			refreshTokensFunc: func(token string) (string, string, string, error) {
+				return "new-refreshed-token", "new-refresh-token", "sess-1", nil
 			},
 		}
 		router, _ := setupAuthTestRouter(mock)
@@ -184,13 +186,14 @@ func TestAuthCtn_RefreshToken(t *testing.T) {
 		assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &tokenResp))
 		assert.Equal(t, "new-refreshed-token", tokenResp.AccessToken)
 		assert.Equal(t, "new-refresh-token", tokenResp.RefreshToken)
+		assert.Equal(t, "sess-1", tokenResp.SessionId)
 	})
 
 	t.Run("Valid refresh with JSON body returns 200 with new tokens", func(t *testing.T) {
 		mock := &mockAuthService{
-			refreshTokensFunc: func(token string) (string, string, error) {
+			refreshTokensFunc: func(token string) (string, string, string, error) {
 				assert.Equal(t, "body-refresh-token", token)
-				return "new-access", "new-refresh", nil
+				return "new-access", "new-refresh", "sess-2", nil
 			},
 		}
 		router, _ := setupAuthTestRouter(mock)
@@ -206,6 +209,7 @@ func TestAuthCtn_RefreshToken(t *testing.T) {
 		assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &tokenResp))
 		assert.Equal(t, "new-access", tokenResp.AccessToken)
 		assert.Equal(t, "new-refresh", tokenResp.RefreshToken)
+		assert.Equal(t, "sess-2", tokenResp.SessionId)
 	})
 
 	t.Run("Missing refresh token returns 400", func(t *testing.T) {
@@ -220,8 +224,8 @@ func TestAuthCtn_RefreshToken(t *testing.T) {
 
 	t.Run("Refresh service error returns 401", func(t *testing.T) {
 		mock := &mockAuthService{
-			refreshTokensFunc: func(token string) (string, string, error) {
-				return "", "", errors.New("refresh failed")
+			refreshTokensFunc: func(token string) (string, string, string, error) {
+				return "", "", "", errors.New("refresh failed")
 			},
 		}
 		router, _ := setupAuthTestRouter(mock)
@@ -399,8 +403,8 @@ func TestAuthCtn_Register(t *testing.T) {
 
 	t.Run("Duplicate user registration returns 400 with error message", func(t *testing.T) {
 		mock := &mockAuthService{
-			registerFunc: func(username, email, password, ua, ip string) (string, string, error) {
-				return "", "", errors.New("username or email already exists")
+			registerFunc: func(username, email, password, ua, ip string) (string, string, string, error) {
+				return "", "", "", errors.New("username or email already exists")
 			},
 		}
 		router, _ := setupAuthTestRouter(mock)

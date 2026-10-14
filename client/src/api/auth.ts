@@ -4,6 +4,7 @@ export interface LoginRequest {
   username: string
   password: string
   email?: string
+  sessionId?: string
 }
 
 export interface RegisterRequest {
@@ -15,6 +16,7 @@ export interface RegisterRequest {
 export interface TokenResponse {
   accessToken: string
   refreshToken?: string
+  sessionId?: string
 }
 
 export interface RefreshRequest {

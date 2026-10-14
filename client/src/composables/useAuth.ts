@@ -22,6 +22,7 @@ export interface UserClaims {
 
 const ACCESS_TOKEN_KEY = 'accessToken'
 const REFRESH_TOKEN_KEY = 'refreshToken'
+const SESSION_ID_KEY = 'sessionId'
 
 function decodeJwtPayload(token: string): UserClaims | undefined {
   try {
@@ -81,14 +82,22 @@ export function useAuth() {
     if (tokens.refreshToken) {
       localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refreshToken)
     }
+    if (tokens.sessionId) {
+      localStorage.setItem(SESSION_ID_KEY, tokens.sessionId)
+    }
     currentToken.value = tokens.accessToken
     currentUser.value = decodeJwtPayload(tokens.accessToken)
+    if (currentUser.value?.sessionUuid && !tokens.sessionId) {
+      localStorage.setItem(SESSION_ID_KEY, currentUser.value.sessionUuid)
+    }
     authError.value = undefined
   }
 
   function clearAuth() {
     localStorage.removeItem(ACCESS_TOKEN_KEY)
     localStorage.removeItem(REFRESH_TOKEN_KEY)
+    // NOTE: We intentionally preserve SESSION_ID_KEY so subsequent logins from this
+    // device reuse the existing session rather than creating duplicate sessions.
     currentToken.value = undefined
     currentUser.value = undefined
   }
@@ -97,7 +106,12 @@ export function useAuth() {
     isSubmitting.value = true
     authError.value = undefined
     try {
-      const data = await loginUser(credentials)
+      const storedSessionId = localStorage.getItem(SESSION_ID_KEY) || undefined
+      const payload: LoginRequest = {
+        ...credentials,
+        sessionId: credentials.sessionId || storedSessionId,
+      }
+      const data = await loginUser(payload)
       if (data?.accessToken) {
         setTokens(data)
         return true

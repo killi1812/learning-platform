@@ -5,6 +5,8 @@ definitions:
         type: string
       password:
         type: string
+      sessionId:
+        type: string
       username:
         type: string
     required:
@@ -51,6 +53,8 @@ definitions:
       accessToken:
         type: string
       refreshToken:
+        type: string
+      sessionId:
         type: string
     type: object
   info.ServerInfoDto:

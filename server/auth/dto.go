@@ -3,14 +3,16 @@ package auth
 import "time"
 
 type LoginDto struct {
-	Username string `json:"username" binding:"required"`
-	Email    string `json:"email,omitempty"`
-	Password string `json:"password" binding:"required"`
+	Username  string `json:"username" binding:"required"`
+	Email     string `json:"email,omitempty"`
+	Password  string `json:"password" binding:"required"`
+	SessionId string `json:"sessionId,omitempty"`
 }
 
 type TokenDto struct {
 	AccessToken  string `json:"accessToken"`
 	RefreshToken string `json:"refreshToken,omitempty"`
+	SessionId    string `json:"sessionId,omitempty"`
 }
 
 type RefreshDto struct {

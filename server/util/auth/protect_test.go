@@ -1,6 +1,7 @@
 package auth_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
@@ -168,6 +170,34 @@ func (suite *MiddlewareTestSuite) TestProtect_ValidToken_InsufficientRole() {
 	assert.Equal(suite.T(), http.StatusForbidden, w.Code)
 }
 
+func (suite *MiddlewareTestSuite) TestProtect_SessionValidator() {
+	testUserUUID := uuid.New()
+	activeSessionUUID := uuid.New()
+	revokedSessionUUID := uuid.New()
+
+	tokenActive, _, err := auth.GenerateTokens("active@test.com", "activeuser", auth.ROLE_USER, testUserUUID, activeSessionUUID)
+	assert.NoError(suite.T(), err)
+
+	tokenRevoked, _, err := auth.GenerateTokens("revoked@test.com", "revokeduser", auth.ROLE_USER, testUserUUID, revokedSessionUUID)
+	assert.NoError(suite.T(), err)
+
+	auth.SetSessionValidator(func(ctx context.Context, uUuid, sUuid uuid.UUID) bool {
+		return sUuid == activeSessionUUID
+	})
+	defer auth.SetSessionValidator(nil)
+
+	// Active session succeeds
+	wActive := suite.performRequest(http.MethodGet, "/protected/general", tokenActive)
+	assert.Equal(suite.T(), http.StatusOK, wActive.Code)
+	assert.Equal(suite.T(), "general_access_granted", wActive.Body.String())
+
+	// Revoked session rejected with 401
+	wRevoked := suite.performRequest(http.MethodGet, "/protected/general", tokenRevoked)
+	assert.Equal(suite.T(), http.StatusUnauthorized, wRevoked.Code)
+	assert.Contains(suite.T(), wRevoked.Body.String(), "Session revoked or expired")
+}
+
 func TestMiddlewareSuite(t *testing.T) {
 	suite.Run(t, new(MiddlewareTestSuite))
 }
+

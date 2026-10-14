@@ -746,6 +746,9 @@ const docTemplate = `{
                 "password": {
                     "type": "string"
                 },
+                "sessionId": {
+                    "type": "string"
+                },
                 "username": {
                     "type": "string"
                 }
@@ -809,6 +812,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "refreshToken": {
+                    "type": "string"
+                },
+                "sessionId": {
                     "type": "string"
                 }
             }

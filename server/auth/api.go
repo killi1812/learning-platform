@@ -61,7 +61,7 @@ func (l *AuthCtn) login(c *gin.Context) {
 		return
 	}
 
-	accessToken, refreshToken, err := l.auth.Login(loginDto.Username, loginDto.Password, c.Request.UserAgent(), c.ClientIP())
+	accessToken, refreshToken, sessionId, err := l.auth.Login(loginDto.Username, loginDto.Password, c.Request.UserAgent(), c.ClientIP(), loginDto.SessionId)
 	if err != nil {
 		l.logger.Errorf("Login failed err = %+v", err)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid username or password"})
@@ -71,6 +71,7 @@ func (l *AuthCtn) login(c *gin.Context) {
 	c.JSON(http.StatusOK, TokenDto{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
+		SessionId:    sessionId,
 	})
 }
 
@@ -95,7 +96,7 @@ func (l *AuthCtn) register(c *gin.Context) {
 		return
 	}
 
-	accessToken, refreshToken, err := l.auth.Register(registerDto.Username, registerDto.Email, registerDto.Password, c.Request.UserAgent(), c.ClientIP())
+	accessToken, refreshToken, sessionId, err := l.auth.Register(registerDto.Username, registerDto.Email, registerDto.Password, c.Request.UserAgent(), c.ClientIP())
 	if err != nil {
 		l.logger.Errorf("Registration failed err = %+v", err)
 		if errors.Is(err, cerror.ErrUserAlreadyExists) || strings.Contains(err.Error(), "already exists") {
@@ -109,6 +110,7 @@ func (l *AuthCtn) register(c *gin.Context) {
 	c.JSON(http.StatusCreated, TokenDto{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
+		SessionId:    sessionId,
 	})
 }
 
@@ -139,7 +141,7 @@ func (l *AuthCtn) refreshToken(c *gin.Context) {
 		return
 	}
 
-	accessToken, newRefreshToken, err := l.auth.RefreshTokens(tokenStr)
+	accessToken, newRefreshToken, sessionId, err := l.auth.RefreshTokens(tokenStr)
 	if err != nil {
 		l.logger.Errorf("Refresh failed err = %v", err)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired refresh token"})
@@ -149,6 +151,7 @@ func (l *AuthCtn) refreshToken(c *gin.Context) {
 	c.JSON(http.StatusOK, TokenDto{
 		AccessToken:  accessToken,
 		RefreshToken: newRefreshToken,
+		SessionId:    sessionId,
 	})
 }
 

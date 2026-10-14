@@ -23,9 +23,9 @@ import (
 )
 
 type IAuthService interface {
-	Login(identifier, password, userAgent, ip string) (string, string, error)
-	Register(username, email, password, userAgent, ip string) (string, string, error)
-	RefreshTokens(refreshToken string) (string, string, error)
+	Login(identifier, password, userAgent, ip, requestedSessionId string) (string, string, string, error)
+	Register(username, email, password, userAgent, ip string) (string, string, string, error)
+	RefreshTokens(refreshToken string) (string, string, string, error)
 	LogoutCurrent(userUuidStr string, sessionUuid uuid.UUID) error
 	LogoutAll(userUuidStr string) error
 	ListSessions(userUuidStr string, currentSessionUuid uuid.UUID) ([]SessionDto, error)
@@ -46,10 +46,28 @@ type AuthServiceParams struct {
 }
 
 func NewAuthService(params AuthServiceParams) IAuthService {
-	return &AuthService{
+	svc := &AuthService{
 		db:      params.GormDb,
 		mongoDb: params.MongoDb,
 		logger:  params.Logger,
+	}
+	svc.RegisterSessionValidator()
+	return svc
+}
+
+func (s *AuthService) RegisterSessionValidator() {
+	if s.mongoDb != nil {
+		authUtil.SetSessionValidator(func(ctx context.Context, userUuid, sessionUuid uuid.UUID) bool {
+			queryCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			defer cancel()
+			var session user.Session
+			err := s.sessionsColl().FindOne(queryCtx, bson.M{
+				"user_uuid":    userUuid,
+				"session_uuid": sessionUuid,
+				"expires_at":   bson.M{"$gt": time.Now()},
+			}).Decode(&session)
+			return err == nil
+		})
 	}
 }
 
@@ -62,29 +80,54 @@ func hashToken(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func (s *AuthService) Login(identifier, password, userAgent, ip string) (string, string, error) {
+func (s *AuthService) Login(identifier, password, userAgent, ip, requestedSessionId string) (string, string, string, error) {
 	normIdentifier := strings.ToLower(strings.TrimSpace(identifier))
 	var usr user.User
 	err := s.db.Where("username = ? OR email = ?", normIdentifier, normIdentifier).First(&usr).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			s.logger.Debugf("User not found Identifier = %s", normIdentifier)
-			return "", "", cerror.ErrInvalidCredentials
+			return "", "", "", cerror.ErrInvalidCredentials
 		}
 		s.logger.Errorf("Failed to query user, error = %+v", err)
-		return "", "", err
+		return "", "", "", err
 	}
 
 	if !authUtil.VerifyPassword(usr.PasswordHash, password) {
 		s.logger.Debugf("Invalid password for user Email: %s, uuid: %s", usr.Email, usr.Uuid)
-		return "", "", cerror.ErrInvalidCredentials
+		return "", "", "", cerror.ErrInvalidCredentials
 	}
 
-	sessionUuid := uuid.New()
+	var sessionUuid uuid.UUID
+	var isExistingSession bool
+
+	if requestedSessionId != "" {
+		if parsed, err := uuid.Parse(requestedSessionId); err == nil && parsed != uuid.Nil {
+			if s.mongoDb != nil {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				var existingSession user.Session
+				err := s.sessionsColl().FindOne(ctx, bson.M{"session_uuid": parsed}).Decode(&existingSession)
+				cancel()
+				if err == nil {
+					if existingSession.UserUuid == usr.Uuid {
+						sessionUuid = parsed
+						isExistingSession = true
+					} else {
+						sessionUuid = uuid.New()
+					}
+				}
+			}
+		}
+	}
+
+	if sessionUuid == uuid.Nil {
+		sessionUuid = uuid.New()
+	}
+
 	token, refresh, err := authUtil.GenerateTokens(usr.Email, usr.Username, usr.Role, usr.Uuid, sessionUuid)
 	if err != nil {
 		s.logger.Errorf("Failed to generate token error = %+v", err)
-		return "", "", err
+		return "", "", "", err
 	}
 
 	if s.mongoDb != nil {
@@ -96,47 +139,66 @@ func (s *AuthService) Login(identifier, password, userAgent, ip string) (string,
 			return []byte(app.AccessKey), nil
 		})
 
-		session := user.Session{
-			SessionUuid:  sessionUuid,
-			UserUuid:     usr.Uuid,
-			TokenUuid:    claims.TokenUuid,
-			RefreshToken: hashToken(refresh),
-			DeviceName:   deviceName,
-			IpAddress:    ip,
-			CreatedAt:    now,
-			ExpiresAt:    now.Add(7 * 24 * time.Hour),
-		}
-
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		_, err = s.sessionsColl().InsertOne(ctx, session)
-		if err != nil {
-			s.logger.Errorf("Failed to create a session, err = %+v", err)
-			return "", "", err
+		if isExistingSession {
+			_, err = s.sessionsColl().UpdateOne(ctx,
+				bson.M{"session_uuid": sessionUuid},
+				bson.M{
+					"$set": bson.M{
+						"token_uuid":    claims.TokenUuid,
+						"refresh_token": hashToken(refresh),
+						"device_name":   deviceName,
+						"ip_address":    ip,
+						"expires_at":    now.Add(7 * 24 * time.Hour),
+					},
+				},
+			)
+			if err != nil {
+				s.logger.Errorf("Failed to update existing session, err = %+v", err)
+				return "", "", "", err
+			}
+		} else {
+			session := user.Session{
+				SessionUuid:  sessionUuid,
+				UserUuid:     usr.Uuid,
+				TokenUuid:    claims.TokenUuid,
+				RefreshToken: hashToken(refresh),
+				DeviceName:   deviceName,
+				IpAddress:    ip,
+				CreatedAt:    now,
+				ExpiresAt:    now.Add(7 * 24 * time.Hour),
+			}
+
+			_, err = s.sessionsColl().InsertOne(ctx, session)
+			if err != nil {
+				s.logger.Errorf("Failed to create a session, err = %+v", err)
+				return "", "", "", err
+			}
 		}
 	}
 
-	return token, refresh, nil
+	return token, refresh, sessionUuid.String(), nil
 }
 
-func (s *AuthService) Register(username, email, password, userAgent, ip string) (string, string, error) {
+func (s *AuthService) Register(username, email, password, userAgent, ip string) (string, string, string, error) {
 	normUsername := strings.ToLower(strings.TrimSpace(username))
 	normEmail := strings.ToLower(strings.TrimSpace(email))
 
 	var count int64
 	if err := s.db.Model(&user.User{}).Where("username = ? OR email = ?", normUsername, normEmail).Count(&count).Error; err != nil {
 		s.logger.Errorf("Failed to check existing user, err = %+v", err)
-		return "", "", err
+		return "", "", "", err
 	}
 	if count > 0 {
-		return "", "", cerror.ErrUserAlreadyExists
+		return "", "", "", cerror.ErrUserAlreadyExists
 	}
 
 	hash, err := authUtil.HashPassword(password)
 	if err != nil {
 		s.logger.Errorf("Failed to hash password, err = %+v", err)
-		return "", "", err
+		return "", "", "", err
 	}
 
 	usr := user.User{
@@ -150,16 +212,16 @@ func (s *AuthService) Register(username, email, password, userAgent, ip string) 
 	if err := s.db.Create(&usr).Error; err != nil {
 		s.logger.Errorf("Failed to create user in db, err = %+v", err)
 		if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "23505") || strings.Contains(err.Error(), "UNIQUE constraint") {
-			return "", "", cerror.ErrUserAlreadyExists
+			return "", "", "", cerror.ErrUserAlreadyExists
 		}
-		return "", "", errors.New("registration failed")
+		return "", "", "", errors.New("registration failed")
 	}
 
 	sessionUuid := uuid.New()
 	token, refresh, err := authUtil.GenerateTokens(usr.Email, usr.Username, usr.Role, usr.Uuid, sessionUuid)
 	if err != nil {
 		s.logger.Errorf("Failed to generate token, err = %+v", err)
-		return "", "", err
+		return "", "", "", err
 	}
 
 	if s.mongoDb != nil {
@@ -188,14 +250,14 @@ func (s *AuthService) Register(username, email, password, userAgent, ip string) 
 		_, err = s.sessionsColl().InsertOne(ctx, session)
 		if err != nil {
 			s.logger.Errorf("Failed to create a session, err = %+v", err)
-			return "", "", err
+			return "", "", "", err
 		}
 	}
 
-	return token, refresh, nil
+	return token, refresh, sessionUuid.String(), nil
 }
 
-func (s *AuthService) RefreshTokens(rawRefreshToken string) (string, string, error) {
+func (s *AuthService) RefreshTokens(rawRefreshToken string) (string, string, string, error) {
 	cleanRefreshToken, err := authUtil.ExtractToken(rawRefreshToken)
 	if err != nil {
 		cleanRefreshToken = rawRefreshToken
@@ -207,13 +269,13 @@ func (s *AuthService) RefreshTokens(rawRefreshToken string) (string, string, err
 	})
 	if err != nil || !token.Valid {
 		s.logger.Errorf("Error parsing refresh token claims, err = %+v", err)
-		return "", "", cerror.ErrInvalidTokenFormat
+		return "", "", "", cerror.ErrInvalidTokenFormat
 	}
 
 	parsedUserUuid, err := uuid.Parse(refreshClaims.ID)
 	if err != nil {
 		s.logger.Errorf("Error Parsing uuid err = %+v", err)
-		return "", "", err
+		return "", "", "", err
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -229,14 +291,14 @@ func (s *AuthService) RefreshTokens(rawRefreshToken string) (string, string, err
 		}).Decode(&session)
 		if err != nil {
 			s.logger.Errorf("Failed to find session by session_uuid: %+v", err)
-			return "", "", cerror.ErrInvalidTokenFormat
+			return "", "", "", cerror.ErrInvalidTokenFormat
 		}
 
 		// Token reuse / replay attack detection
 		if session.TokenUuid != refreshClaims.TokenUuid || session.RefreshToken != hashedInput {
 			s.logger.Warnf("Token reuse detected for user %s, session %s! Revoking session.", parsedUserUuid, refreshClaims.SessionUuid)
 			_, _ = s.sessionsColl().DeleteOne(ctx, bson.M{"session_uuid": refreshClaims.SessionUuid})
-			return "", "", cerror.ErrInvalidTokenFormat
+			return "", "", "", cerror.ErrInvalidTokenFormat
 		}
 	}
 
@@ -244,14 +306,14 @@ func (s *AuthService) RefreshTokens(rawRefreshToken string) (string, string, err
 	err = s.db.Where("uuid = ?", parsedUserUuid).First(&usr).Error
 	if err != nil {
 		s.logger.Errorf("Failed to find user for session: %+v", err)
-		return "", "", err
+		return "", "", "", err
 	}
 
 	// Generate new tokens preserving the persistent SessionUuid
 	newAccessToken, newRefreshToken, err := authUtil.GenerateTokens(usr.Email, usr.Username, usr.Role, usr.Uuid, refreshClaims.SessionUuid)
 	if err != nil {
 		s.logger.Errorf("Failed to generate tokens, err = %+v", err)
-		return "", "", err
+		return "", "", "", err
 	}
 
 	if s.mongoDb != nil {
@@ -272,11 +334,11 @@ func (s *AuthService) RefreshTokens(rawRefreshToken string) (string, string, err
 		)
 		if err != nil {
 			s.logger.Errorf("Failed to update session: %+v", err)
-			return "", "", err
+			return "", "", "", err
 		}
 	}
 
-	return newAccessToken, newRefreshToken, nil
+	return newAccessToken, newRefreshToken, refreshClaims.SessionUuid.String(), nil
 }
 
 func (s *AuthService) LogoutCurrent(userUuidStr string, sessionUuid uuid.UUID) error {
@@ -341,7 +403,10 @@ func (s *AuthService) ListSessions(userUuidStr string, currentSessionUuid uuid.U
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	cursor, err := s.sessionsColl().Find(ctx, bson.M{"user_uuid": parsedUuid})
+	cursor, err := s.sessionsColl().Find(ctx, bson.M{
+		"user_uuid":  parsedUuid,
+		"expires_at": bson.M{"$gt": time.Now()},
+	})
 	if err != nil {
 		s.logger.Errorf("Error finding sessions: %+v", err)
 		return nil, err

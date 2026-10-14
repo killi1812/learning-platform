@@ -1,8 +1,10 @@
 package auth
 
 import (
+	"context"
 	"net/http"
 	"slices"
+	"sync"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/cerror"
 	"github.com/gin-gonic/gin"
@@ -15,6 +17,27 @@ const (
 	ContextUserUuidKey = "userUuid"
 	ContextRoleKey     = "role"
 )
+
+// SessionValidator checks whether a session is still active and valid in the database.
+type SessionValidator func(ctx context.Context, userUuid, sessionUuid uuid.UUID) bool
+
+var (
+	sessionValidatorMu     sync.RWMutex
+	globalSessionValidator SessionValidator
+)
+
+// SetSessionValidator registers the active session validator callback.
+func SetSessionValidator(validator SessionValidator) {
+	sessionValidatorMu.Lock()
+	defer sessionValidatorMu.Unlock()
+	globalSessionValidator = validator
+}
+
+func getSessionValidator() SessionValidator {
+	sessionValidatorMu.RLock()
+	defer sessionValidatorMu.RUnlock()
+	return globalSessionValidator
+}
 
 // Protect protects routes allowing access only to given roles
 // if roles are empty it only checks for the validity of tokens
@@ -36,6 +59,15 @@ func Protect(roles ...Role) gin.HandlerFunc {
 		if !token.Valid {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, "Invalid token")
 			return
+		}
+
+		validator := getSessionValidator()
+		if validator != nil && claims.SessionUuid != uuid.Nil {
+			userUuid, err := uuid.Parse(claims.ID)
+			if err != nil || !validator(c.Request.Context(), userUuid, claims.SessionUuid) {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, "Session revoked or expired")
+				return
+			}
 		}
 
 		if len(roles) != 0 && !slices.Contains(roles, claims.Role) {
