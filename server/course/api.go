@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"slices"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
@@ -137,18 +138,34 @@ type IGroupService interface {
 	UserJoinGroup(groupUuid uuid.UUID, user *user.User) (*Group, error)
 }
 type GroupService struct {
-	groups map[uuid.UUID]Group
+	db     *gorm.DB
 	logger *zap.SugaredLogger
+	groups map[uuid.UUID]Group
 }
 
-// UserJoinGroup implements [IGroupService].
 func (g *GroupService) UserJoinGroup(groupUuid uuid.UUID, user *user.User) (*Group, error) {
 	g.logger.Error("Testing")
-	return nil, nil
+	var group Group
+
+	err := g.db.Where("uuid = ?").First(&group).Error
+	if err != nil {
+		g.logger.Error(err)
+		return nil, err
+	}
+
+	if slices.Contains(group.Members, *user) {
+		g.logger.Errorf("User %v is already in group %v", user, group)
+		return nil, err
+	}
+
+	g.db.Model(&group).Association("group_members").Append(&user)
+
+	return &group, nil
 }
 
-func NewGroupService(logger *zap.SugaredLogger) IGroupService {
+func NewGroupService(db *gorm.DB, logger *zap.SugaredLogger) IGroupService {
 	return &GroupService{
+		db:     db,
 		logger: logger,
 	}
 }

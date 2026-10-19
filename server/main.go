@@ -46,6 +46,7 @@ func main() {
 	app.Provide(submission.NewSubmissionPublisher)
 	app.Provide(func(s notification.INotificationService) quiz.Notifier { return s })
 	app.Provide(quiz.NewQuizService)
+	app.Provide(course.NewGroupService)
 
 	app.RegisterApi(info.NewInfoApi)
 	app.RegisterApi(user.NewUserCtn)
