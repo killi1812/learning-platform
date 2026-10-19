@@ -6,6 +6,8 @@
     <v-main class="bg-background">
       <router-view />
     </v-main>
+
+    <v-snackbar-queue v-model="toastQueue" closable location="bottom end" :total-visible="3" />
   </v-app>
 </template>
 
@@ -14,7 +16,9 @@ import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import AppHeader from '@/components/AppHeader.vue'
 import AppSidebar from '@/components/AppSidebar.vue'
+import { useToast } from '@/composables/useToast'
 
 const route = useRoute()
+const { queue: toastQueue } = useToast()
 const showNavigation = computed(() => !route.meta.hideNavigation)
 </script>

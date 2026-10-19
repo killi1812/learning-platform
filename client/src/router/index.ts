@@ -1,7 +1,9 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 
-import DashboardView from '@/components/DashboardView.vue'
+import DashboardView from '@/views/DashboardView.vue'
+import CourseCatalogView from '@/views/CourseCatalogView.vue'
+import CourseDetailView from '@/views/CourseDetailView.vue'
 import LoginView from '@/views/LoginView.vue'
 import RegisterView from '@/views/RegisterView.vue'
 import UnauthorizedView from '@/views/UnauthorizedView.vue'
@@ -60,6 +62,25 @@ export const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       title: 'My Courses',
+    },
+  },
+  {
+    path: '/catalog',
+    name: 'CourseCatalog',
+    component: CourseCatalogView,
+    meta: {
+      requiresAuth: true,
+      title: 'Course Catalog',
+    },
+  },
+  {
+    path: '/courses/:uuid',
+    name: 'CourseDetail',
+    component: CourseDetailView,
+    props: route => ({ courseUuid: String(route.params.uuid) }),
+    meta: {
+      requiresAuth: true,
+      title: 'Course Details',
     },
   },
   {
