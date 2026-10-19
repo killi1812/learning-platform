@@ -38,6 +38,7 @@ func TestCourseAggregate_CRUDAndAssociations(t *testing.T) {
 	}
 	assert.NoError(t, db.Create(c).Error)
 	assert.NotZero(t, c.ID)
+	assert.NotEqual(t, uuid.Nil, c.Uuid)
 
 	// Update
 	cUpdate := &course.Course{
@@ -89,4 +90,15 @@ func TestCourseAggregate_CRUDAndAssociations(t *testing.T) {
 	assert.Len(t, retrieved.Groups, 1)
 	assert.Len(t, retrieved.Groups[0].Members, 1)
 	assert.Len(t, retrieved.Modules, 2)
+
+	// Verify CourseDto and EnrollmentDto mapping with teacher usernames and email fallback
+	retrieved.Enrollments = append(retrieved.Enrollments, course.Enrollment{
+		Role:      course.RoleTeacher,
+		UserEmail: "fallback@hvl.no",
+	})
+	courseDto := course.CourseDto{}.FromModel(&retrieved)
+	assert.Equal(t, []string{"teacher_anna", "fallback@hvl.no"}, courseDto.Teachers)
+
+	enrDto := course.EnrollmentDto{}.FromModel(&retrieved.Enrollments[0])
+	assert.Equal(t, "teacher_anna", enrDto.Username)
 }

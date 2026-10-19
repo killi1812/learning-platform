@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -27,6 +28,7 @@ const (
 // Course is the central entity of the learning management system.
 type Course struct {
 	gorm.Model
+	Uuid        uuid.UUID    `json:"uuid" gorm:"type:uuid;uniqueIndex;not null"`
 	Title       string       `json:"title" gorm:"type:varchar(255);not null"`
 	Description string       `json:"description" gorm:"type:text"`
 	Term        Term         `json:"term" gorm:"type:varchar(10);not null"`
@@ -34,6 +36,13 @@ type Course struct {
 	Modules     []Module     `json:"modules,omitempty" gorm:"foreignKey:CourseID;constraint:OnDelete:CASCADE;"`
 	Groups      []Group      `json:"groups,omitempty" gorm:"foreignKey:CourseID;constraint:OnDelete:CASCADE;"`
 	Enrollments []Enrollment `json:"enrollments,omitempty" gorm:"foreignKey:CourseID;constraint:OnDelete:CASCADE;"`
+}
+
+func (c *Course) BeforeCreate(tx *gorm.DB) error {
+	if c.Uuid == uuid.Nil {
+		c.Uuid = uuid.New()
+	}
+	return nil
 }
 
 func (c *Course) Update(updated *Course) *Course {

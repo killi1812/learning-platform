@@ -40,6 +40,45 @@ func TestParseUUIDParam(t *testing.T) {
 	})
 }
 
+func TestParseUintParam(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("valid uint", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Params = gin.Params{{Key: "id", Value: "42"}}
+
+		parsed, ok := ParseUintParam(c, "id")
+		assert.True(t, ok)
+		assert.Equal(t, uint(42), parsed)
+		assert.False(t, c.IsAborted())
+	})
+
+	t.Run("invalid uint string", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Params = gin.Params{{Key: "id", Value: "abc"}}
+
+		parsed, ok := ParseUintParam(c, "id")
+		assert.False(t, ok)
+		assert.Equal(t, uint(0), parsed)
+		assert.True(t, c.IsAborted())
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("negative number for uint", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Params = gin.Params{{Key: "id", Value: "-1"}}
+
+		parsed, ok := ParseUintParam(c, "id")
+		assert.False(t, ok)
+		assert.Equal(t, uint(0), parsed)
+		assert.True(t, c.IsAborted())
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+}
+
 func TestRespondWithError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

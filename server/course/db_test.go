@@ -1,0 +1,470 @@
+package course
+
+import (
+	"testing"
+
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/testutil"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
+)
+
+func setupTestDB(t *testing.T) (*CourseService, *user.User, *user.User) {
+	db := testutil.NewSqliteTestDb(t, &user.User{}, &Course{}, &Enrollment{}, &Group{}, &Module{})
+	logger := zap.NewNop().Sugar()
+	svc := &CourseService{db: db, logger: logger}
+
+	teacher := &user.User{
+		Uuid:         uuid.New(),
+		Username:     "teacher_bob",
+		Email:        "bob@hvl.no",
+		PasswordHash: "secret",
+		Role:         authutils.ROLE_USER,
+	}
+	assert.NoError(t, db.Create(teacher).Error)
+
+	student := &user.User{
+		Uuid:         uuid.New(),
+		Username:     "student_alice",
+		Email:        "alice@hvl.no",
+		PasswordHash: "secret",
+		Role:         authutils.ROLE_USER,
+	}
+	assert.NoError(t, db.Create(student).Error)
+
+	return svc, teacher, student
+}
+
+func TestCourseService_CRUDAndEnrollment(t *testing.T) {
+	svc, teacher, student := setupTestDB(t)
+
+	var createdCourse *Course
+
+	t.Run("CreateCourse creates course and auto-enrolls creator as TEACHER", func(t *testing.T) {
+		c := &Course{
+			Title:       "Distributed Systems",
+			Description: "Cloud & backend course",
+			Term:        TermAutumn,
+			Year:        2026,
+		}
+		res, err := svc.CreateCourse(c, teacher.Uuid)
+		assert.NoError(t, err)
+		assert.NotNil(t, res)
+		assert.NotZero(t, res.ID)
+		createdCourse = res
+
+		// Verify teacher is auto-enrolled
+		enrollments, err := svc.GetCourseEnrollments(res.Uuid)
+		assert.NoError(t, err)
+		assert.Len(t, enrollments, 1)
+		assert.Equal(t, teacher.ID, enrollments[0].UserID)
+		assert.Equal(t, RoleTeacher, enrollments[0].Role)
+	})
+
+	t.Run("CreateCourse with non-existent user returns ErrUserNotFound", func(t *testing.T) {
+		c := &Course{
+			Title: "Ghost Course",
+			Term:  TermSpring,
+			Year:  2026,
+		}
+		_, err := svc.CreateCourse(c, uuid.New())
+		assert.ErrorIs(t, err, ErrUserNotFound)
+	})
+
+	t.Run("GetCourse returns course with preloaded enrollments", func(t *testing.T) {
+		found, err := svc.GetCourse(createdCourse.Uuid)
+		assert.NoError(t, err)
+		assert.NotNil(t, found)
+		assert.Equal(t, createdCourse.Title, found.Title)
+		assert.NotEmpty(t, found.Enrollments)
+	})
+
+	t.Run("GetCourse non-existent returns ErrCourseNotFound", func(t *testing.T) {
+		_, err := svc.GetCourse(uuid.New())
+		assert.ErrorIs(t, err, ErrCourseNotFound)
+	})
+
+	t.Run("ListCourses returns all courses with optional filters", func(t *testing.T) {
+		courses, err := svc.ListCourses(nil, nil)
+		assert.NoError(t, err)
+		assert.Len(t, courses, 1)
+
+		autumn := TermAutumn
+		year := 2026
+		filtered, err := svc.ListCourses(&autumn, &year)
+		assert.NoError(t, err)
+		assert.Len(t, filtered, 1)
+
+		spring := TermSpring
+		empty, err := svc.ListCourses(&spring, &year)
+		assert.NoError(t, err)
+		assert.Empty(t, empty)
+
+		// Term only
+		termOnly, err := svc.ListCourses(&autumn, nil)
+		assert.NoError(t, err)
+		assert.Len(t, termOnly, 1)
+
+		// Year only
+		yearOnly, err := svc.ListCourses(nil, &year)
+		assert.NoError(t, err)
+		assert.Len(t, yearOnly, 1)
+	})
+
+	t.Run("SelfEnroll enrolls student as RoleStudent", func(t *testing.T) {
+		enrollment, err := svc.SelfEnroll(createdCourse.Uuid, student.Uuid)
+		assert.NoError(t, err)
+		assert.NotNil(t, enrollment)
+		assert.Equal(t, student.ID, enrollment.UserID)
+		assert.Equal(t, RoleStudent, enrollment.Role)
+
+		// Check enrollments list
+		enrollments, err := svc.GetCourseEnrollments(createdCourse.Uuid)
+		assert.NoError(t, err)
+		assert.Len(t, enrollments, 2)
+	})
+
+	t.Run("SelfEnroll already enrolled returns ErrAlreadyEnrolled", func(t *testing.T) {
+		_, err := svc.SelfEnroll(createdCourse.Uuid, student.Uuid)
+		assert.ErrorIs(t, err, ErrAlreadyEnrolled)
+	})
+
+	t.Run("GetUserEnrollments preloads courses for student", func(t *testing.T) {
+		studentEnrollments, err := svc.GetUserEnrollments(student.Uuid)
+		assert.NoError(t, err)
+		assert.Len(t, studentEnrollments, 1)
+		assert.NotNil(t, studentEnrollments[0].Course)
+		assert.Equal(t, createdCourse.Title, studentEnrollments[0].Course.Title)
+	})
+
+	t.Run("EnrollByEmail adds a user by email", func(t *testing.T) {
+		coTeacher := &user.User{
+			Uuid:         uuid.New(),
+			Username:     "coteacher",
+			Email:        "coteacher@hvl.no",
+			PasswordHash: "pass",
+			Role:         authutils.ROLE_USER,
+		}
+		assert.NoError(t, svc.db.Create(coTeacher).Error)
+
+		enrollment, err := svc.EnrollByEmail(createdCourse.Uuid, coTeacher.Email, RoleTeacher)
+		assert.NoError(t, err)
+		assert.NotNil(t, enrollment)
+		assert.Equal(t, coTeacher.ID, enrollment.UserID)
+		assert.Equal(t, RoleTeacher, enrollment.Role)
+	})
+
+	t.Run("EnrollByEmail adds a user by email with default role", func(t *testing.T) {
+		anotherStudent := &user.User{
+			Uuid:         uuid.New(),
+			Username:     "another",
+			Email:        "another@hvl.no",
+			PasswordHash: "pass",
+			Role:         authutils.ROLE_USER,
+		}
+		assert.NoError(t, svc.db.Create(anotherStudent).Error)
+
+		// role is empty string, should default to RoleStudent
+		enrollment, err := svc.EnrollByEmail(createdCourse.Uuid, anotherStudent.Email, "")
+		assert.NoError(t, err)
+		assert.NotNil(t, enrollment)
+		assert.Equal(t, RoleStudent, enrollment.Role)
+	})
+
+	t.Run("EnrollByEmail with unknown email returns ErrUserNotFound", func(t *testing.T) {
+		_, err := svc.EnrollByEmail(createdCourse.Uuid, "unknown@hvl.no", RoleStudent)
+		assert.ErrorIs(t, err, ErrUserNotFound)
+	})
+
+	t.Run("IsTeacherOrAdmin correctly checks permissions", func(t *testing.T) {
+		// Teacher bob is teacher
+		isTeacher, err := svc.IsTeacherOrAdmin(createdCourse.Uuid, teacher.Uuid, false)
+		assert.NoError(t, err)
+		assert.True(t, isTeacher)
+
+		// Student alice is not teacher
+		isTeacher, err = svc.IsTeacherOrAdmin(createdCourse.Uuid, student.Uuid, false)
+		assert.NoError(t, err)
+		assert.False(t, isTeacher)
+
+		// System admin overrides course-level check
+		isTeacher, err = svc.IsTeacherOrAdmin(createdCourse.Uuid, student.Uuid, true)
+		assert.NoError(t, err)
+		assert.True(t, isTeacher)
+	})
+
+	t.Run("UpdateCourse modifies course attributes", func(t *testing.T) {
+		updatedData := &Course{
+			Title:       "Distributed Systems v2",
+			Description: "Updated desc",
+			Term:        TermAutumn,
+			Year:        2026,
+		}
+		updated, err := svc.UpdateCourse(createdCourse.Uuid, updatedData)
+		assert.NoError(t, err)
+		assert.Equal(t, "Distributed Systems v2", updated.Title)
+		assert.Equal(t, "Updated desc", updated.Description)
+	})
+
+	t.Run("Unenroll removes student enrollment", func(t *testing.T) {
+		err := svc.Unenroll(createdCourse.Uuid, student.Uuid)
+		assert.NoError(t, err)
+
+		// Repeating unenroll returns ErrEnrollmentNotFound
+		err = svc.Unenroll(createdCourse.Uuid, student.Uuid)
+		assert.ErrorIs(t, err, ErrEnrollmentNotFound)
+	})
+
+	t.Run("NewCourseService constructor", func(t *testing.T) {
+		constructorSvc := NewCourseService(svc.db, svc.logger)
+		assert.NotNil(t, constructorSvc)
+	})
+
+	t.Run("UpdateCourse non-existent course returns ErrCourseNotFound", func(t *testing.T) {
+		_, err := svc.UpdateCourse(uuid.New(), &Course{Title: "Ghost"})
+		assert.ErrorIs(t, err, ErrCourseNotFound)
+	})
+
+	t.Run("DeleteCourse non-existent course returns ErrCourseNotFound", func(t *testing.T) {
+		err := svc.DeleteCourse(uuid.New())
+		assert.ErrorIs(t, err, ErrCourseNotFound)
+	})
+
+	t.Run("SelfEnroll non-existent user returns ErrUserNotFound", func(t *testing.T) {
+		_, err := svc.SelfEnroll(createdCourse.Uuid, uuid.New())
+		assert.ErrorIs(t, err, ErrUserNotFound)
+	})
+
+	t.Run("SelfEnroll non-existent course returns ErrCourseNotFound", func(t *testing.T) {
+		_, err := svc.SelfEnroll(uuid.New(), student.Uuid)
+		assert.ErrorIs(t, err, ErrCourseNotFound)
+	})
+
+	t.Run("EnrollByEmail non-existent course returns ErrCourseNotFound", func(t *testing.T) {
+		_, err := svc.EnrollByEmail(uuid.New(), teacher.Email, RoleStudent)
+		assert.ErrorIs(t, err, ErrCourseNotFound)
+	})
+
+	t.Run("EnrollByEmail already enrolled returns ErrAlreadyEnrolled", func(t *testing.T) {
+		_, err := svc.EnrollByEmail(createdCourse.Uuid, teacher.Email, RoleTeacher)
+		assert.ErrorIs(t, err, ErrAlreadyEnrolled)
+	})
+
+	t.Run("Unenroll non-existent user or course returns error", func(t *testing.T) {
+		err := svc.Unenroll(createdCourse.Uuid, uuid.New())
+		assert.ErrorIs(t, err, ErrUserNotFound)
+
+		err = svc.Unenroll(uuid.New(), student.Uuid)
+		assert.ErrorIs(t, err, ErrCourseNotFound)
+	})
+
+	t.Run("GetCourseEnrollments non-existent course returns ErrCourseNotFound", func(t *testing.T) {
+		_, err := svc.GetCourseEnrollments(uuid.New())
+		assert.ErrorIs(t, err, ErrCourseNotFound)
+	})
+
+	t.Run("GetUserEnrollments non-existent user returns ErrUserNotFound", func(t *testing.T) {
+		_, err := svc.GetUserEnrollments(uuid.New())
+		assert.ErrorIs(t, err, ErrUserNotFound)
+	})
+
+	t.Run("IsTeacherOrAdmin non-existent user or course returns error", func(t *testing.T) {
+		_, err := svc.IsTeacherOrAdmin(createdCourse.Uuid, uuid.New(), false)
+		assert.ErrorIs(t, err, ErrUserNotFound)
+
+		_, err = svc.IsTeacherOrAdmin(uuid.New(), student.Uuid, false)
+		assert.ErrorIs(t, err, ErrCourseNotFound)
+	})
+
+	t.Run("DeleteCourse deletes course and cascades", func(t *testing.T) {
+		err := svc.DeleteCourse(createdCourse.Uuid)
+		assert.NoError(t, err)
+
+		_, err = svc.GetCourse(createdCourse.Uuid)
+		assert.ErrorIs(t, err, ErrCourseNotFound)
+	})
+}
+
+func TestCourseService_Modules(t *testing.T) {
+	svc, teacher, _ := setupTestDB(t)
+
+	c := &Course{
+		Title:       "Software Technologies",
+		Description: "Course with modules",
+		Term:        TermAutumn,
+		Year:        2026,
+	}
+	course, err := svc.CreateCourse(c, teacher.Uuid)
+	assert.NoError(t, err)
+
+	otherCourse, err := svc.CreateCourse(&Course{
+		Title: "Other Course",
+		Term:  TermAutumn,
+		Year:  2026,
+	}, teacher.Uuid)
+	assert.NoError(t, err)
+
+	var mod1 *Module
+	var mod2 *Module
+
+	t.Run("CreateModule auto-positions and creates module", func(t *testing.T) {
+		m := &Module{Title: "Week 1: Introduction"}
+		created, err := svc.CreateModule(course.Uuid, m)
+		assert.NoError(t, err)
+		assert.NotNil(t, created)
+		assert.NotZero(t, created.ID)
+		assert.Equal(t, 0, created.Position)
+		mod1 = created
+	})
+
+	t.Run("CreateModule with DependsOn prerequisite", func(t *testing.T) {
+		m := &Module{
+			Title:       "Week 2: Advanced Topics",
+			DependsOnID: &mod1.ID,
+		}
+		created, err := svc.CreateModule(course.Uuid, m)
+		assert.NoError(t, err)
+		assert.NotNil(t, created)
+		assert.Equal(t, 1, created.Position)
+		assert.NotNil(t, created.DependsOnID)
+		assert.Equal(t, mod1.ID, *created.DependsOnID)
+		assert.NotNil(t, created.DependsOn)
+		assert.Equal(t, mod1.Title, created.DependsOn.Title)
+		mod2 = created
+	})
+
+	t.Run("CreateModule non-existent course returns ErrCourseNotFound", func(t *testing.T) {
+		_, err := svc.CreateModule(uuid.New(), &Module{Title: "Ghost"})
+		assert.ErrorIs(t, err, ErrCourseNotFound)
+	})
+
+	t.Run("CreateModule non-existent prerequisite returns ErrModuleNotFound", func(t *testing.T) {
+		ghostID := uint(9999)
+		_, err := svc.CreateModule(course.Uuid, &Module{Title: "Ghost Dep", DependsOnID: &ghostID})
+		assert.ErrorIs(t, err, ErrModuleNotFound)
+	})
+
+	t.Run("CreateModule cross-course prerequisite returns ErrCrossCoursePrerequisite", func(t *testing.T) {
+		otherMod, err := svc.CreateModule(otherCourse.Uuid, &Module{Title: "Other Course Mod"})
+		assert.NoError(t, err)
+
+		_, err = svc.CreateModule(course.Uuid, &Module{Title: "Bad Dep", DependsOnID: &otherMod.ID})
+		assert.ErrorIs(t, err, ErrCrossCoursePrerequisite)
+	})
+
+	t.Run("GetModule returns module with dependsOn", func(t *testing.T) {
+		found, err := svc.GetModule(course.Uuid, mod2.ID)
+		assert.NoError(t, err)
+		assert.NotNil(t, found)
+		assert.Equal(t, mod2.Title, found.Title)
+		assert.NotNil(t, found.DependsOn)
+		assert.Equal(t, mod1.Title, found.DependsOn.Title)
+	})
+
+	t.Run("GetModule non-existent returns error", func(t *testing.T) {
+		_, err := svc.GetModule(course.Uuid, 9999)
+		assert.ErrorIs(t, err, ErrModuleNotFound)
+
+		_, err = svc.GetModule(uuid.New(), mod1.ID)
+		assert.ErrorIs(t, err, ErrCourseNotFound)
+	})
+
+	t.Run("ListModules returns modules ordered by position", func(t *testing.T) {
+		modules, err := svc.ListModules(course.Uuid)
+		assert.NoError(t, err)
+		assert.Len(t, modules, 2)
+		assert.Equal(t, mod1.ID, modules[0].ID)
+		assert.Equal(t, mod2.ID, modules[1].ID)
+
+		// Non-existent course
+		_, err = svc.ListModules(uuid.New())
+		assert.ErrorIs(t, err, ErrCourseNotFound)
+	})
+
+	t.Run("UpdateModule updates title and prerequisite", func(t *testing.T) {
+		updated, err := svc.UpdateModule(course.Uuid, mod1.ID, &Module{
+			Title:    "Week 1: Foundations",
+			Position: 0,
+		})
+		assert.NoError(t, err)
+		assert.Equal(t, "Week 1: Foundations", updated.Title)
+	})
+
+	t.Run("UpdateModule with self as prerequisite returns ErrSelfPrerequisite", func(t *testing.T) {
+		_, err := svc.UpdateModule(course.Uuid, mod1.ID, &Module{
+			Title:       "Week 1",
+			DependsOnID: &mod1.ID,
+		})
+		assert.ErrorIs(t, err, ErrSelfPrerequisite)
+	})
+
+	t.Run("UpdateModule with non-existent prerequisite returns ErrModuleNotFound", func(t *testing.T) {
+		ghostID := uint(9999)
+		_, err := svc.UpdateModule(course.Uuid, mod1.ID, &Module{
+			Title:       "Week 1",
+			DependsOnID: &ghostID,
+		})
+		assert.ErrorIs(t, err, ErrModuleNotFound)
+	})
+
+	t.Run("UpdateModule with cross-course prerequisite returns ErrCrossCoursePrerequisite", func(t *testing.T) {
+		otherModules, err := svc.ListModules(otherCourse.Uuid)
+		assert.NoError(t, err)
+		assert.NotEmpty(t, otherModules)
+
+		_, err = svc.UpdateModule(course.Uuid, mod1.ID, &Module{
+			Title:       "Week 1",
+			DependsOnID: &otherModules[0].ID,
+		})
+		assert.ErrorIs(t, err, ErrCrossCoursePrerequisite)
+	})
+
+	t.Run("UpdateModule non-existent returns error", func(t *testing.T) {
+		_, err := svc.UpdateModule(course.Uuid, 9999, &Module{Title: "Ghost"})
+		assert.ErrorIs(t, err, ErrModuleNotFound)
+
+		_, err = svc.UpdateModule(uuid.New(), mod1.ID, &Module{Title: "Ghost"})
+		assert.ErrorIs(t, err, ErrCourseNotFound)
+	})
+
+	t.Run("ReorderModules updates positions sequentially", func(t *testing.T) {
+		// Reorder: mod2 first, then mod1
+		err := svc.ReorderModules(course.Uuid, []uint{mod2.ID, mod1.ID})
+		assert.NoError(t, err)
+
+		list, err := svc.ListModules(course.Uuid)
+		assert.NoError(t, err)
+		assert.Equal(t, mod2.ID, list[0].ID)
+		assert.Equal(t, 0, list[0].Position)
+		assert.Equal(t, mod1.ID, list[1].ID)
+		assert.Equal(t, 1, list[1].Position)
+	})
+
+	t.Run("ReorderModules non-existent course returns ErrCourseNotFound", func(t *testing.T) {
+		err := svc.ReorderModules(uuid.New(), []uint{mod1.ID})
+		assert.ErrorIs(t, err, ErrCourseNotFound)
+	})
+
+	t.Run("ReorderModules non-existent module returns ErrModuleNotFound", func(t *testing.T) {
+		err := svc.ReorderModules(course.Uuid, []uint{9999})
+		assert.ErrorIs(t, err, ErrModuleNotFound)
+	})
+
+	t.Run("DeleteModule deletes module and cascades SET NULL on dependent", func(t *testing.T) {
+		err := svc.DeleteModule(course.Uuid, mod1.ID)
+		assert.NoError(t, err)
+
+		_, err = svc.GetModule(course.Uuid, mod1.ID)
+		assert.ErrorIs(t, err, ErrModuleNotFound)
+
+		// Non-existent module
+		err = svc.DeleteModule(course.Uuid, 9999)
+		assert.ErrorIs(t, err, ErrModuleNotFound)
+
+		// Non-existent course
+		err = svc.DeleteModule(uuid.New(), mod2.ID)
+		assert.ErrorIs(t, err, ErrCourseNotFound)
+	})
+}

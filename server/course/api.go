@@ -1,0 +1,755 @@
+package course
+
+import (
+	"errors"
+	"net/http"
+	"strconv"
+
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/ginutil"
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"go.uber.org/zap"
+)
+
+type CourseCtn struct {
+	CourseService ICourseService
+	logger        *zap.SugaredLogger
+}
+
+func NewCourseCtn(courseService ICourseService, logger *zap.SugaredLogger) app.Api {
+	return &CourseCtn{
+		CourseService: courseService,
+		logger:        logger,
+	}
+}
+
+func (ctn *CourseCtn) RegisterEndpoints(api *gin.RouterGroup) {
+	group := api.Group("/course")
+
+	// Public catalog routes (match both /course and /course/)
+	group.GET("", ctn.list)
+	group.GET("/", ctn.list)
+	group.GET("/:uuid", ctn.get)
+	group.GET("/:uuid/module", ctn.listModules)
+	group.GET("/:uuid/module/:moduleId", ctn.getModule)
+
+	// Protected routes
+	group.Use(authutils.Protect())
+
+	group.GET("/my-courses", ctn.getMyCourses)
+	group.POST("", ctn.create)
+	group.POST("/", ctn.create)
+	group.PUT("/:uuid", ctn.update)
+	group.DELETE("/:uuid", ctn.delete)
+
+	// Enrollment routes
+	group.POST("/:uuid/enroll", ctn.selfEnroll)
+	group.DELETE("/:uuid/enroll", ctn.unenroll)
+	group.GET("/:uuid/enrollments", ctn.getEnrollments)
+	group.POST("/:uuid/enrollments", ctn.addEnrollment)
+
+	// Module modification routes
+	group.POST("/:uuid/module", ctn.createModule)
+	group.PUT("/:uuid/module/reorder", ctn.reorderModules)
+	group.PUT("/:uuid/module/:moduleId", ctn.updateModule)
+	group.DELETE("/:uuid/module/:moduleId", ctn.deleteModule)
+}
+
+func (ctn *CourseCtn) checkTeacherOrAdmin(c *gin.Context, courseUuid uuid.UUID) bool {
+	claims, ok := authutils.GetClaims(c)
+	if !ok || claims == nil {
+		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
+		return false
+	}
+	userUuid, err := authutils.GetUserUUID(c)
+	if err != nil {
+		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
+		return false
+	}
+
+	isSysAdmin := claims.Role == authutils.ROLE_ADMIN
+	allowed, err := ctn.CourseService.IsTeacherOrAdmin(courseUuid, userUuid, isSysAdmin)
+	if err != nil {
+		if errors.Is(err, ErrCourseNotFound) {
+			ginutil.RespondWithError(c, http.StatusNotFound, err.Error())
+			return false
+		}
+		ctn.logger.Errorf("Failed to check course role: %v", err)
+		ginutil.RespondWithError(c, http.StatusInternalServerError, "Internal server error")
+		return false
+	}
+	if !allowed {
+		ginutil.RespondWithError(c, http.StatusForbidden, "Forbidden: insufficient permissions")
+		return false
+	}
+	return true
+}
+
+// ListCourses godoc
+//
+//	@Summary		List courses
+//	@Description	Returns all courses with optional filtering by term and year
+//	@Tags			course
+//	@Produce		json
+//	@Param			term	query		string	false	"Term (SPRING or AUTUMN)"
+//	@Param			year	query		int		false	"Academic Year (e.g. 2026)"
+//	@Success		200		{array}		CourseDto
+//	@Failure		500		{object}	ginutil.ErrorResponse
+//	@Router			/course [get]
+func (ctn *CourseCtn) list(c *gin.Context) {
+	var termPtr *Term
+	termParam := c.Query("term")
+	if termParam != "" {
+		t := Term(termParam)
+		termPtr = &t
+	}
+
+	var yearPtr *int
+	yearParam := c.Query("year")
+	if yearParam != "" {
+		if y, err := strconv.Atoi(yearParam); err == nil {
+			yearPtr = &y
+		}
+	}
+
+	courses, err := ctn.CourseService.ListCourses(termPtr, yearPtr)
+	if err != nil {
+		ctn.logger.Errorf("Failed to list courses: %v", err)
+		ginutil.RespondWithError(c, http.StatusInternalServerError, "Failed to list courses")
+		return
+	}
+
+	dtos := make([]CourseDto, 0, len(courses))
+	for i := range courses {
+		dtos = append(dtos, CourseDto{}.FromModel(&courses[i]))
+	}
+	c.JSON(http.StatusOK, dtos)
+}
+
+// GetCourse godoc
+//
+//	@Summary		Get course by UUID
+//	@Description	Returns a single course with details
+//	@Tags			course
+//	@Produce		json
+//	@Param			uuid	path		string	true	"Course UUID"
+//	@Success		200		{object}	CourseDto
+//	@Failure		400		{object}	ginutil.ErrorResponse
+//	@Failure		404		{object}	ginutil.ErrorResponse
+//	@Failure		500		{object}	ginutil.ErrorResponse
+//	@Router			/course/{uuid} [get]
+func (ctn *CourseCtn) get(c *gin.Context) {
+	courseUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
+	if !ok {
+		return
+	}
+
+	course, err := ctn.CourseService.GetCourse(courseUuid)
+	if ginutil.HandleServiceError(c, err, ErrCourseNotFound) {
+		return
+	}
+
+	c.JSON(http.StatusOK, CourseDto{}.FromModel(course))
+}
+
+// CreateCourse godoc
+//
+//	@Summary		Create course
+//	@Description	Creates a new course and auto-enrolls creator as TEACHER
+//	@Tags			course
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			course	body		CreateCourseDto	true	"Course information"
+//	@Success		201		{object}	CourseDto
+//	@Failure		400		{object}	ginutil.ErrorResponse
+//	@Failure		401		{object}	ginutil.ErrorResponse
+//	@Failure		500		{object}	ginutil.ErrorResponse
+//	@Router			/course [post]
+func (ctn *CourseCtn) create(c *gin.Context) {
+	userUuid, err := authutils.GetUserUUID(c)
+	if err != nil {
+		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	var input CreateCourseDto
+	if err := c.ShouldBindJSON(&input); err != nil {
+		ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid request payload: "+err.Error())
+		return
+	}
+
+	model, err := input.ToModel()
+	if err != nil {
+		ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	created, err := ctn.CourseService.CreateCourse(model, userUuid)
+	if err != nil {
+		if errors.Is(err, ErrUserNotFound) {
+			ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+		ctn.logger.Errorf("Failed to create course: %v", err)
+		ginutil.RespondWithError(c, http.StatusInternalServerError, "Failed to create course")
+		return
+	}
+
+	c.JSON(http.StatusCreated, CourseDto{}.FromModel(created))
+}
+
+// UpdateCourse godoc
+//
+//	@Summary		Update course
+//	@Description	Updates course metadata (Teacher or Admin only)
+//	@Tags			course
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			uuid	path		string			true	"Course UUID"
+//	@Param			course	body		UpdateCourseDto	true	"Updated course information"
+//	@Success		200		{object}	CourseDto
+//	@Failure		400		{object}	ginutil.ErrorResponse
+//	@Failure		401		{object}	ginutil.ErrorResponse
+//	@Failure		403		{object}	ginutil.ErrorResponse
+//	@Failure		404		{object}	ginutil.ErrorResponse
+//	@Failure		500		{object}	ginutil.ErrorResponse
+//	@Router			/course/{uuid} [put]
+func (ctn *CourseCtn) update(c *gin.Context) {
+	courseUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
+	if !ok {
+		return
+	}
+
+	if !ctn.checkTeacherOrAdmin(c, courseUuid) {
+		return
+	}
+
+	var input UpdateCourseDto
+	if err := c.ShouldBindJSON(&input); err != nil {
+		ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid request payload: "+err.Error())
+		return
+	}
+
+	model, err := input.ToModel()
+	if err != nil {
+		ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	updated, err := ctn.CourseService.UpdateCourse(courseUuid, model)
+	if ginutil.HandleServiceError(c, err, ErrCourseNotFound) {
+		return
+	}
+
+	c.JSON(http.StatusOK, CourseDto{}.FromModel(updated))
+}
+
+// DeleteCourse godoc
+//
+//	@Summary		Delete course
+//	@Description	Deletes a course and all related modules/enrollments (Teacher or Admin only)
+//	@Tags			course
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			uuid	path	string	true	"Course UUID"
+//	@Success		204
+//	@Failure		400	{object}	ginutil.ErrorResponse
+//	@Failure		401	{object}	ginutil.ErrorResponse
+//	@Failure		403	{object}	ginutil.ErrorResponse
+//	@Failure		404	{object}	ginutil.ErrorResponse
+//	@Failure		500	{object}	ginutil.ErrorResponse
+//	@Router			/course/{uuid} [delete]
+func (ctn *CourseCtn) delete(c *gin.Context) {
+	courseUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
+	if !ok {
+		return
+	}
+
+	if !ctn.checkTeacherOrAdmin(c, courseUuid) {
+		return
+	}
+
+	err := ctn.CourseService.DeleteCourse(courseUuid)
+	if ginutil.HandleServiceError(c, err, ErrCourseNotFound) {
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
+// SelfEnroll godoc
+//
+//	@Summary		Self-enroll in course
+//	@Description	Enrolls the authenticated user into the course as STUDENT
+//	@Tags			course
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			uuid	path		string	true	"Course UUID"
+//	@Success		201		{object}	EnrollmentDto
+//	@Failure		400		{object}	ginutil.ErrorResponse
+//	@Failure		401		{object}	ginutil.ErrorResponse
+//	@Failure		404		{object}	ginutil.ErrorResponse
+//	@Failure		409		{object}	ginutil.ErrorResponse
+//	@Failure		500		{object}	ginutil.ErrorResponse
+//	@Router			/course/{uuid}/enroll [post]
+func (ctn *CourseCtn) selfEnroll(c *gin.Context) {
+	courseUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
+	if !ok {
+		return
+	}
+
+	userUuid, err := authutils.GetUserUUID(c)
+	if err != nil {
+		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	enrollment, err := ctn.CourseService.SelfEnroll(courseUuid, userUuid)
+	if err != nil {
+		if errors.Is(err, ErrCourseNotFound) {
+			ginutil.RespondWithError(c, http.StatusNotFound, err.Error())
+			return
+		}
+		if errors.Is(err, ErrAlreadyEnrolled) {
+			ginutil.RespondWithError(c, http.StatusConflict, err.Error())
+			return
+		}
+		ctn.logger.Errorf("Failed to self-enroll: %v", err)
+		ginutil.RespondWithError(c, http.StatusInternalServerError, "Failed to self-enroll")
+		return
+	}
+
+	c.JSON(http.StatusCreated, EnrollmentDto{}.FromModel(enrollment))
+}
+
+// Unenroll godoc
+//
+//	@Summary		Unenroll from course
+//	@Description	Removes the authenticated user's enrollment from the course
+//	@Tags			course
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			uuid	path	string	true	"Course UUID"
+//	@Success		204
+//	@Failure		400	{object}	ginutil.ErrorResponse
+//	@Failure		401	{object}	ginutil.ErrorResponse
+//	@Failure		404	{object}	ginutil.ErrorResponse
+//	@Failure		500	{object}	ginutil.ErrorResponse
+//	@Router			/course/{uuid}/enroll [delete]
+func (ctn *CourseCtn) unenroll(c *gin.Context) {
+	courseUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
+	if !ok {
+		return
+	}
+
+	userUuid, err := authutils.GetUserUUID(c)
+	if err != nil {
+		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	err = ctn.CourseService.Unenroll(courseUuid, userUuid)
+	if err != nil {
+		if errors.Is(err, ErrEnrollmentNotFound) || errors.Is(err, ErrCourseNotFound) {
+			ginutil.RespondWithError(c, http.StatusNotFound, err.Error())
+			return
+		}
+		ctn.logger.Errorf("Failed to unenroll: %v", err)
+		ginutil.RespondWithError(c, http.StatusInternalServerError, "Failed to unenroll")
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
+// GetMyCourses godoc
+//
+//	@Summary		Get current user's courses
+//	@Description	Returns all courses the authenticated user is enrolled in with their roles
+//	@Tags			course
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Success		200	{array}		MyCourseDto
+//	@Failure		401	{object}	ginutil.ErrorResponse
+//	@Failure		500	{object}	ginutil.ErrorResponse
+//	@Router			/course/my-courses [get]
+func (ctn *CourseCtn) getMyCourses(c *gin.Context) {
+	userUuid, err := authutils.GetUserUUID(c)
+	if err != nil {
+		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	enrollments, err := ctn.CourseService.GetUserEnrollments(userUuid)
+	if err != nil {
+		ctn.logger.Errorf("Failed to get user enrollments: %v", err)
+		ginutil.RespondWithError(c, http.StatusInternalServerError, "Failed to get user enrollments")
+		return
+	}
+
+	myCourses := make([]MyCourseDto, 0, len(enrollments))
+	for _, e := range enrollments {
+		if e.Course != nil {
+			myCourses = append(myCourses, MyCourseDto{
+				Course:     CourseDto{}.FromModel(e.Course),
+				Role:       e.Role,
+				EnrolledAt: e.EnrolledAt,
+			})
+		}
+	}
+
+	c.JSON(http.StatusOK, myCourses)
+}
+
+// GetEnrollments godoc
+//
+//	@Summary		Get course enrollments
+//	@Description	Lists all enrollments for a course (Teacher or Admin only)
+//	@Tags			course
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			uuid	path		string	true	"Course UUID"
+//	@Success		200		{array}		EnrollmentDto
+//	@Failure		400		{object}	ginutil.ErrorResponse
+//	@Failure		401		{object}	ginutil.ErrorResponse
+//	@Failure		403		{object}	ginutil.ErrorResponse
+//	@Failure		404		{object}	ginutil.ErrorResponse
+//	@Failure		500		{object}	ginutil.ErrorResponse
+//	@Router			/course/{uuid}/enrollments [get]
+func (ctn *CourseCtn) getEnrollments(c *gin.Context) {
+	courseUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
+	if !ok {
+		return
+	}
+
+	if !ctn.checkTeacherOrAdmin(c, courseUuid) {
+		return
+	}
+
+	enrollments, err := ctn.CourseService.GetCourseEnrollments(courseUuid)
+	if ginutil.HandleServiceError(c, err, ErrCourseNotFound) {
+		return
+	}
+
+	dtos := make([]EnrollmentDto, 0, len(enrollments))
+	for i := range enrollments {
+		dtos = append(dtos, EnrollmentDto{}.FromModel(&enrollments[i]))
+	}
+
+	c.JSON(http.StatusOK, dtos)
+}
+
+// AddEnrollment godoc
+//
+//	@Summary		Add user to course by email
+//	@Description	Enrolls a user into the course with a specific role (Teacher or Admin only)
+//	@Tags			course
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			uuid		path		string				true	"Course UUID"
+//	@Param			enrollment	body		AddEnrollmentDto	true	"Enrollment details"
+//	@Success		201			{object}	EnrollmentDto
+//	@Failure		400			{object}	ginutil.ErrorResponse
+//	@Failure		401			{object}	ginutil.ErrorResponse
+//	@Failure		403			{object}	ginutil.ErrorResponse
+//	@Failure		404			{object}	ginutil.ErrorResponse
+//	@Failure		409			{object}	ginutil.ErrorResponse
+//	@Failure		500			{object}	ginutil.ErrorResponse
+//	@Router			/course/{uuid}/enrollments [post]
+func (ctn *CourseCtn) addEnrollment(c *gin.Context) {
+	courseUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
+	if !ok {
+		return
+	}
+
+	if !ctn.checkTeacherOrAdmin(c, courseUuid) {
+		return
+	}
+
+	var input AddEnrollmentDto
+	if err := c.ShouldBindJSON(&input); err != nil {
+		ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid request payload: "+err.Error())
+		return
+	}
+
+	enrollment, err := ctn.CourseService.EnrollByEmail(courseUuid, input.Email, input.Role)
+	if err != nil {
+		if errors.Is(err, ErrUserNotFound) || errors.Is(err, ErrCourseNotFound) {
+			ginutil.RespondWithError(c, http.StatusNotFound, err.Error())
+			return
+		}
+		if errors.Is(err, ErrAlreadyEnrolled) {
+			ginutil.RespondWithError(c, http.StatusConflict, err.Error())
+			return
+		}
+		ctn.logger.Errorf("Failed to add enrollment: %v", err)
+		ginutil.RespondWithError(c, http.StatusInternalServerError, "Failed to add enrollment")
+		return
+	}
+
+	c.JSON(http.StatusCreated, EnrollmentDto{}.FromModel(enrollment))
+}
+
+// ListModules godoc
+//
+//	@Summary		List modules in course
+//	@Description	Returns all modules of a course ordered by position
+//	@Tags			module
+//	@Produce		json
+//	@Param			uuid	path		string	true	"Course UUID"
+//	@Success		200		{array}		ModuleDto
+//	@Failure		400		{object}	ginutil.ErrorResponse
+//	@Failure		404		{object}	ginutil.ErrorResponse
+//	@Failure		500		{object}	ginutil.ErrorResponse
+//	@Router			/course/{uuid}/module [get]
+func (ctn *CourseCtn) listModules(c *gin.Context) {
+	courseUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
+	if !ok {
+		return
+	}
+
+	modules, err := ctn.CourseService.ListModules(courseUuid)
+	if ginutil.HandleServiceError(c, err, ErrCourseNotFound) {
+		return
+	}
+
+	dtos := make([]ModuleDto, 0, len(modules))
+	for i := range modules {
+		dtos = append(dtos, ModuleDto{}.FromModel(&modules[i]))
+	}
+
+	c.JSON(http.StatusOK, dtos)
+}
+
+// GetModule godoc
+//
+//	@Summary		Get module
+//	@Description	Returns a single module with its prerequisite dependency
+//	@Tags			module
+//	@Produce		json
+//	@Param			uuid		path		string	true	"Course UUID"
+//	@Param			moduleId	path		int		true	"Module ID"
+//	@Success		200			{object}	ModuleDto
+//	@Failure		400			{object}	ginutil.ErrorResponse
+//	@Failure		404			{object}	ginutil.ErrorResponse
+//	@Failure		500			{object}	ginutil.ErrorResponse
+//	@Router			/course/{uuid}/module/{moduleId} [get]
+func (ctn *CourseCtn) getModule(c *gin.Context) {
+	courseUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
+	if !ok {
+		return
+	}
+
+	moduleID, ok := ginutil.ParseUintParam(c, "moduleId")
+	if !ok {
+		return
+	}
+
+	module, err := ctn.CourseService.GetModule(courseUuid, moduleID)
+	if ginutil.HandleServiceError(c, err, ErrModuleNotFound) {
+		return
+	}
+
+	c.JSON(http.StatusOK, ModuleDto{}.FromModel(module))
+}
+
+// CreateModule godoc
+//
+//	@Summary		Create module
+//	@Description	Creates a new module in a course (Teacher or Admin only)
+//	@Tags			module
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			uuid	path		string			true	"Course UUID"
+//	@Param			module	body		CreateModuleDto	true	"Module information"
+//	@Success		201		{object}	ModuleDto
+//	@Failure		400		{object}	ginutil.ErrorResponse
+//	@Failure		401		{object}	ginutil.ErrorResponse
+//	@Failure		403		{object}	ginutil.ErrorResponse
+//	@Failure		404		{object}	ginutil.ErrorResponse
+//	@Failure		500		{object}	ginutil.ErrorResponse
+//	@Router			/course/{uuid}/module [post]
+func (ctn *CourseCtn) createModule(c *gin.Context) {
+	courseUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
+	if !ok {
+		return
+	}
+
+	if !ctn.checkTeacherOrAdmin(c, courseUuid) {
+		return
+	}
+
+	var input CreateModuleDto
+	if err := c.ShouldBindJSON(&input); err != nil {
+		ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid request payload: "+err.Error())
+		return
+	}
+
+	model := input.ToModel()
+	created, err := ctn.CourseService.CreateModule(courseUuid, model)
+	if err != nil {
+		if errors.Is(err, ErrCourseNotFound) || errors.Is(err, ErrModuleNotFound) {
+			ginutil.RespondWithError(c, http.StatusNotFound, err.Error())
+			return
+		}
+		if errors.Is(err, ErrSelfPrerequisite) || errors.Is(err, ErrCrossCoursePrerequisite) {
+			ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		ctn.logger.Errorf("Failed to create module: %v", err)
+		ginutil.RespondWithError(c, http.StatusInternalServerError, "Failed to create module")
+		return
+	}
+
+	c.JSON(http.StatusCreated, ModuleDto{}.FromModel(created))
+}
+
+// UpdateModule godoc
+//
+//	@Summary		Update module
+//	@Description	Updates an existing module's title, position, or prerequisite (Teacher or Admin only)
+//	@Tags			module
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			uuid		path		string			true	"Course UUID"
+//	@Param			moduleId	path		int				true	"Module ID"
+//	@Param			module		body		UpdateModuleDto	true	"Updated module information"
+//	@Success		200			{object}	ModuleDto
+//	@Failure		400			{object}	ginutil.ErrorResponse
+//	@Failure		401			{object}	ginutil.ErrorResponse
+//	@Failure		403			{object}	ginutil.ErrorResponse
+//	@Failure		404			{object}	ginutil.ErrorResponse
+//	@Failure		500			{object}	ginutil.ErrorResponse
+//	@Router			/course/{uuid}/module/{moduleId} [put]
+func (ctn *CourseCtn) updateModule(c *gin.Context) {
+	courseUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
+	if !ok {
+		return
+	}
+
+	moduleID, ok := ginutil.ParseUintParam(c, "moduleId")
+	if !ok {
+		return
+	}
+
+	if !ctn.checkTeacherOrAdmin(c, courseUuid) {
+		return
+	}
+
+	var input UpdateModuleDto
+	if err := c.ShouldBindJSON(&input); err != nil {
+		ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid request payload: "+err.Error())
+		return
+	}
+
+	model := input.ToModel()
+	updated, err := ctn.CourseService.UpdateModule(courseUuid, moduleID, model)
+	if err != nil {
+		if errors.Is(err, ErrModuleNotFound) || errors.Is(err, ErrCourseNotFound) {
+			ginutil.RespondWithError(c, http.StatusNotFound, err.Error())
+			return
+		}
+		if errors.Is(err, ErrSelfPrerequisite) || errors.Is(err, ErrCrossCoursePrerequisite) {
+			ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		ctn.logger.Errorf("Failed to update module: %v", err)
+		ginutil.RespondWithError(c, http.StatusInternalServerError, "Failed to update module")
+		return
+	}
+
+	c.JSON(http.StatusOK, ModuleDto{}.FromModel(updated))
+}
+
+// DeleteModule godoc
+//
+//	@Summary		Delete module
+//	@Description	Deletes a module from the course (Teacher or Admin only)
+//	@Tags			module
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			uuid		path	string	true	"Course UUID"
+//	@Param			moduleId	path	int		true	"Module ID"
+//	@Success		204
+//	@Failure		400	{object}	ginutil.ErrorResponse
+//	@Failure		401	{object}	ginutil.ErrorResponse
+//	@Failure		403	{object}	ginutil.ErrorResponse
+//	@Failure		404	{object}	ginutil.ErrorResponse
+//	@Failure		500	{object}	ginutil.ErrorResponse
+//	@Router			/course/{uuid}/module/{moduleId} [delete]
+func (ctn *CourseCtn) deleteModule(c *gin.Context) {
+	courseUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
+	if !ok {
+		return
+	}
+
+	moduleID, ok := ginutil.ParseUintParam(c, "moduleId")
+	if !ok {
+		return
+	}
+
+	if !ctn.checkTeacherOrAdmin(c, courseUuid) {
+		return
+	}
+
+	err := ctn.CourseService.DeleteModule(courseUuid, moduleID)
+	if ginutil.HandleServiceError(c, err, ErrModuleNotFound) {
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
+// ReorderModules godoc
+//
+//	@Summary		Reorder modules
+//	@Description	Updates positions of modules sequentially according to provided ID array (Teacher or Admin only)
+//	@Tags			module
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			uuid	path	string				true	"Course UUID"
+//	@Param			body	body	ReorderModulesDto	true	"Ordered module IDs"
+//	@Success		204
+//	@Failure		400	{object}	ginutil.ErrorResponse
+//	@Failure		401	{object}	ginutil.ErrorResponse
+//	@Failure		403	{object}	ginutil.ErrorResponse
+//	@Failure		404	{object}	ginutil.ErrorResponse
+//	@Failure		500	{object}	ginutil.ErrorResponse
+//	@Router			/course/{uuid}/module/reorder [put]
+func (ctn *CourseCtn) reorderModules(c *gin.Context) {
+	courseUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
+	if !ok {
+		return
+	}
+
+	if !ctn.checkTeacherOrAdmin(c, courseUuid) {
+		return
+	}
+
+	var input ReorderModulesDto
+	if err := c.ShouldBindJSON(&input); err != nil {
+		ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid request payload: "+err.Error())
+		return
+	}
+
+	err := ctn.CourseService.ReorderModules(courseUuid, input.ModuleIDs)
+	if err != nil {
+		if errors.Is(err, ErrCourseNotFound) || errors.Is(err, ErrModuleNotFound) {
+			ginutil.RespondWithError(c, http.StatusNotFound, err.Error())
+			return
+		}
+		ctn.logger.Errorf("Failed to reorder modules: %v", err)
+		ginutil.RespondWithError(c, http.StatusInternalServerError, "Failed to reorder modules")
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
