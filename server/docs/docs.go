@@ -301,6 +301,7 @@ const docTemplate = `{
                 }
             }
         },
+<<<<<<< HEAD
         "/course": {
             "get": {
                 "security": [
@@ -364,10 +365,15 @@ const docTemplate = `{
                 "consumes": [
                     "application/json"
                 ],
+=======
+        "/group/join": {
+            "post": {
+>>>>>>> 38dfec8 (GroupService)
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
+<<<<<<< HEAD
                     "course"
                 ],
                 "summary": "Create course",
@@ -1921,6 +1927,16 @@ const docTemplate = `{
                         "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/ginutil.ErrorResponse"
+=======
+                    "info"
+                ],
+                "summary": "Lets a student join a group if available",
+                "responses": {
+                    "200": {
+                        "description": "Information about server",
+                        "schema": {
+                            "type": "string"
+>>>>>>> 38dfec8 (GroupService)
                         }
                     }
                 }

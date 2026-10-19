@@ -6,27 +6,36 @@ import (
 	"strconv"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/ginutil"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 type CourseCtn struct {
 	CourseService ICourseService
 	logger        *zap.SugaredLogger
+	userService user.IUserCrudService
+	groupService IGroupService
 }
 
-func NewCourseCtn(courseService ICourseService, logger *zap.SugaredLogger) app.Api {
+func NewCourseCtn(courseService ICourseService, logger *zap.SugaredLogger, userService user.IUserCrudService, groupService IGroupService) app.Api {
 	return &CourseCtn{
 		CourseService: courseService,
 		logger:        logger,
+		userService:  userService,
+		groupService: groupService,
 	}
 }
 
 func (ctn *CourseCtn) RegisterEndpoints(api *gin.RouterGroup) {
 	courses := api.Group("/course")
 	courses.Use(authutils.Protect())
+
+	courses.POST("/join/:uuid", ctn.AddStudentToGroup)
 
 	// Course catalog routes (match both /course and /course/)
 	courses.GET("", ctn.list)
@@ -78,6 +87,70 @@ func (ctn *CourseCtn) handleError(c *gin.Context, err error, fallbackMsg string)
 		ginutil.RespondWithError(c, http.StatusInternalServerError, fallbackMsg)
 	}
 	return true
+}
+
+
+// AddStudentToGroup godoc
+//
+//	@Summary	Lets a student join a group if available
+//	@Tags		info
+//	@Produce	json
+//	@Success	200	{object}	string	"Information about server"
+//	@Router		/group/join [post]
+func (cnt *CourseCtn) AddStudentToGroup(c *gin.Context) {
+	groupUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
+	if !ok {
+		cnt.logger.Errorf("error parsing uuid value = %s", c.Param("uuid"))
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+
+	userUuid, err := authutils.GetUserUUID(c)
+	if err != nil {
+		cnt.logger.Errorf("Can't get user UUID, %v", err)
+		c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	user, err := cnt.userService.Read(userUuid)
+	if err != nil {
+		cnt.logger.Errorf("Can't get user, %v", err)
+		c.AbortWithError(http.StatusNotFound, err)
+		return
+	}
+
+	cnt.logger.Infof("Student %v is trying to join group %v", userUuid, groupUuid)
+	// TODO: service layer look at the user/db.go
+
+	group, err := cnt.groupService.UserJoinGroup(groupUuid, user)
+	if ginutil.HandleServiceError(c, err, gorm.ErrRecordNotFound) {
+		cnt.logger.Errorf("User %v could not join group %v, %v", user, groupUuid, err)
+		return
+	}
+	println(group)
+
+	c.AbortWithStatus(http.StatusOK)
+}
+
+
+type IGroupService interface {
+	UserJoinGroup(groupUuid uuid.UUID, user *user.User) (*Group, error)
+}
+type GroupService struct {
+	groups map[uuid.UUID]Group
+	logger *zap.SugaredLogger
+}
+
+// UserJoinGroup implements [IGroupService].
+func (g *GroupService) UserJoinGroup(groupUuid uuid.UUID, user *user.User) (*Group, error) {
+	g.logger.Error("Testing")
+	return nil, nil
+}
+
+func NewGroupService(logger *zap.SugaredLogger) IGroupService {
+	return &GroupService{
+		logger: logger,
+	}
 }
 
 // ListCourses godoc

@@ -859,6 +859,7 @@ paths:
       summary: Revoke Session
       tags:
       - auth
+<<<<<<< HEAD
   /course:
     get:
       description: Returns all courses with optional filtering by term and year
@@ -976,10 +977,15 @@ paths:
         name: uuid
         required: true
         type: string
+=======
+  /group/join:
+    post:
+>>>>>>> 38dfec8 (GroupService)
       produces:
       - application/json
       responses:
         "200":
+<<<<<<< HEAD
           description: OK
           schema:
             $ref: '#/definitions/course.CourseDto'
@@ -3012,6 +3018,14 @@ paths:
       summary: Get current user's courses
       tags:
       - course
+=======
+          description: Information about server
+          schema:
+            type: string
+      summary: Lets a student join a group if available
+      tags:
+      - info
+>>>>>>> 38dfec8 (GroupService)
   /healthz:
     get:
       description: Returns the health status of the server.
