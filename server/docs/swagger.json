@@ -388,7 +388,7 @@
                 }
             }
         },
-        "/course/my-courses": {
+        "/course/my-course": {
             "get": {
                 "security": [
                     {
@@ -684,7 +684,7 @@
                 "tags": [
                     "course"
                 ],
-                "summary": "Unenroll from course",
+                "summary": "Withdraw from course",
                 "parameters": [
                     {
                         "type": "string",
@@ -1003,7 +1003,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Updates positions of modules sequentially according to provided ID array (Teacher or Admin only)",
+                "description": "Updates positions of modules sequentially according to provided UUID array (Teacher or Admin only)",
                 "consumes": [
                     "application/json"
                 ],
@@ -1023,7 +1023,7 @@
                         "required": true
                     },
                     {
-                        "description": "Ordered module IDs",
+                        "description": "Ordered module UUIDs",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -1069,8 +1069,13 @@
                 }
             }
         },
-        "/course/{uuid}/module/{moduleId}": {
+        "/course/{uuid}/module/{moduleUuid}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns a single module with its prerequisite dependency",
                 "produces": [
                     "application/json"
@@ -1088,9 +1093,9 @@
                         "required": true
                     },
                     {
-                        "type": "integer",
-                        "description": "Module ID",
-                        "name": "moduleId",
+                        "type": "string",
+                        "description": "Module UUID",
+                        "name": "moduleUuid",
                         "in": "path",
                         "required": true
                     }
@@ -1104,6 +1109,12 @@
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/ginutil.ErrorResponse"
                         }
@@ -1148,9 +1159,9 @@
                         "required": true
                     },
                     {
-                        "type": "integer",
-                        "description": "Module ID",
-                        "name": "moduleId",
+                        "type": "string",
+                        "description": "Module UUID",
+                        "name": "moduleUuid",
                         "in": "path",
                         "required": true
                     },
@@ -1226,9 +1237,9 @@
                         "required": true
                     },
                     {
-                        "type": "integer",
-                        "description": "Module ID",
-                        "name": "moduleId",
+                        "type": "string",
+                        "description": "Module UUID",
+                        "name": "moduleUuid",
                         "in": "path",
                         "required": true
                     }
@@ -1780,9 +1791,6 @@
                 "description": {
                     "type": "string"
                 },
-                "id": {
-                    "type": "integer"
-                },
                 "teachers": {
                     "type": "array",
                     "items": {
@@ -1853,8 +1861,8 @@
                 "title"
             ],
             "properties": {
-                "dependsOnId": {
-                    "type": "integer"
+                "dependsOnUuid": {
+                    "type": "string"
                 },
                 "position": {
                     "type": "integer"
@@ -1869,17 +1877,11 @@
         "course.EnrollmentDto": {
             "type": "object",
             "properties": {
-                "courseId": {
-                    "type": "integer"
-                },
                 "courseUuid": {
                     "type": "string"
                 },
                 "enrolledAt": {
                     "type": "string"
-                },
-                "id": {
-                    "type": "integer"
                 },
                 "role": {
                     "$ref": "#/definitions/course.CourseRole"
@@ -1887,8 +1889,8 @@
                 "userEmail": {
                     "type": "string"
                 },
-                "userId": {
-                    "type": "integer"
+                "userUuid": {
+                    "type": "string"
                 },
                 "username": {
                     "type": "string"
@@ -1898,22 +1900,22 @@
         "course.ModuleDto": {
             "type": "object",
             "properties": {
-                "courseId": {
-                    "type": "integer"
+                "courseUuid": {
+                    "type": "string"
                 },
                 "dependsOn": {
                     "$ref": "#/definitions/course.ModuleDto"
                 },
-                "dependsOnId": {
-                    "type": "integer"
-                },
-                "id": {
-                    "type": "integer"
+                "dependsOnUuid": {
+                    "type": "string"
                 },
                 "position": {
                     "type": "integer"
                 },
                 "title": {
+                    "type": "string"
+                },
+                "uuid": {
                     "type": "string"
                 }
             }
@@ -1935,14 +1937,14 @@
         "course.ReorderModulesDto": {
             "type": "object",
             "required": [
-                "moduleIds"
+                "moduleUuids"
             ],
             "properties": {
-                "moduleIds": {
+                "moduleUuids": {
                     "type": "array",
                     "minItems": 1,
                     "items": {
-                        "type": "integer"
+                        "type": "string"
                     }
                 }
             }
@@ -1983,8 +1985,8 @@
                 "title"
             ],
             "properties": {
-                "dependsOnId": {
-                    "type": "integer"
+                "dependsOnUuid": {
+                    "type": "string"
                 },
                 "position": {
                     "type": "integer"

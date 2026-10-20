@@ -399,7 +399,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/course/my-courses": {
+        "/course/my-course": {
             "get": {
                 "security": [
                     {
@@ -695,7 +695,7 @@ const docTemplate = `{
                 "tags": [
                     "course"
                 ],
-                "summary": "Unenroll from course",
+                "summary": "Withdraw from course",
                 "parameters": [
                     {
                         "type": "string",
@@ -1014,7 +1014,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Updates positions of modules sequentially according to provided ID array (Teacher or Admin only)",
+                "description": "Updates positions of modules sequentially according to provided UUID array (Teacher or Admin only)",
                 "consumes": [
                     "application/json"
                 ],
@@ -1034,7 +1034,7 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "Ordered module IDs",
+                        "description": "Ordered module UUIDs",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -1080,8 +1080,13 @@ const docTemplate = `{
                 }
             }
         },
-        "/course/{uuid}/module/{moduleId}": {
+        "/course/{uuid}/module/{moduleUuid}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns a single module with its prerequisite dependency",
                 "produces": [
                     "application/json"
@@ -1099,9 +1104,9 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "type": "integer",
-                        "description": "Module ID",
-                        "name": "moduleId",
+                        "type": "string",
+                        "description": "Module UUID",
+                        "name": "moduleUuid",
                         "in": "path",
                         "required": true
                     }
@@ -1115,6 +1120,12 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/ginutil.ErrorResponse"
                         }
@@ -1159,9 +1170,9 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "type": "integer",
-                        "description": "Module ID",
-                        "name": "moduleId",
+                        "type": "string",
+                        "description": "Module UUID",
+                        "name": "moduleUuid",
                         "in": "path",
                         "required": true
                     },
@@ -1237,9 +1248,9 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "type": "integer",
-                        "description": "Module ID",
-                        "name": "moduleId",
+                        "type": "string",
+                        "description": "Module UUID",
+                        "name": "moduleUuid",
                         "in": "path",
                         "required": true
                     }
@@ -1791,9 +1802,6 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
-                "id": {
-                    "type": "integer"
-                },
                 "teachers": {
                     "type": "array",
                     "items": {
@@ -1864,8 +1872,8 @@ const docTemplate = `{
                 "title"
             ],
             "properties": {
-                "dependsOnId": {
-                    "type": "integer"
+                "dependsOnUuid": {
+                    "type": "string"
                 },
                 "position": {
                     "type": "integer"
@@ -1880,17 +1888,11 @@ const docTemplate = `{
         "course.EnrollmentDto": {
             "type": "object",
             "properties": {
-                "courseId": {
-                    "type": "integer"
-                },
                 "courseUuid": {
                     "type": "string"
                 },
                 "enrolledAt": {
                     "type": "string"
-                },
-                "id": {
-                    "type": "integer"
                 },
                 "role": {
                     "$ref": "#/definitions/course.CourseRole"
@@ -1898,8 +1900,8 @@ const docTemplate = `{
                 "userEmail": {
                     "type": "string"
                 },
-                "userId": {
-                    "type": "integer"
+                "userUuid": {
+                    "type": "string"
                 },
                 "username": {
                     "type": "string"
@@ -1909,22 +1911,22 @@ const docTemplate = `{
         "course.ModuleDto": {
             "type": "object",
             "properties": {
-                "courseId": {
-                    "type": "integer"
+                "courseUuid": {
+                    "type": "string"
                 },
                 "dependsOn": {
                     "$ref": "#/definitions/course.ModuleDto"
                 },
-                "dependsOnId": {
-                    "type": "integer"
-                },
-                "id": {
-                    "type": "integer"
+                "dependsOnUuid": {
+                    "type": "string"
                 },
                 "position": {
                     "type": "integer"
                 },
                 "title": {
+                    "type": "string"
+                },
+                "uuid": {
                     "type": "string"
                 }
             }
@@ -1946,14 +1948,14 @@ const docTemplate = `{
         "course.ReorderModulesDto": {
             "type": "object",
             "required": [
-                "moduleIds"
+                "moduleUuids"
             ],
             "properties": {
-                "moduleIds": {
+                "moduleUuids": {
                     "type": "array",
                     "minItems": 1,
                     "items": {
-                        "type": "integer"
+                        "type": "string"
                     }
                 }
             }
@@ -1994,8 +1996,8 @@ const docTemplate = `{
                 "title"
             ],
             "properties": {
-                "dependsOnId": {
-                    "type": "integer"
+                "dependsOnUuid": {
+                    "type": "string"
                 },
                 "position": {
                     "type": "integer"

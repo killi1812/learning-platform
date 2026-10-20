@@ -26,16 +26,16 @@ type mockCourseService struct {
 	deleteCourseFunc         func(courseUuid uuid.UUID) error
 	selfEnrollFunc           func(courseUuid uuid.UUID, userUuid uuid.UUID) (*Enrollment, error)
 	enrollByEmailFunc        func(courseUuid uuid.UUID, email string, role CourseRole) (*Enrollment, error)
-	unenrollFunc             func(courseUuid uuid.UUID, userUuid uuid.UUID) error
+	withdrawFunc             func(courseUuid uuid.UUID, userUuid uuid.UUID) error
 	getCourseEnrollmentsFunc func(courseUuid uuid.UUID) ([]Enrollment, error)
 	getUserEnrollmentsFunc   func(userUuid uuid.UUID) ([]Enrollment, error)
 	isTeacherOrAdminFunc     func(courseUuid uuid.UUID, userUuid uuid.UUID, isSystemAdmin bool) (bool, error)
 	createModuleFunc         func(courseUuid uuid.UUID, m *Module) (*Module, error)
-	getModuleFunc            func(courseUuid uuid.UUID, moduleID uint) (*Module, error)
+	getModuleFunc            func(courseUuid uuid.UUID, moduleUuid uuid.UUID) (*Module, error)
 	listModulesFunc          func(courseUuid uuid.UUID) ([]Module, error)
-	updateModuleFunc         func(courseUuid uuid.UUID, moduleID uint, updated *Module) (*Module, error)
-	deleteModuleFunc         func(courseUuid uuid.UUID, moduleID uint) error
-	reorderModulesFunc       func(courseUuid uuid.UUID, moduleIDs []uint) error
+	updateModuleFunc         func(courseUuid uuid.UUID, moduleUuid uuid.UUID, updated *Module) (*Module, error)
+	deleteModuleFunc         func(courseUuid uuid.UUID, moduleUuid uuid.UUID) error
+	reorderModulesFunc       func(courseUuid uuid.UUID, moduleUuids []uuid.UUID) error
 }
 
 func (m *mockCourseService) CreateCourse(c *Course, creatorUuid uuid.UUID) (*Course, error) {
@@ -93,9 +93,9 @@ func (m *mockCourseService) EnrollByEmail(courseUuid uuid.UUID, email string, ro
 	return &Enrollment{Model: gorm.Model{ID: 11}, CourseID: 1, UserEmail: email, Role: role}, nil
 }
 
-func (m *mockCourseService) Unenroll(courseUuid uuid.UUID, userUuid uuid.UUID) error {
-	if m.unenrollFunc != nil {
-		return m.unenrollFunc(courseUuid, userUuid)
+func (m *mockCourseService) Withdraw(courseUuid uuid.UUID, userUuid uuid.UUID) error {
+	if m.withdrawFunc != nil {
+		return m.withdrawFunc(courseUuid, userUuid)
 	}
 	return nil
 }
@@ -131,61 +131,65 @@ func (m *mockCourseService) CreateModule(courseUuid uuid.UUID, mod *Module) (*Mo
 		return m.createModuleFunc(courseUuid, mod)
 	}
 	mod.ID = 100
+	if mod.Uuid == uuid.Nil {
+		mod.Uuid = uuid.New()
+	}
 	mod.CourseID = 1
 	return mod, nil
 }
 
-func (m *mockCourseService) GetModule(courseUuid uuid.UUID, moduleID uint) (*Module, error) {
+func (m *mockCourseService) GetModule(courseUuid uuid.UUID, moduleUuid uuid.UUID) (*Module, error) {
 	if m.getModuleFunc != nil {
-		return m.getModuleFunc(courseUuid, moduleID)
+		return m.getModuleFunc(courseUuid, moduleUuid)
 	}
-	return &Module{Model: gorm.Model{ID: moduleID}, CourseID: 1, Title: "Test Module"}, nil
+	return &Module{Model: gorm.Model{ID: 100}, Uuid: moduleUuid, CourseID: 1, Title: "Test Module"}, nil
 }
 
 func (m *mockCourseService) ListModules(courseUuid uuid.UUID) ([]Module, error) {
 	if m.listModulesFunc != nil {
 		return m.listModulesFunc(courseUuid)
 	}
-	return []Module{{Model: gorm.Model{ID: 100}, CourseID: 1, Title: "Test Module"}}, nil
+	return []Module{{Model: gorm.Model{ID: 100}, Uuid: uuid.New(), CourseID: 1, Title: "Test Module"}}, nil
 }
 
-func (m *mockCourseService) UpdateModule(courseUuid uuid.UUID, moduleID uint, updated *Module) (*Module, error) {
+func (m *mockCourseService) UpdateModule(courseUuid uuid.UUID, moduleUuid uuid.UUID, updated *Module) (*Module, error) {
 	if m.updateModuleFunc != nil {
-		return m.updateModuleFunc(courseUuid, moduleID, updated)
+		return m.updateModuleFunc(courseUuid, moduleUuid, updated)
 	}
-	updated.ID = moduleID
+	updated.ID = 100
+	updated.Uuid = moduleUuid
 	updated.CourseID = 1
 	return updated, nil
 }
 
-func (m *mockCourseService) DeleteModule(courseUuid uuid.UUID, moduleID uint) error {
+func (m *mockCourseService) DeleteModule(courseUuid uuid.UUID, moduleUuid uuid.UUID) error {
 	if m.deleteModuleFunc != nil {
-		return m.deleteModuleFunc(courseUuid, moduleID)
+		return m.deleteModuleFunc(courseUuid, moduleUuid)
 	}
 	return nil
 }
 
-func (m *mockCourseService) ReorderModules(courseUuid uuid.UUID, moduleIDs []uint) error {
+func (m *mockCourseService) ReorderModules(courseUuid uuid.UUID, moduleUuids []uuid.UUID) error {
 	if m.reorderModulesFunc != nil {
-		return m.reorderModulesFunc(courseUuid, moduleIDs)
+		return m.reorderModulesFunc(courseUuid, moduleUuids)
 	}
 	return nil
+}
+
+func init() {
+	app.AccessKey = "test-course-secret-access-key-12345"
+	app.RefreshKey = "test-course-secret-refresh-key-12345"
 }
 
 func setupCourseTestRouter(service ICourseService) (*gin.Engine, *CourseCtn) {
 	gin.SetMode(gin.TestMode)
-	app.AccessKey = "test-course-secret-access-key-12345"
-	app.RefreshKey = "test-course-secret-refresh-key-12345"
 
-	logger := zap.NewNop().Sugar()
 	ctn := &CourseCtn{
 		CourseService: service,
-		logger:        logger,
+		logger:        zap.NewNop().Sugar(),
 	}
-
 	r := gin.New()
-	api := r.Group("/api")
-	ctn.RegisterEndpoints(api)
+	ctn.RegisterEndpoints(r.Group("/api"))
 	return r, ctn
 }
 
@@ -195,993 +199,239 @@ func generateAuthHeader(t *testing.T, userUuid uuid.UUID, role authutils.Role) s
 	return "Bearer " + token
 }
 
-func TestCourseCtn_ListAndGet(t *testing.T) {
+func doReq(r http.Handler, method, path, auth string, body any) *httptest.ResponseRecorder {
+	var buf bytes.Buffer
+	if body != nil {
+		switch v := body.(type) {
+		case string:
+			buf.WriteString(v)
+		default:
+			_ = json.NewEncoder(&buf).Encode(v)
+		}
+	}
+	req, _ := http.NewRequest(method, path, &buf)
+	if auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	return w
+}
+
+func TestCourseCtn_HappyPaths(t *testing.T) {
+	assert.NotNil(t, NewCourseCtn(&mockCourseService{}, zap.NewNop().Sugar()))
+
+	depID := uint(50)
+	depUuid := uuid.New()
+	modUuid := uuid.New()
+	courseUuid := uuid.New()
+	auth := generateAuthHeader(t, uuid.New(), authutils.ROLE_USER)
+
+	svc := &mockCourseService{
+		getModuleFunc: func(cUuid, mUuid uuid.UUID) (*Module, error) {
+			return &Module{
+				Model:       gorm.Model{ID: 100},
+				Uuid:        mUuid,
+				CourseID:    1,
+				Title:       "Week 2",
+				DependsOnID: &depID,
+				DependsOn:   &Module{Model: gorm.Model{ID: depID}, Uuid: depUuid, Title: "Week 1"},
+			}, nil
+		},
+	}
+	r, _ := setupCourseTestRouter(svc)
+
+	// List courses
+	w := doReq(r, http.MethodGet, "/api/course?term=AUTUMN&year=2026", auth, nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	// Get course
+	w = doReq(r, http.MethodGet, "/api/course/"+courseUuid.String(), auth, nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	// Create course
+	w = doReq(r, http.MethodPost, "/api/course", auth, CreateCourseDto{
+		Title: "Software Technologies", Description: "DAT250", Term: "AUTUMN", Year: 2026,
+	})
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	// Update course
+	w = doReq(r, http.MethodPut, "/api/course/"+courseUuid.String(), auth, UpdateCourseDto{
+		Title: "Updated", Term: "SPRING", Year: 2027,
+	})
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	// Delete course
+	w = doReq(r, http.MethodDelete, "/api/course/"+courseUuid.String(), auth, nil)
+	assert.Equal(t, http.StatusNoContent, w.Code)
+
+	// Self-enroll & withdraw
+	w = doReq(r, http.MethodPost, "/api/course/"+courseUuid.String()+"/enroll", auth, nil)
+	assert.Equal(t, http.StatusCreated, w.Code)
+	w = doReq(r, http.MethodDelete, "/api/course/"+courseUuid.String()+"/enroll", auth, nil)
+	assert.Equal(t, http.StatusNoContent, w.Code)
+
+	// My courses & course enrollments
+	w = doReq(r, http.MethodGet, "/api/course/my-course", auth, nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+	w = doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/enrollments", auth, nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+	w = doReq(r, http.MethodPost, "/api/course/"+courseUuid.String()+"/enrollments", auth, AddEnrollmentDto{
+		Email: "student@hvl.no", Role: RoleStudent,
+	})
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	// Modules CRUD & reorder
+	w = doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module", auth, nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+	w = doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/"+modUuid.String(), auth, nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+	w = doReq(r, http.MethodPost, "/api/course/"+courseUuid.String()+"/module", auth, CreateModuleDto{Title: "Week 1"})
+	assert.Equal(t, http.StatusCreated, w.Code)
+	w = doReq(r, http.MethodPut, "/api/course/"+courseUuid.String()+"/module/"+modUuid.String(), auth, UpdateModuleDto{Title: "Week 1 Updated"})
+	assert.Equal(t, http.StatusOK, w.Code)
+	w = doReq(r, http.MethodPut, "/api/course/"+courseUuid.String()+"/module/reorder", auth, ReorderModulesDto{ModuleUuids: []uuid.UUID{modUuid}})
+	assert.Equal(t, http.StatusNoContent, w.Code)
+	w = doReq(r, http.MethodDelete, "/api/course/"+courseUuid.String()+"/module/"+modUuid.String(), auth, nil)
+	assert.Equal(t, http.StatusNoContent, w.Code)
+}
+
+func TestCourseCtn_ValidationAndParamErrors(t *testing.T) {
 	r, _ := setupCourseTestRouter(&mockCourseService{})
-	courseUuid := uuid.New()
+	auth := generateAuthHeader(t, uuid.New(), authutils.ROLE_USER)
+	cID := uuid.New().String()
+	mID := uuid.New().String()
 
-	t.Run("GET /api/course returns list of courses", func(t *testing.T) {
-		req, _ := http.NewRequest(http.MethodGet, "/api/course?term=AUTUMN&year=2026", nil)
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
+	cases := []struct {
+		method string
+		path   string
+		auth   string
+		body   any
+		want   int
+	}{
+		{http.MethodPost, "/api/course", "", CreateCourseDto{Title: "T", Term: "AUTUMN", Year: 2026}, http.StatusUnauthorized},
+		{http.MethodPost, "/api/course", auth, "{bad", http.StatusBadRequest},
+		{http.MethodPost, "/api/course", auth, CreateCourseDto{Title: "T", Term: "INVALID", Year: 2026}, http.StatusBadRequest},
+		{http.MethodGet, "/api/course/bad-uuid", auth, nil, http.StatusBadRequest},
+		{http.MethodPut, "/api/course/bad-uuid", auth, "{}", http.StatusBadRequest},
+		{http.MethodPut, "/api/course/" + cID, auth, "{bad", http.StatusBadRequest},
+		{http.MethodPut, "/api/course/" + cID, auth, UpdateCourseDto{Title: "T", Term: "INVALID", Year: 2026}, http.StatusBadRequest},
+		{http.MethodDelete, "/api/course/bad-uuid", auth, nil, http.StatusBadRequest},
+		{http.MethodPost, "/api/course/bad-uuid/enroll", auth, nil, http.StatusBadRequest},
+		{http.MethodDelete, "/api/course/bad-uuid/enroll", auth, nil, http.StatusBadRequest},
+		{http.MethodGet, "/api/course/bad-uuid/enrollments", auth, nil, http.StatusBadRequest},
+		{http.MethodPost, "/api/course/bad-uuid/enrollments", auth, "{}", http.StatusBadRequest},
+		{http.MethodPost, "/api/course/" + cID + "/enrollments", auth, "{bad", http.StatusBadRequest},
+		{http.MethodGet, "/api/course/bad-uuid/module", auth, nil, http.StatusBadRequest},
+		{http.MethodGet, "/api/course/bad-uuid/module/" + mID, auth, nil, http.StatusBadRequest},
+		{http.MethodGet, "/api/course/" + cID + "/module/bad-uuid", auth, nil, http.StatusBadRequest},
+		{http.MethodPost, "/api/course/bad-uuid/module", auth, CreateModuleDto{Title: "W1"}, http.StatusBadRequest},
+		{http.MethodPost, "/api/course/" + cID + "/module", auth, "{bad", http.StatusBadRequest},
+		{http.MethodPut, "/api/course/bad-uuid/module/" + mID, auth, UpdateModuleDto{Title: "W1"}, http.StatusBadRequest},
+		{http.MethodPut, "/api/course/" + cID + "/module/bad-uuid", auth, UpdateModuleDto{Title: "W1"}, http.StatusBadRequest},
+		{http.MethodPut, "/api/course/" + cID + "/module/" + mID, auth, "{bad", http.StatusBadRequest},
+		{http.MethodDelete, "/api/course/bad-uuid/module/" + mID, auth, nil, http.StatusBadRequest},
+		{http.MethodDelete, "/api/course/" + cID + "/module/bad-uuid", auth, nil, http.StatusBadRequest},
+		{http.MethodPut, "/api/course/bad-uuid/module/reorder", auth, ReorderModulesDto{ModuleUuids: []uuid.UUID{uuid.New()}}, http.StatusBadRequest},
+		{http.MethodPut, "/api/course/" + cID + "/module/reorder", auth, "{bad", http.StatusBadRequest},
+	}
 
-		assert.Equal(t, http.StatusOK, w.Code)
-		var courses []CourseDto
-		err := json.Unmarshal(w.Body.Bytes(), &courses)
-		assert.NoError(t, err)
-		assert.Len(t, courses, 1)
-		assert.Equal(t, uint(1), courses[0].ID)
-	})
-
-	t.Run("GET /api/course/:uuid returns course", func(t *testing.T) {
-		req, _ := http.NewRequest(http.MethodGet, "/api/course/"+courseUuid.String(), nil)
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusOK, w.Code)
-		var course CourseDto
-		err := json.Unmarshal(w.Body.Bytes(), &course)
-		assert.NoError(t, err)
-		assert.Equal(t, uint(1), course.ID)
-		assert.Equal(t, courseUuid.String(), course.Uuid)
-	})
-
-	t.Run("GET /api/course/:uuid with invalid UUID returns 400", func(t *testing.T) {
-		req, _ := http.NewRequest(http.MethodGet, "/api/course/invalid-uuid", nil)
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-	})
-
-	t.Run("GET /api/course/:uuid not found returns 404", func(t *testing.T) {
-		service := &mockCourseService{
-			getCourseFunc: func(cUuid uuid.UUID) (*Course, error) {
-				return nil, ErrCourseNotFound
-			},
-		}
-		router, _ := setupCourseTestRouter(service)
-
-		req, _ := http.NewRequest(http.MethodGet, "/api/course/"+uuid.New().String(), nil)
-		w := httptest.NewRecorder()
-		router.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusNotFound, w.Code)
-	})
+	for _, tc := range cases {
+		w := doReq(r, tc.method, tc.path, tc.auth, tc.body)
+		assert.Equal(t, tc.want, w.Code, "%s %s", tc.method, tc.path)
+	}
 }
 
-func TestCourseCtn_Create(t *testing.T) {
-	service := &mockCourseService{}
-	r, _ := setupCourseTestRouter(service)
-	userUuid := uuid.New()
-	authHeader := generateAuthHeader(t, userUuid, authutils.ROLE_USER)
+func TestCourseCtn_ServiceErrorsAndPermissions(t *testing.T) {
+	auth := generateAuthHeader(t, uuid.New(), authutils.ROLE_USER)
+	cID := uuid.New().String()
+	mID := uuid.New().String()
+	dbErr := errors.New("db error")
 
-	t.Run("POST /api/course without token returns 401", func(t *testing.T) {
-		body, _ := json.Marshal(CreateCourseDto{
-			Title: "Test",
-			Term:  "AUTUMN",
-			Year:  2026,
-		})
-		req, _ := http.NewRequest(http.MethodPost, "/api/course", bytes.NewBuffer(body))
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusUnauthorized, w.Code)
+	// Forbidden when not teacher/admin
+	rForbidden, _ := setupCourseTestRouter(&mockCourseService{
+		isTeacherOrAdminFunc: func(uuid.UUID, uuid.UUID, bool) (bool, error) { return false, nil },
 	})
+	for _, tc := range []struct {
+		method, path string
+		body         any
+	}{
+		{http.MethodPut, "/api/course/" + cID, UpdateCourseDto{Title: "Title", Term: "SPRING", Year: 2026}},
+		{http.MethodDelete, "/api/course/" + cID, nil},
+		{http.MethodGet, "/api/course/" + cID + "/enrollments", nil},
+		{http.MethodPost, "/api/course/" + cID + "/enrollments", AddEnrollmentDto{Email: "a@b.c"}},
+		{http.MethodPost, "/api/course/" + cID + "/module", CreateModuleDto{Title: "Module"}},
+		{http.MethodPut, "/api/course/" + cID + "/module/" + mID, UpdateModuleDto{Title: "Module"}},
+		{http.MethodDelete, "/api/course/" + cID + "/module/" + mID, nil},
+		{http.MethodPut, "/api/course/" + cID + "/module/reorder", ReorderModulesDto{ModuleUuids: []uuid.UUID{uuid.New()}}},
+	} {
+		assert.Equal(t, http.StatusForbidden, doReq(rForbidden, tc.method, tc.path, auth, tc.body).Code)
+	}
 
-	t.Run("POST /api/course with valid token creates course", func(t *testing.T) {
-		body, _ := json.Marshal(CreateCourseDto{
-			Title:       "Software Technologies",
-			Description: "DAT250 description",
-			Term:        "AUTUMN",
-			Year:        2026,
-		})
-		req, _ := http.NewRequest(http.MethodPost, "/api/course", bytes.NewBuffer(body))
-		req.Header.Set("Authorization", authHeader)
-		req.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusCreated, w.Code)
-		var course CourseDto
-		err := json.Unmarshal(w.Body.Bytes(), &course)
-		assert.NoError(t, err)
-		assert.Equal(t, uint(1), course.ID)
-		assert.Equal(t, "Software Technologies", course.Title)
+	// NotFound & Conflict & BadRequest service errors
+	rNotFound, _ := setupCourseTestRouter(&mockCourseService{
+		getCourseFunc:            func(uuid.UUID) (*Course, error) { return nil, ErrCourseNotFound },
+		createCourseFunc:         func(*Course, uuid.UUID) (*Course, error) { return nil, ErrUserNotFound },
+		updateCourseFunc:         func(uuid.UUID, *Course) (*Course, error) { return nil, ErrCourseNotFound },
+		deleteCourseFunc:         func(uuid.UUID) error { return ErrCourseNotFound },
+		selfEnrollFunc:           func(uuid.UUID, uuid.UUID) (*Enrollment, error) { return nil, ErrAlreadyEnrolled },
+		withdrawFunc:             func(uuid.UUID, uuid.UUID) error { return ErrEnrollmentNotFound },
+		getCourseEnrollmentsFunc: func(uuid.UUID) ([]Enrollment, error) { return nil, ErrCourseNotFound },
+		enrollByEmailFunc:        func(uuid.UUID, string, CourseRole) (*Enrollment, error) { return nil, ErrUserNotFound },
+		listModulesFunc:          func(uuid.UUID) ([]Module, error) { return nil, ErrCourseNotFound },
+		getModuleFunc:            func(uuid.UUID, uuid.UUID) (*Module, error) { return nil, ErrModuleNotFound },
+		createModuleFunc:         func(uuid.UUID, *Module) (*Module, error) { return nil, ErrSelfPrerequisite },
+		updateModuleFunc:         func(uuid.UUID, uuid.UUID, *Module) (*Module, error) { return nil, ErrCrossCoursePrerequisite },
+		deleteModuleFunc:         func(uuid.UUID, uuid.UUID) error { return ErrModuleNotFound },
+		reorderModulesFunc:       func(uuid.UUID, []uuid.UUID) error { return ErrModuleNotFound },
 	})
+	assert.Equal(t, http.StatusNotFound, doReq(rNotFound, http.MethodGet, "/api/course/"+cID, auth, nil).Code)
+	assert.Equal(t, http.StatusUnauthorized, doReq(rNotFound, http.MethodPost, "/api/course", auth, CreateCourseDto{Title: "Title", Term: "SPRING", Year: 2026}).Code)
+	assert.Equal(t, http.StatusNotFound, doReq(rNotFound, http.MethodPut, "/api/course/"+cID, auth, UpdateCourseDto{Title: "Title", Term: "SPRING", Year: 2026}).Code)
+	assert.Equal(t, http.StatusNotFound, doReq(rNotFound, http.MethodDelete, "/api/course/"+cID, auth, nil).Code)
+	assert.Equal(t, http.StatusConflict, doReq(rNotFound, http.MethodPost, "/api/course/"+cID+"/enroll", auth, nil).Code)
+	assert.Equal(t, http.StatusNotFound, doReq(rNotFound, http.MethodDelete, "/api/course/"+cID+"/enroll", auth, nil).Code)
+	assert.Equal(t, http.StatusNotFound, doReq(rNotFound, http.MethodGet, "/api/course/"+cID+"/enrollments", auth, nil).Code)
+	assert.Equal(t, http.StatusNotFound, doReq(rNotFound, http.MethodPost, "/api/course/"+cID+"/enrollments", auth, AddEnrollmentDto{Email: "a@b.c"}).Code)
+	assert.Equal(t, http.StatusNotFound, doReq(rNotFound, http.MethodGet, "/api/course/"+cID+"/module", auth, nil).Code)
+	assert.Equal(t, http.StatusNotFound, doReq(rNotFound, http.MethodGet, "/api/course/"+cID+"/module/"+mID, auth, nil).Code)
+	assert.Equal(t, http.StatusBadRequest, doReq(rNotFound, http.MethodPost, "/api/course/"+cID+"/module", auth, CreateModuleDto{Title: "Module"}).Code)
+	assert.Equal(t, http.StatusBadRequest, doReq(rNotFound, http.MethodPut, "/api/course/"+cID+"/module/"+mID, auth, UpdateModuleDto{Title: "Module"}).Code)
+	assert.Equal(t, http.StatusNotFound, doReq(rNotFound, http.MethodDelete, "/api/course/"+cID+"/module/"+mID, auth, nil).Code)
+	assert.Equal(t, http.StatusNotFound, doReq(rNotFound, http.MethodPut, "/api/course/"+cID+"/module/reorder", auth, ReorderModulesDto{ModuleUuids: []uuid.UUID{uuid.New()}}).Code)
 
-	t.Run("POST /api/course with invalid body returns 400", func(t *testing.T) {
-		req, _ := http.NewRequest(http.MethodPost, "/api/course", bytes.NewBufferString("{invalid}"))
-		req.Header.Set("Authorization", authHeader)
-		req.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusBadRequest, w.Code)
+	// 500 Internal Server Errors
+	rInternal, _ := setupCourseTestRouter(&mockCourseService{
+		listCoursesFunc:        func(*Term, *int) ([]Course, error) { return nil, dbErr },
+		createCourseFunc:       func(*Course, uuid.UUID) (*Course, error) { return nil, dbErr },
+		selfEnrollFunc:         func(uuid.UUID, uuid.UUID) (*Enrollment, error) { return nil, dbErr },
+		withdrawFunc:           func(uuid.UUID, uuid.UUID) error { return dbErr },
+		getUserEnrollmentsFunc: func(uuid.UUID) ([]Enrollment, error) { return nil, dbErr },
+		enrollByEmailFunc:      func(uuid.UUID, string, CourseRole) (*Enrollment, error) { return nil, dbErr },
+		createModuleFunc:       func(uuid.UUID, *Module) (*Module, error) { return nil, dbErr },
+		updateModuleFunc:       func(uuid.UUID, uuid.UUID, *Module) (*Module, error) { return nil, dbErr },
+		reorderModulesFunc:     func(uuid.UUID, []uuid.UUID) error { return dbErr },
 	})
-}
+	assert.Equal(t, http.StatusInternalServerError, doReq(rInternal, http.MethodGet, "/api/course", auth, nil).Code)
+	assert.Equal(t, http.StatusInternalServerError, doReq(rInternal, http.MethodPost, "/api/course", auth, CreateCourseDto{Title: "Title", Term: "SPRING", Year: 2026}).Code)
+	assert.Equal(t, http.StatusInternalServerError, doReq(rInternal, http.MethodPost, "/api/course/"+cID+"/enroll", auth, nil).Code)
+	assert.Equal(t, http.StatusInternalServerError, doReq(rInternal, http.MethodDelete, "/api/course/"+cID+"/enroll", auth, nil).Code)
+	assert.Equal(t, http.StatusInternalServerError, doReq(rInternal, http.MethodGet, "/api/course/my-course", auth, nil).Code)
+	assert.Equal(t, http.StatusInternalServerError, doReq(rInternal, http.MethodPost, "/api/course/"+cID+"/enrollments", auth, AddEnrollmentDto{Email: "a@b.c"}).Code)
+	assert.Equal(t, http.StatusInternalServerError, doReq(rInternal, http.MethodPost, "/api/course/"+cID+"/module", auth, CreateModuleDto{Title: "Module"}).Code)
+	assert.Equal(t, http.StatusInternalServerError, doReq(rInternal, http.MethodPut, "/api/course/"+cID+"/module/"+mID, auth, UpdateModuleDto{Title: "Module"}).Code)
+	assert.Equal(t, http.StatusInternalServerError, doReq(rInternal, http.MethodPut, "/api/course/"+cID+"/module/reorder", auth, ReorderModulesDto{ModuleUuids: []uuid.UUID{uuid.New()}}).Code)
 
-func TestCourseCtn_UpdateAndDelete(t *testing.T) {
-	userUuid := uuid.New()
-	courseUuid := uuid.New()
-	authHeader := generateAuthHeader(t, userUuid, authutils.ROLE_USER)
-
-	t.Run("PUT /api/course/:uuid success for teacher", func(t *testing.T) {
-		service := &mockCourseService{
-			isTeacherOrAdminFunc: func(cUuid uuid.UUID, uUuid uuid.UUID, isSysAdmin bool) (bool, error) {
-				return true, nil
-			},
-		}
-		r, _ := setupCourseTestRouter(service)
-
-		body, _ := json.Marshal(UpdateCourseDto{
-			Title: "Updated Title",
-			Term:  "SPRING",
-			Year:  2027,
-		})
-		req, _ := http.NewRequest(http.MethodPut, "/api/course/"+courseUuid.String(), bytes.NewBuffer(body))
-		req.Header.Set("Authorization", authHeader)
-		req.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusOK, w.Code)
-	})
-
-	t.Run("PUT /api/course/:uuid forbidden for non-teacher", func(t *testing.T) {
-		service := &mockCourseService{
-			isTeacherOrAdminFunc: func(cUuid uuid.UUID, uUuid uuid.UUID, isSysAdmin bool) (bool, error) {
-				return false, nil
-			},
-		}
-		r, _ := setupCourseTestRouter(service)
-
-		body, _ := json.Marshal(UpdateCourseDto{
-			Title: "Updated Title",
-			Term:  "SPRING",
-			Year:  2027,
-		})
-		req, _ := http.NewRequest(http.MethodPut, "/api/course/"+courseUuid.String(), bytes.NewBuffer(body))
-		req.Header.Set("Authorization", authHeader)
-		req.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusForbidden, w.Code)
-	})
-
-	t.Run("DELETE /api/course/:uuid success for teacher", func(t *testing.T) {
-		service := &mockCourseService{
-			isTeacherOrAdminFunc: func(cUuid uuid.UUID, uUuid uuid.UUID, isSysAdmin bool) (bool, error) {
-				return true, nil
-			},
-		}
-		r, _ := setupCourseTestRouter(service)
-
-		req, _ := http.NewRequest(http.MethodDelete, "/api/course/"+courseUuid.String(), nil)
-		req.Header.Set("Authorization", authHeader)
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusNoContent, w.Code)
-	})
-}
-
-func TestCourseCtn_EnrollmentEndpoints(t *testing.T) {
-	userUuid := uuid.New()
-	courseUuid := uuid.New()
-	authHeader := generateAuthHeader(t, userUuid, authutils.ROLE_USER)
-
-	t.Run("POST /api/course/:uuid/enroll self-enrolling succeeds", func(t *testing.T) {
-		r, _ := setupCourseTestRouter(&mockCourseService{})
-
-		req, _ := http.NewRequest(http.MethodPost, "/api/course/"+courseUuid.String()+"/enroll", nil)
-		req.Header.Set("Authorization", authHeader)
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusCreated, w.Code)
-		var enrollment EnrollmentDto
-		err := json.Unmarshal(w.Body.Bytes(), &enrollment)
-		assert.NoError(t, err)
-		assert.Equal(t, RoleStudent, enrollment.Role)
-	})
-
-	t.Run("POST /api/course/:uuid/enroll already enrolled returns 409", func(t *testing.T) {
-		service := &mockCourseService{
-			selfEnrollFunc: func(cUuid uuid.UUID, uUuid uuid.UUID) (*Enrollment, error) {
-				return nil, ErrAlreadyEnrolled
-			},
-		}
-		r, _ := setupCourseTestRouter(service)
-
-		req, _ := http.NewRequest(http.MethodPost, "/api/course/"+courseUuid.String()+"/enroll", nil)
-		req.Header.Set("Authorization", authHeader)
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusConflict, w.Code)
-	})
-
-	t.Run("DELETE /api/course/:uuid/enroll unenrolling succeeds", func(t *testing.T) {
-		r, _ := setupCourseTestRouter(&mockCourseService{})
-
-		req, _ := http.NewRequest(http.MethodDelete, "/api/course/"+courseUuid.String()+"/enroll", nil)
-		req.Header.Set("Authorization", authHeader)
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusNoContent, w.Code)
-	})
-
-	t.Run("GET /api/course/my-courses returns enrolled courses", func(t *testing.T) {
-		r, _ := setupCourseTestRouter(&mockCourseService{})
-
-		req, _ := http.NewRequest(http.MethodGet, "/api/course/my-courses", nil)
-		req.Header.Set("Authorization", authHeader)
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusOK, w.Code)
-		var myCourses []MyCourseDto
-		err := json.Unmarshal(w.Body.Bytes(), &myCourses)
-		assert.NoError(t, err)
-		assert.Len(t, myCourses, 1)
-		assert.Equal(t, "Enrolled Course", myCourses[0].Course.Title)
-		assert.Equal(t, RoleStudent, myCourses[0].Role)
-	})
-
-	t.Run("GET /api/course/:uuid/enrollments returns list for teacher", func(t *testing.T) {
-		service := &mockCourseService{
-			isTeacherOrAdminFunc: func(cUuid uuid.UUID, uUuid uuid.UUID, isSysAdmin bool) (bool, error) {
-				return true, nil
-			},
-		}
-		r, _ := setupCourseTestRouter(service)
-
-		req, _ := http.NewRequest(http.MethodGet, "/api/course/"+courseUuid.String()+"/enrollments", nil)
-		req.Header.Set("Authorization", authHeader)
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusOK, w.Code)
-	})
-
-	t.Run("POST /api/course/:uuid/enrollments adds user by email", func(t *testing.T) {
-		service := &mockCourseService{
-			isTeacherOrAdminFunc: func(cUuid uuid.UUID, uUuid uuid.UUID, isSysAdmin bool) (bool, error) {
-				return true, nil
-			},
-		}
-		r, _ := setupCourseTestRouter(service)
-
-		body, _ := json.Marshal(AddEnrollmentDto{
-			Email: "student@hvl.no",
-			Role:  RoleStudent,
-		})
-		req, _ := http.NewRequest(http.MethodPost, "/api/course/"+courseUuid.String()+"/enrollments", bytes.NewBuffer(body))
-		req.Header.Set("Authorization", authHeader)
-		req.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusCreated, w.Code)
-	})
-
-	t.Run("POST /api/course/:uuid/enrollments handles errors (not found, conflict, internal)", func(t *testing.T) {
-		service := &mockCourseService{
-			isTeacherOrAdminFunc: func(cUuid uuid.UUID, uUuid uuid.UUID, isSysAdmin bool) (bool, error) {
-				return true, nil
-			},
-			enrollByEmailFunc: func(cUuid uuid.UUID, email string, role CourseRole) (*Enrollment, error) {
-				if email == "notfound@hvl.no" {
-					return nil, ErrUserNotFound
-				}
-				if email == "conflict@hvl.no" {
-					return nil, ErrAlreadyEnrolled
-				}
-				return nil, errors.New("db crash")
-			},
-		}
-		r, _ := setupCourseTestRouter(service)
-
-		// Not found
-		body, _ := json.Marshal(AddEnrollmentDto{Email: "notfound@hvl.no", Role: RoleStudent})
-		req, _ := http.NewRequest(http.MethodPost, "/api/course/"+courseUuid.String()+"/enrollments", bytes.NewBuffer(body))
-		req.Header.Set("Authorization", authHeader)
-		req.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusNotFound, w.Code)
-
-		// Conflict
-		body, _ = json.Marshal(AddEnrollmentDto{Email: "conflict@hvl.no", Role: RoleStudent})
-		req, _ = http.NewRequest(http.MethodPost, "/api/course/"+courseUuid.String()+"/enrollments", bytes.NewBuffer(body))
-		req.Header.Set("Authorization", authHeader)
-		req.Header.Set("Content-Type", "application/json")
-		w = httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusConflict, w.Code)
-
-		// Internal error
-		body, _ = json.Marshal(AddEnrollmentDto{Email: "error@hvl.no", Role: RoleStudent})
-		req, _ = http.NewRequest(http.MethodPost, "/api/course/"+courseUuid.String()+"/enrollments", bytes.NewBuffer(body))
-		req.Header.Set("Authorization", authHeader)
-		req.Header.Set("Content-Type", "application/json")
-		w = httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusInternalServerError, w.Code)
-	})
-}
-
-func TestCourseCtn_EdgeCasesAndErrors(t *testing.T) {
-	userUuid := uuid.New()
-	authHeader := generateAuthHeader(t, userUuid, authutils.ROLE_USER)
-
-	t.Run("NewCourseCtn constructor", func(t *testing.T) {
-		logger := zap.NewNop().Sugar()
-		ctn := NewCourseCtn(&mockCourseService{}, logger)
-		assert.NotNil(t, ctn)
-	})
-
-	t.Run("GET /api/course list service error", func(t *testing.T) {
-		service := &mockCourseService{
-			listCoursesFunc: func(term *Term, year *int) ([]Course, error) {
-				return nil, errors.New("db error")
-			},
-		}
-		r, _ := setupCourseTestRouter(service)
-		req, _ := http.NewRequest(http.MethodGet, "/api/course", nil)
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusInternalServerError, w.Code)
-	})
-
-	t.Run("POST /api/course create user not found or db error", func(t *testing.T) {
-		serviceNotFound := &mockCourseService{
-			createCourseFunc: func(c *Course, creatorUuid uuid.UUID) (*Course, error) {
-				return nil, ErrUserNotFound
-			},
-		}
-		r1, _ := setupCourseTestRouter(serviceNotFound)
-		body, _ := json.Marshal(CreateCourseDto{Title: "Test", Term: "SPRING", Year: 2026})
-		req1, _ := http.NewRequest(http.MethodPost, "/api/course", bytes.NewBuffer(body))
-		req1.Header.Set("Authorization", authHeader)
-		req1.Header.Set("Content-Type", "application/json")
-		w1 := httptest.NewRecorder()
-		r1.ServeHTTP(w1, req1)
-		assert.Equal(t, http.StatusUnauthorized, w1.Code)
-
-		serviceErr := &mockCourseService{
-			createCourseFunc: func(c *Course, creatorUuid uuid.UUID) (*Course, error) {
-				return nil, errors.New("fatal")
-			},
-		}
-		r2, _ := setupCourseTestRouter(serviceErr)
-		req2, _ := http.NewRequest(http.MethodPost, "/api/course", bytes.NewBuffer(body))
-		req2.Header.Set("Authorization", authHeader)
-		req2.Header.Set("Content-Type", "application/json")
-		w2 := httptest.NewRecorder()
-		r2.ServeHTTP(w2, req2)
-		assert.Equal(t, http.StatusInternalServerError, w2.Code)
-	})
-
-	t.Run("checkTeacherOrAdmin course not found or service error", func(t *testing.T) {
-		serviceNotFound := &mockCourseService{
-			isTeacherOrAdminFunc: func(cUuid uuid.UUID, uUuid uuid.UUID, isSysAdmin bool) (bool, error) {
-				return false, ErrCourseNotFound
-			},
-		}
-		r1, _ := setupCourseTestRouter(serviceNotFound)
-		req1, _ := http.NewRequest(http.MethodDelete, "/api/course/"+uuid.New().String(), nil)
-		req1.Header.Set("Authorization", authHeader)
-		w1 := httptest.NewRecorder()
-		r1.ServeHTTP(w1, req1)
-		assert.Equal(t, http.StatusNotFound, w1.Code)
-
-		serviceErr := &mockCourseService{
-			isTeacherOrAdminFunc: func(cUuid uuid.UUID, uUuid uuid.UUID, isSysAdmin bool) (bool, error) {
-				return false, errors.New("db error")
-			},
-		}
-		r2, _ := setupCourseTestRouter(serviceErr)
-		req2, _ := http.NewRequest(http.MethodDelete, "/api/course/"+uuid.New().String(), nil)
-		req2.Header.Set("Authorization", authHeader)
-		w2 := httptest.NewRecorder()
-		r2.ServeHTTP(w2, req2)
-		assert.Equal(t, http.StatusInternalServerError, w2.Code)
-	})
-
-	t.Run("SelfEnroll not found and internal error", func(t *testing.T) {
-		serviceNotFound := &mockCourseService{
-			selfEnrollFunc: func(cUuid uuid.UUID, uUuid uuid.UUID) (*Enrollment, error) {
-				return nil, ErrCourseNotFound
-			},
-		}
-		r1, _ := setupCourseTestRouter(serviceNotFound)
-		req1, _ := http.NewRequest(http.MethodPost, "/api/course/"+uuid.New().String()+"/enroll", nil)
-		req1.Header.Set("Authorization", authHeader)
-		w1 := httptest.NewRecorder()
-		r1.ServeHTTP(w1, req1)
-		assert.Equal(t, http.StatusNotFound, w1.Code)
-
-		serviceErr := &mockCourseService{
-			selfEnrollFunc: func(cUuid uuid.UUID, uUuid uuid.UUID) (*Enrollment, error) {
-				return nil, errors.New("db error")
-			},
-		}
-		r2, _ := setupCourseTestRouter(serviceErr)
-		req2, _ := http.NewRequest(http.MethodPost, "/api/course/"+uuid.New().String()+"/enroll", nil)
-		req2.Header.Set("Authorization", authHeader)
-		w2 := httptest.NewRecorder()
-		r2.ServeHTTP(w2, req2)
-		assert.Equal(t, http.StatusInternalServerError, w2.Code)
-	})
-
-	t.Run("Unenroll not found and internal error", func(t *testing.T) {
-		serviceNotFound := &mockCourseService{
-			unenrollFunc: func(cUuid uuid.UUID, uUuid uuid.UUID) error {
-				return ErrEnrollmentNotFound
-			},
-		}
-		r1, _ := setupCourseTestRouter(serviceNotFound)
-		req1, _ := http.NewRequest(http.MethodDelete, "/api/course/"+uuid.New().String()+"/enroll", nil)
-		req1.Header.Set("Authorization", authHeader)
-		w1 := httptest.NewRecorder()
-		r1.ServeHTTP(w1, req1)
-		assert.Equal(t, http.StatusNotFound, w1.Code)
-
-		serviceErr := &mockCourseService{
-			unenrollFunc: func(cUuid uuid.UUID, uUuid uuid.UUID) error {
-				return errors.New("db error")
-			},
-		}
-		r2, _ := setupCourseTestRouter(serviceErr)
-		req2, _ := http.NewRequest(http.MethodDelete, "/api/course/"+uuid.New().String()+"/enroll", nil)
-		req2.Header.Set("Authorization", authHeader)
-		w2 := httptest.NewRecorder()
-		r2.ServeHTTP(w2, req2)
-		assert.Equal(t, http.StatusInternalServerError, w2.Code)
-	})
-
-	t.Run("GetMyCourses internal error", func(t *testing.T) {
-		serviceErr := &mockCourseService{
-			getUserEnrollmentsFunc: func(userUuid uuid.UUID) ([]Enrollment, error) {
-				return nil, errors.New("db error")
-			},
-		}
-		r, _ := setupCourseTestRouter(serviceErr)
-		req, _ := http.NewRequest(http.MethodGet, "/api/course/my-courses", nil)
-		req.Header.Set("Authorization", authHeader)
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusInternalServerError, w.Code)
-	})
-
-	t.Run("Invalid uint route params return 400", func(t *testing.T) {
-		r, _ := setupCourseTestRouter(&mockCourseService{})
-
-		// update invalid id
-		req, _ := http.NewRequest(http.MethodPut, "/api/course/bad-id", bytes.NewBufferString("{}"))
-		req.Header.Set("Authorization", authHeader)
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-
-		// delete invalid id
-		req, _ = http.NewRequest(http.MethodDelete, "/api/course/bad-id", nil)
-		req.Header.Set("Authorization", authHeader)
-		w = httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-
-		// self-enroll invalid id
-		req, _ = http.NewRequest(http.MethodPost, "/api/course/bad-id/enroll", nil)
-		req.Header.Set("Authorization", authHeader)
-		w = httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-
-		// unenroll invalid id
-		req, _ = http.NewRequest(http.MethodDelete, "/api/course/bad-id/enroll", nil)
-		req.Header.Set("Authorization", authHeader)
-		w = httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-
-		// get enrollments invalid id
-		req, _ = http.NewRequest(http.MethodGet, "/api/course/bad-id/enrollments", nil)
-		req.Header.Set("Authorization", authHeader)
-		w = httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-
-		// add enrollment invalid id
-		req, _ = http.NewRequest(http.MethodPost, "/api/course/bad-id/enrollments", bytes.NewBufferString("{}"))
-		req.Header.Set("Authorization", authHeader)
-		w = httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-	})
-
-	t.Run("Update invalid json or not found", func(t *testing.T) {
-		courseUuid := uuid.New()
-		service := &mockCourseService{
-			isTeacherOrAdminFunc: func(cUuid uuid.UUID, uUuid uuid.UUID, isSysAdmin bool) (bool, error) {
-				return true, nil
-			},
-			updateCourseFunc: func(cUuid uuid.UUID, updated *Course) (*Course, error) {
-				return nil, ErrCourseNotFound
-			},
-		}
-		r, _ := setupCourseTestRouter(service)
-
-		// invalid json
-		req, _ := http.NewRequest(http.MethodPut, "/api/course/"+courseUuid.String(), bytes.NewBufferString("not-json"))
-		req.Header.Set("Authorization", authHeader)
-		req.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-
-		// invalid model validation (bad term)
-		badBody, _ := json.Marshal(UpdateCourseDto{Title: "T", Term: "INVALID", Year: 2026})
-		req, _ = http.NewRequest(http.MethodPut, "/api/course/"+courseUuid.String(), bytes.NewBuffer(badBody))
-		req.Header.Set("Authorization", authHeader)
-		req.Header.Set("Content-Type", "application/json")
-		w = httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-
-		// not found in service
-		validBody, _ := json.Marshal(UpdateCourseDto{Title: "Valid", Term: "SPRING", Year: 2026})
-		req, _ = http.NewRequest(http.MethodPut, "/api/course/"+courseUuid.String(), bytes.NewBuffer(validBody))
-		req.Header.Set("Authorization", authHeader)
-		req.Header.Set("Content-Type", "application/json")
-		w = httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusNotFound, w.Code)
-	})
-
-	t.Run("Delete and getEnrollments not found", func(t *testing.T) {
-		courseUuid := uuid.New()
-		service := &mockCourseService{
-			isTeacherOrAdminFunc: func(cUuid uuid.UUID, uUuid uuid.UUID, isSysAdmin bool) (bool, error) {
-				return true, nil
-			},
-			deleteCourseFunc: func(cUuid uuid.UUID) error {
-				return ErrCourseNotFound
-			},
-			getCourseEnrollmentsFunc: func(cUuid uuid.UUID) ([]Enrollment, error) {
-				return nil, ErrCourseNotFound
-			},
-		}
-		r, _ := setupCourseTestRouter(service)
-
-		// delete not found
-		req, _ := http.NewRequest(http.MethodDelete, "/api/course/"+courseUuid.String(), nil)
-		req.Header.Set("Authorization", authHeader)
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusNotFound, w.Code)
-
-		// get enrollments not found
-		req, _ = http.NewRequest(http.MethodGet, "/api/course/"+courseUuid.String()+"/enrollments", nil)
-		req.Header.Set("Authorization", authHeader)
-		w = httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusNotFound, w.Code)
-	})
-
-	t.Run("AddEnrollment invalid json", func(t *testing.T) {
-		courseUuid := uuid.New()
-		service := &mockCourseService{
-			isTeacherOrAdminFunc: func(cUuid uuid.UUID, uUuid uuid.UUID, isSysAdmin bool) (bool, error) {
-				return true, nil
-			},
-		}
-		r, _ := setupCourseTestRouter(service)
-		req, _ := http.NewRequest(http.MethodPost, "/api/course/"+courseUuid.String()+"/enrollments", bytes.NewBufferString("bad-json"))
-		req.Header.Set("Authorization", authHeader)
-		req.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-	})
-
-	t.Run("checkTeacherOrAdmin context failures", func(t *testing.T) {
-		logger := zap.NewNop().Sugar()
-		ctn := &CourseCtn{CourseService: &mockCourseService{}, logger: logger}
-
-		// Context without claims
+	// Direct handler calls without claims in context
+	ctn := &CourseCtn{CourseService: &mockCourseService{}, logger: zap.NewNop().Sugar()}
+	for _, fn := range []func(*gin.Context){ctn.create, ctn.selfEnroll, ctn.withdraw, ctn.getMyCourses} {
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
-		allowed := ctn.checkTeacherOrAdmin(c, uuid.New())
-		assert.False(t, allowed)
+		c.Params = gin.Params{{Key: "uuid", Value: cID}}
+		fn(c)
 		assert.Equal(t, http.StatusUnauthorized, w.Code)
-
-		// Context with claims having invalid UUID
-		w2 := httptest.NewRecorder()
-		c2, _ := gin.CreateTestContext(w2)
-		invalidClaims := &authutils.Claims{
-			Role:             authutils.ROLE_USER,
-			RegisteredClaims: authutils.Claims{}.RegisteredClaims,
-		}
-		invalidClaims.RegisteredClaims.ID = "invalid-uuid"
-		c2.Set(authutils.ContextClaimsKey, invalidClaims)
-		allowed2 := ctn.checkTeacherOrAdmin(c2, uuid.New())
-		assert.False(t, allowed2)
-		assert.Equal(t, http.StatusUnauthorized, w2.Code)
-	})
-
-	t.Run("Handlers abort unauthorized when user UUID is missing in context", func(t *testing.T) {
-		logger := zap.NewNop().Sugar()
-		ctn := &CourseCtn{CourseService: &mockCourseService{}, logger: logger}
-
-		// create
-		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		ctn.create(c)
-		assert.Equal(t, http.StatusUnauthorized, w.Code)
-
-		// selfEnroll
-		w = httptest.NewRecorder()
-		c, _ = gin.CreateTestContext(w)
-		c.Params = gin.Params{{Key: "uuid", Value: uuid.New().String()}}
-		ctn.selfEnroll(c)
-		assert.Equal(t, http.StatusUnauthorized, w.Code)
-
-		// unenroll
-		w = httptest.NewRecorder()
-		c, _ = gin.CreateTestContext(w)
-		c.Params = gin.Params{{Key: "uuid", Value: uuid.New().String()}}
-		ctn.unenroll(c)
-		assert.Equal(t, http.StatusUnauthorized, w.Code)
-
-		// getMyCourses
-		w = httptest.NewRecorder()
-		c, _ = gin.CreateTestContext(w)
-		ctn.getMyCourses(c)
-		assert.Equal(t, http.StatusUnauthorized, w.Code)
-	})
-}
-
-func TestCourseCtn_Modules(t *testing.T) {
-	userUuid := uuid.New()
-	courseUuid := uuid.New()
-	authHeader := generateAuthHeader(t, userUuid, authutils.ROLE_USER)
-
-	t.Run("GET /api/course/:uuid/module lists modules", func(t *testing.T) {
-		r, _ := setupCourseTestRouter(&mockCourseService{})
-
-		req, _ := http.NewRequest(http.MethodGet, "/api/course/"+courseUuid.String()+"/module", nil)
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusOK, w.Code)
-		var modules []ModuleDto
-		err := json.Unmarshal(w.Body.Bytes(), &modules)
-		assert.NoError(t, err)
-		assert.Len(t, modules, 1)
-		assert.Equal(t, uint(100), modules[0].ID)
-	})
-
-	t.Run("GET /api/course/:uuid/module with bad ID returns 400", func(t *testing.T) {
-		r, _ := setupCourseTestRouter(&mockCourseService{})
-		req, _ := http.NewRequest(http.MethodGet, "/api/course/bad-id/module", nil)
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-	})
-
-	t.Run("GET /api/course/:uuid/module/:moduleId gets single module", func(t *testing.T) {
-		depID := uint(50)
-		service := &mockCourseService{
-			getModuleFunc: func(cUuid uuid.UUID, moduleID uint) (*Module, error) {
-				return &Module{
-					Model:       gorm.Model{ID: moduleID},
-					CourseID:    1,
-					Title:       "Week 2",
-					Position:    1,
-					DependsOnID: &depID,
-					DependsOn:   &Module{Model: gorm.Model{ID: depID}, Title: "Week 1"},
-				}, nil
-			},
-		}
-		r, _ := setupCourseTestRouter(service)
-
-		req, _ := http.NewRequest(http.MethodGet, "/api/course/"+courseUuid.String()+"/module/100", nil)
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusOK, w.Code)
-		var mod ModuleDto
-		err := json.Unmarshal(w.Body.Bytes(), &mod)
-		assert.NoError(t, err)
-		assert.Equal(t, uint(100), mod.ID)
-		assert.NotNil(t, mod.DependsOn)
-		assert.Equal(t, uint(50), mod.DependsOn.ID)
-	})
-
-	t.Run("GET /api/course/:uuid/module/:moduleId bad params return 400", func(t *testing.T) {
-		r, _ := setupCourseTestRouter(&mockCourseService{})
-
-		// bad course ID
-		req, _ := http.NewRequest(http.MethodGet, "/api/course/bad/module/1", nil)
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-
-		// bad module ID
-		req, _ = http.NewRequest(http.MethodGet, "/api/course/"+courseUuid.String()+"/module/bad", nil)
-		w = httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-	})
-
-	t.Run("POST /api/course/:uuid/module creates module for teacher", func(t *testing.T) {
-		service := &mockCourseService{
-			isTeacherOrAdminFunc: func(cUuid uuid.UUID, uUuid uuid.UUID, isSysAdmin bool) (bool, error) {
-				return true, nil
-			},
-		}
-		r, _ := setupCourseTestRouter(service)
-
-		body, _ := json.Marshal(CreateModuleDto{Title: "Week 1: Intro"})
-		req, _ := http.NewRequest(http.MethodPost, "/api/course/"+courseUuid.String()+"/module", bytes.NewBuffer(body))
-		req.Header.Set("Authorization", authHeader)
-		req.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusCreated, w.Code)
-	})
-
-	t.Run("POST /api/course/:uuid/module bad request for prereq errors and bad json", func(t *testing.T) {
-		serviceSelfPrereq := &mockCourseService{
-			isTeacherOrAdminFunc: func(cUuid uuid.UUID, uUuid uuid.UUID, isSysAdmin bool) (bool, error) {
-				return true, nil
-			},
-			createModuleFunc: func(cUuid uuid.UUID, m *Module) (*Module, error) {
-				return nil, ErrSelfPrerequisite
-			},
-		}
-		r, _ := setupCourseTestRouter(serviceSelfPrereq)
-
-		body, _ := json.Marshal(CreateModuleDto{Title: "Week 1"})
-		req, _ := http.NewRequest(http.MethodPost, "/api/course/"+courseUuid.String()+"/module", bytes.NewBuffer(body))
-		req.Header.Set("Authorization", authHeader)
-		req.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-
-		// bad json
-		req, _ = http.NewRequest(http.MethodPost, "/api/course/"+courseUuid.String()+"/module", bytes.NewBufferString("not-json"))
-		req.Header.Set("Authorization", authHeader)
-		req.Header.Set("Content-Type", "application/json")
-		w = httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-
-		// bad course ID
-		req, _ = http.NewRequest(http.MethodPost, "/api/course/bad-id/module", bytes.NewBuffer(body))
-		req.Header.Set("Authorization", authHeader)
-		req.Header.Set("Content-Type", "application/json")
-		w = httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-	})
-
-	t.Run("POST /api/course/:uuid/module handles not found and internal error", func(t *testing.T) {
-		serviceNotFound := &mockCourseService{
-			isTeacherOrAdminFunc: func(cUuid uuid.UUID, uUuid uuid.UUID, isSysAdmin bool) (bool, error) {
-				return true, nil
-			},
-			createModuleFunc: func(cUuid uuid.UUID, m *Module) (*Module, error) {
-				return nil, ErrModuleNotFound
-			},
-		}
-		r1, _ := setupCourseTestRouter(serviceNotFound)
-		body, _ := json.Marshal(CreateModuleDto{Title: "Week 1"})
-		req1, _ := http.NewRequest(http.MethodPost, "/api/course/"+courseUuid.String()+"/module", bytes.NewBuffer(body))
-		req1.Header.Set("Authorization", authHeader)
-		req1.Header.Set("Content-Type", "application/json")
-		w1 := httptest.NewRecorder()
-		r1.ServeHTTP(w1, req1)
-		assert.Equal(t, http.StatusNotFound, w1.Code)
-
-		serviceErr := &mockCourseService{
-			isTeacherOrAdminFunc: func(cUuid uuid.UUID, uUuid uuid.UUID, isSysAdmin bool) (bool, error) {
-				return true, nil
-			},
-			createModuleFunc: func(cUuid uuid.UUID, m *Module) (*Module, error) {
-				return nil, errors.New("db error")
-			},
-		}
-		r2, _ := setupCourseTestRouter(serviceErr)
-		req2, _ := http.NewRequest(http.MethodPost, "/api/course/"+courseUuid.String()+"/module", bytes.NewBuffer(body))
-		req2.Header.Set("Authorization", authHeader)
-		req2.Header.Set("Content-Type", "application/json")
-		w2 := httptest.NewRecorder()
-		r2.ServeHTTP(w2, req2)
-		assert.Equal(t, http.StatusInternalServerError, w2.Code)
-	})
-
-	t.Run("PUT /api/course/:uuid/module/:moduleId updates module", func(t *testing.T) {
-		service := &mockCourseService{
-			isTeacherOrAdminFunc: func(cUuid uuid.UUID, uUuid uuid.UUID, isSysAdmin bool) (bool, error) {
-				return true, nil
-			},
-		}
-		r, _ := setupCourseTestRouter(service)
-
-		body, _ := json.Marshal(UpdateModuleDto{Title: "Week 1 Renamed"})
-		req, _ := http.NewRequest(http.MethodPut, "/api/course/"+courseUuid.String()+"/module/100", bytes.NewBuffer(body))
-		req.Header.Set("Authorization", authHeader)
-		req.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusOK, w.Code)
-	})
-
-	t.Run("PUT /api/course/:uuid/module/:moduleId handles errors", func(t *testing.T) {
-		service := &mockCourseService{
-			isTeacherOrAdminFunc: func(cUuid uuid.UUID, uUuid uuid.UUID, isSysAdmin bool) (bool, error) {
-				return true, nil
-			},
-			updateModuleFunc: func(cUuid uuid.UUID, moduleID uint, updated *Module) (*Module, error) {
-				if moduleID == 999 {
-					return nil, ErrModuleNotFound
-				}
-				if moduleID == 888 {
-					return nil, ErrCrossCoursePrerequisite
-				}
-				return nil, errors.New("db error")
-			},
-		}
-		r, _ := setupCourseTestRouter(service)
-
-		body, _ := json.Marshal(UpdateModuleDto{Title: "Valid"})
-
-		// bad course ID
-		req, _ := http.NewRequest(http.MethodPut, "/api/course/bad/module/1", bytes.NewBuffer(body))
-		req.Header.Set("Authorization", authHeader)
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-
-		// bad module ID
-		req, _ = http.NewRequest(http.MethodPut, "/api/course/"+courseUuid.String()+"/module/bad", bytes.NewBuffer(body))
-		req.Header.Set("Authorization", authHeader)
-		w = httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-
-		// bad json
-		req, _ = http.NewRequest(http.MethodPut, "/api/course/"+courseUuid.String()+"/module/1", bytes.NewBufferString("not-json"))
-		req.Header.Set("Authorization", authHeader)
-		w = httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-
-		// not found
-		req, _ = http.NewRequest(http.MethodPut, "/api/course/"+courseUuid.String()+"/module/999", bytes.NewBuffer(body))
-		req.Header.Set("Authorization", authHeader)
-		w = httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusNotFound, w.Code)
-
-		// cross-course prereq bad request
-		req, _ = http.NewRequest(http.MethodPut, "/api/course/"+courseUuid.String()+"/module/888", bytes.NewBuffer(body))
-		req.Header.Set("Authorization", authHeader)
-		w = httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-
-		// internal error
-		req, _ = http.NewRequest(http.MethodPut, "/api/course/"+courseUuid.String()+"/module/777", bytes.NewBuffer(body))
-		req.Header.Set("Authorization", authHeader)
-		w = httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusInternalServerError, w.Code)
-	})
-
-	t.Run("DELETE /api/course/:uuid/module/:moduleId deletes module", func(t *testing.T) {
-		service := &mockCourseService{
-			isTeacherOrAdminFunc: func(cUuid uuid.UUID, uUuid uuid.UUID, isSysAdmin bool) (bool, error) {
-				return true, nil
-			},
-		}
-		r, _ := setupCourseTestRouter(service)
-
-		req, _ := http.NewRequest(http.MethodDelete, "/api/course/"+courseUuid.String()+"/module/100", nil)
-		req.Header.Set("Authorization", authHeader)
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusNoContent, w.Code)
-	})
-
-	t.Run("DELETE /api/course/:uuid/module/:moduleId bad params return 400", func(t *testing.T) {
-		r, _ := setupCourseTestRouter(&mockCourseService{})
-
-		// bad course ID
-		req, _ := http.NewRequest(http.MethodDelete, "/api/course/bad/module/1", nil)
-		req.Header.Set("Authorization", authHeader)
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-
-		// bad module ID
-		req, _ = http.NewRequest(http.MethodDelete, "/api/course/"+courseUuid.String()+"/module/bad", nil)
-		req.Header.Set("Authorization", authHeader)
-		w = httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-	})
-
-	t.Run("PUT /api/course/:uuid/module/reorder reorders modules", func(t *testing.T) {
-		service := &mockCourseService{
-			isTeacherOrAdminFunc: func(cUuid uuid.UUID, uUuid uuid.UUID, isSysAdmin bool) (bool, error) {
-				return true, nil
-			},
-		}
-		r, _ := setupCourseTestRouter(service)
-
-		body, _ := json.Marshal(ReorderModulesDto{ModuleIDs: []uint{2, 1}})
-		req, _ := http.NewRequest(http.MethodPut, "/api/course/"+courseUuid.String()+"/module/reorder", bytes.NewBuffer(body))
-		req.Header.Set("Authorization", authHeader)
-		req.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusNoContent, w.Code)
-	})
-
-	t.Run("PUT /api/course/:uuid/module/reorder handles errors", func(t *testing.T) {
-		service := &mockCourseService{
-			isTeacherOrAdminFunc: func(cUuid uuid.UUID, uUuid uuid.UUID, isSysAdmin bool) (bool, error) {
-				return true, nil
-			},
-			reorderModulesFunc: func(cUuid uuid.UUID, moduleIDs []uint) error {
-				if len(moduleIDs) > 0 && moduleIDs[0] == 999 {
-					return ErrModuleNotFound
-				}
-				return errors.New("db error")
-			},
-		}
-		r, _ := setupCourseTestRouter(service)
-
-		// bad course ID
-		body, _ := json.Marshal(ReorderModulesDto{ModuleIDs: []uint{1}})
-		req, _ := http.NewRequest(http.MethodPut, "/api/course/bad/module/reorder", bytes.NewBuffer(body))
-		req.Header.Set("Authorization", authHeader)
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-
-		// bad json
-		req, _ = http.NewRequest(http.MethodPut, "/api/course/"+courseUuid.String()+"/module/reorder", bytes.NewBufferString("not-json"))
-		req.Header.Set("Authorization", authHeader)
-		w = httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-
-		// not found
-		notFoundBody, _ := json.Marshal(ReorderModulesDto{ModuleIDs: []uint{999}})
-		req, _ = http.NewRequest(http.MethodPut, "/api/course/"+courseUuid.String()+"/module/reorder", bytes.NewBuffer(notFoundBody))
-		req.Header.Set("Authorization", authHeader)
-		w = httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusNotFound, w.Code)
-
-		// internal error
-		errBody, _ := json.Marshal(ReorderModulesDto{ModuleIDs: []uint{123}})
-		req, _ = http.NewRequest(http.MethodPut, "/api/course/"+courseUuid.String()+"/module/reorder", bytes.NewBuffer(errBody))
-		req.Header.Set("Authorization", authHeader)
-		w = httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusInternalServerError, w.Code)
-	})
+	}
 }

@@ -9,7 +9,6 @@ import (
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/ginutil"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -26,63 +25,53 @@ func NewCourseCtn(courseService ICourseService, logger *zap.SugaredLogger) app.A
 }
 
 func (ctn *CourseCtn) RegisterEndpoints(api *gin.RouterGroup) {
-	group := api.Group("/course")
+	courses := api.Group("/course")
+	courses.Use(authutils.Protect())
 
-	// Public catalog routes (match both /course and /course/)
-	group.GET("", ctn.list)
-	group.GET("/", ctn.list)
-	group.GET("/:uuid", ctn.get)
-	group.GET("/:uuid/module", ctn.listModules)
-	group.GET("/:uuid/module/:moduleId", ctn.getModule)
+	// Course catalog routes (match both /course and /course/)
+	courses.GET("", ctn.list)
+	courses.GET("/", ctn.list)
+	courses.GET("/:uuid", ctn.get)
+	courses.GET("/:uuid/module", ctn.listModules)
+	courses.GET("/:uuid/module/:moduleUuid", ctn.getModule)
 
-	// Protected routes
-	group.Use(authutils.Protect())
-
-	group.GET("/my-courses", ctn.getMyCourses)
-	group.POST("", ctn.create)
-	group.POST("/", ctn.create)
-	group.PUT("/:uuid", ctn.update)
-	group.DELETE("/:uuid", ctn.delete)
+	courses.GET("/my-course", ctn.getMyCourses)
+	courses.POST("", ctn.create)
+	courses.POST("/", ctn.create)
+	courses.PUT("/:uuid", ctn.update)
+	courses.DELETE("/:uuid", ctn.delete)
 
 	// Enrollment routes
-	group.POST("/:uuid/enroll", ctn.selfEnroll)
-	group.DELETE("/:uuid/enroll", ctn.unenroll)
-	group.GET("/:uuid/enrollments", ctn.getEnrollments)
-	group.POST("/:uuid/enrollments", ctn.addEnrollment)
+	courses.POST("/:uuid/enroll", ctn.selfEnroll)
+	courses.DELETE("/:uuid/enroll", ctn.withdraw)
+	courses.GET("/:uuid/enrollments", ctn.getEnrollments)
+	courses.POST("/:uuid/enrollments", ctn.addEnrollment)
 
 	// Module modification routes
-	group.POST("/:uuid/module", ctn.createModule)
-	group.PUT("/:uuid/module/reorder", ctn.reorderModules)
-	group.PUT("/:uuid/module/:moduleId", ctn.updateModule)
-	group.DELETE("/:uuid/module/:moduleId", ctn.deleteModule)
+	courses.POST("/:uuid/module", ctn.createModule)
+	courses.PUT("/:uuid/module/reorder", ctn.reorderModules)
+	courses.PUT("/:uuid/module/:moduleUuid", ctn.updateModule)
+	courses.DELETE("/:uuid/module/:moduleUuid", ctn.deleteModule)
 }
 
-func (ctn *CourseCtn) checkTeacherOrAdmin(c *gin.Context, courseUuid uuid.UUID) bool {
-	claims, ok := authutils.GetClaims(c)
-	if !ok || claims == nil {
-		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
+func (ctn *CourseCtn) handleError(c *gin.Context, err error, fallbackMsg string) bool {
+	if err == nil {
 		return false
 	}
-	userUuid, err := authutils.GetUserUUID(c)
-	if err != nil {
-		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
-		return false
-	}
-
-	isSysAdmin := claims.Role == authutils.ROLE_ADMIN
-	allowed, err := ctn.CourseService.IsTeacherOrAdmin(courseUuid, userUuid, isSysAdmin)
-	if err != nil {
-		if errors.Is(err, ErrCourseNotFound) {
-			ginutil.RespondWithError(c, http.StatusNotFound, err.Error())
-			return false
-		}
-		ctn.logger.Errorf("Failed to check course role: %v", err)
-		ginutil.RespondWithError(c, http.StatusInternalServerError, "Internal server error")
-		return false
-	}
-	if !allowed {
-		ginutil.RespondWithError(c, http.StatusForbidden, "Forbidden: insufficient permissions")
-		return false
+	switch {
+	case errors.Is(err, ErrCourseNotFound),
+		errors.Is(err, ErrModuleNotFound),
+		errors.Is(err, ErrEnrollmentNotFound),
+		errors.Is(err, ErrUserNotFound):
+		ginutil.RespondWithError(c, http.StatusNotFound, err.Error())
+	case errors.Is(err, ErrAlreadyEnrolled):
+		ginutil.RespondWithError(c, http.StatusConflict, err.Error())
+	case errors.Is(err, ErrSelfPrerequisite),
+		errors.Is(err, ErrCrossCoursePrerequisite):
+		ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
+	default:
+		ctn.logger.Errorf("%s: %v", fallbackMsg, err)
+		ginutil.RespondWithError(c, http.StatusInternalServerError, fallbackMsg)
 	}
 	return true
 }
@@ -224,7 +213,7 @@ func (ctn *CourseCtn) update(c *gin.Context) {
 		return
 	}
 
-	if !ctn.checkTeacherOrAdmin(c, courseUuid) {
+	if !authutils.CheckCourseAccess(c, courseUuid, ctn.CourseService.IsTeacherOrAdmin, ErrCourseNotFound) {
 		return
 	}
 
@@ -269,7 +258,7 @@ func (ctn *CourseCtn) delete(c *gin.Context) {
 		return
 	}
 
-	if !ctn.checkTeacherOrAdmin(c, courseUuid) {
+	if !authutils.CheckCourseAccess(c, courseUuid, ctn.CourseService.IsTeacherOrAdmin, ErrCourseNotFound) {
 		return
 	}
 
@@ -309,26 +298,16 @@ func (ctn *CourseCtn) selfEnroll(c *gin.Context) {
 	}
 
 	enrollment, err := ctn.CourseService.SelfEnroll(courseUuid, userUuid)
-	if err != nil {
-		if errors.Is(err, ErrCourseNotFound) {
-			ginutil.RespondWithError(c, http.StatusNotFound, err.Error())
-			return
-		}
-		if errors.Is(err, ErrAlreadyEnrolled) {
-			ginutil.RespondWithError(c, http.StatusConflict, err.Error())
-			return
-		}
-		ctn.logger.Errorf("Failed to self-enroll: %v", err)
-		ginutil.RespondWithError(c, http.StatusInternalServerError, "Failed to self-enroll")
+	if ctn.handleError(c, err, "Failed to self-enroll") {
 		return
 	}
 
 	c.JSON(http.StatusCreated, EnrollmentDto{}.FromModel(enrollment))
 }
 
-// Unenroll godoc
+// Withdraw godoc
 //
-//	@Summary		Unenroll from course
+//	@Summary		Withdraw from course
 //	@Description	Removes the authenticated user's enrollment from the course
 //	@Tags			course
 //	@Produce		json
@@ -340,7 +319,7 @@ func (ctn *CourseCtn) selfEnroll(c *gin.Context) {
 //	@Failure		404	{object}	ginutil.ErrorResponse
 //	@Failure		500	{object}	ginutil.ErrorResponse
 //	@Router			/course/{uuid}/enroll [delete]
-func (ctn *CourseCtn) unenroll(c *gin.Context) {
+func (ctn *CourseCtn) withdraw(c *gin.Context) {
 	courseUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
 	if !ok {
 		return
@@ -352,14 +331,7 @@ func (ctn *CourseCtn) unenroll(c *gin.Context) {
 		return
 	}
 
-	err = ctn.CourseService.Unenroll(courseUuid, userUuid)
-	if err != nil {
-		if errors.Is(err, ErrEnrollmentNotFound) || errors.Is(err, ErrCourseNotFound) {
-			ginutil.RespondWithError(c, http.StatusNotFound, err.Error())
-			return
-		}
-		ctn.logger.Errorf("Failed to unenroll: %v", err)
-		ginutil.RespondWithError(c, http.StatusInternalServerError, "Failed to unenroll")
+	if ctn.handleError(c, ctn.CourseService.Withdraw(courseUuid, userUuid), "Failed to withdraw") {
 		return
 	}
 
@@ -376,7 +348,7 @@ func (ctn *CourseCtn) unenroll(c *gin.Context) {
 //	@Success		200	{array}		MyCourseDto
 //	@Failure		401	{object}	ginutil.ErrorResponse
 //	@Failure		500	{object}	ginutil.ErrorResponse
-//	@Router			/course/my-courses [get]
+//	@Router			/course/my-course [get]
 func (ctn *CourseCtn) getMyCourses(c *gin.Context) {
 	userUuid, err := authutils.GetUserUUID(c)
 	if err != nil {
@@ -426,7 +398,7 @@ func (ctn *CourseCtn) getEnrollments(c *gin.Context) {
 		return
 	}
 
-	if !ctn.checkTeacherOrAdmin(c, courseUuid) {
+	if !authutils.CheckCourseAccess(c, courseUuid, ctn.CourseService.IsTeacherOrAdmin, ErrCourseNotFound) {
 		return
 	}
 
@@ -467,7 +439,7 @@ func (ctn *CourseCtn) addEnrollment(c *gin.Context) {
 		return
 	}
 
-	if !ctn.checkTeacherOrAdmin(c, courseUuid) {
+	if !authutils.CheckCourseAccess(c, courseUuid, ctn.CourseService.IsTeacherOrAdmin, ErrCourseNotFound) {
 		return
 	}
 
@@ -478,17 +450,7 @@ func (ctn *CourseCtn) addEnrollment(c *gin.Context) {
 	}
 
 	enrollment, err := ctn.CourseService.EnrollByEmail(courseUuid, input.Email, input.Role)
-	if err != nil {
-		if errors.Is(err, ErrUserNotFound) || errors.Is(err, ErrCourseNotFound) {
-			ginutil.RespondWithError(c, http.StatusNotFound, err.Error())
-			return
-		}
-		if errors.Is(err, ErrAlreadyEnrolled) {
-			ginutil.RespondWithError(c, http.StatusConflict, err.Error())
-			return
-		}
-		ctn.logger.Errorf("Failed to add enrollment: %v", err)
-		ginutil.RespondWithError(c, http.StatusInternalServerError, "Failed to add enrollment")
+	if ctn.handleError(c, err, "Failed to add enrollment") {
 		return
 	}
 
@@ -532,26 +494,28 @@ func (ctn *CourseCtn) listModules(c *gin.Context) {
 //	@Description	Returns a single module with its prerequisite dependency
 //	@Tags			module
 //	@Produce		json
+//	@Security		BearerAuth
 //	@Param			uuid		path		string	true	"Course UUID"
-//	@Param			moduleId	path		int		true	"Module ID"
+//	@Param			moduleUuid	path		string	true	"Module UUID"
 //	@Success		200			{object}	ModuleDto
 //	@Failure		400			{object}	ginutil.ErrorResponse
+//	@Failure		401			{object}	ginutil.ErrorResponse
 //	@Failure		404			{object}	ginutil.ErrorResponse
 //	@Failure		500			{object}	ginutil.ErrorResponse
-//	@Router			/course/{uuid}/module/{moduleId} [get]
+//	@Router			/course/{uuid}/module/{moduleUuid} [get]
 func (ctn *CourseCtn) getModule(c *gin.Context) {
 	courseUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
 	if !ok {
 		return
 	}
 
-	moduleID, ok := ginutil.ParseUintParam(c, "moduleId")
+	moduleUuid, ok := ginutil.ParseUUIDParam(c, "moduleUuid")
 	if !ok {
 		return
 	}
 
-	module, err := ctn.CourseService.GetModule(courseUuid, moduleID)
-	if ginutil.HandleServiceError(c, err, ErrModuleNotFound) {
+	module, err := ctn.CourseService.GetModule(courseUuid, moduleUuid)
+	if ctn.handleError(c, err, "Failed to get module") {
 		return
 	}
 
@@ -581,7 +545,7 @@ func (ctn *CourseCtn) createModule(c *gin.Context) {
 		return
 	}
 
-	if !ctn.checkTeacherOrAdmin(c, courseUuid) {
+	if !authutils.CheckCourseAccess(c, courseUuid, ctn.CourseService.IsTeacherOrAdmin, ErrCourseNotFound) {
 		return
 	}
 
@@ -591,19 +555,8 @@ func (ctn *CourseCtn) createModule(c *gin.Context) {
 		return
 	}
 
-	model := input.ToModel()
-	created, err := ctn.CourseService.CreateModule(courseUuid, model)
-	if err != nil {
-		if errors.Is(err, ErrCourseNotFound) || errors.Is(err, ErrModuleNotFound) {
-			ginutil.RespondWithError(c, http.StatusNotFound, err.Error())
-			return
-		}
-		if errors.Is(err, ErrSelfPrerequisite) || errors.Is(err, ErrCrossCoursePrerequisite) {
-			ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
-			return
-		}
-		ctn.logger.Errorf("Failed to create module: %v", err)
-		ginutil.RespondWithError(c, http.StatusInternalServerError, "Failed to create module")
+	created, err := ctn.CourseService.CreateModule(courseUuid, input.ToModel())
+	if ctn.handleError(c, err, "Failed to create module") {
 		return
 	}
 
@@ -619,7 +572,7 @@ func (ctn *CourseCtn) createModule(c *gin.Context) {
 //	@Produce		json
 //	@Security		BearerAuth
 //	@Param			uuid		path		string			true	"Course UUID"
-//	@Param			moduleId	path		int				true	"Module ID"
+//	@Param			moduleUuid	path		string			true	"Module UUID"
 //	@Param			module		body		UpdateModuleDto	true	"Updated module information"
 //	@Success		200			{object}	ModuleDto
 //	@Failure		400			{object}	ginutil.ErrorResponse
@@ -627,19 +580,19 @@ func (ctn *CourseCtn) createModule(c *gin.Context) {
 //	@Failure		403			{object}	ginutil.ErrorResponse
 //	@Failure		404			{object}	ginutil.ErrorResponse
 //	@Failure		500			{object}	ginutil.ErrorResponse
-//	@Router			/course/{uuid}/module/{moduleId} [put]
+//	@Router			/course/{uuid}/module/{moduleUuid} [put]
 func (ctn *CourseCtn) updateModule(c *gin.Context) {
 	courseUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
 	if !ok {
 		return
 	}
 
-	moduleID, ok := ginutil.ParseUintParam(c, "moduleId")
+	moduleUuid, ok := ginutil.ParseUUIDParam(c, "moduleUuid")
 	if !ok {
 		return
 	}
 
-	if !ctn.checkTeacherOrAdmin(c, courseUuid) {
+	if !authutils.CheckCourseAccess(c, courseUuid, ctn.CourseService.IsTeacherOrAdmin, ErrCourseNotFound) {
 		return
 	}
 
@@ -649,19 +602,8 @@ func (ctn *CourseCtn) updateModule(c *gin.Context) {
 		return
 	}
 
-	model := input.ToModel()
-	updated, err := ctn.CourseService.UpdateModule(courseUuid, moduleID, model)
-	if err != nil {
-		if errors.Is(err, ErrModuleNotFound) || errors.Is(err, ErrCourseNotFound) {
-			ginutil.RespondWithError(c, http.StatusNotFound, err.Error())
-			return
-		}
-		if errors.Is(err, ErrSelfPrerequisite) || errors.Is(err, ErrCrossCoursePrerequisite) {
-			ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
-			return
-		}
-		ctn.logger.Errorf("Failed to update module: %v", err)
-		ginutil.RespondWithError(c, http.StatusInternalServerError, "Failed to update module")
+	updated, err := ctn.CourseService.UpdateModule(courseUuid, moduleUuid, input.ToModel())
+	if ctn.handleError(c, err, "Failed to update module") {
 		return
 	}
 
@@ -676,31 +618,30 @@ func (ctn *CourseCtn) updateModule(c *gin.Context) {
 //	@Produce		json
 //	@Security		BearerAuth
 //	@Param			uuid		path	string	true	"Course UUID"
-//	@Param			moduleId	path	int		true	"Module ID"
+//	@Param			moduleUuid	path	string	true	"Module UUID"
 //	@Success		204
 //	@Failure		400	{object}	ginutil.ErrorResponse
 //	@Failure		401	{object}	ginutil.ErrorResponse
 //	@Failure		403	{object}	ginutil.ErrorResponse
 //	@Failure		404	{object}	ginutil.ErrorResponse
 //	@Failure		500	{object}	ginutil.ErrorResponse
-//	@Router			/course/{uuid}/module/{moduleId} [delete]
+//	@Router			/course/{uuid}/module/{moduleUuid} [delete]
 func (ctn *CourseCtn) deleteModule(c *gin.Context) {
 	courseUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
 	if !ok {
 		return
 	}
 
-	moduleID, ok := ginutil.ParseUintParam(c, "moduleId")
+	moduleUuid, ok := ginutil.ParseUUIDParam(c, "moduleUuid")
 	if !ok {
 		return
 	}
 
-	if !ctn.checkTeacherOrAdmin(c, courseUuid) {
+	if !authutils.CheckCourseAccess(c, courseUuid, ctn.CourseService.IsTeacherOrAdmin, ErrCourseNotFound) {
 		return
 	}
 
-	err := ctn.CourseService.DeleteModule(courseUuid, moduleID)
-	if ginutil.HandleServiceError(c, err, ErrModuleNotFound) {
+	if ctn.handleError(c, ctn.CourseService.DeleteModule(courseUuid, moduleUuid), "Failed to delete module") {
 		return
 	}
 
@@ -710,13 +651,13 @@ func (ctn *CourseCtn) deleteModule(c *gin.Context) {
 // ReorderModules godoc
 //
 //	@Summary		Reorder modules
-//	@Description	Updates positions of modules sequentially according to provided ID array (Teacher or Admin only)
+//	@Description	Updates positions of modules sequentially according to provided UUID array (Teacher or Admin only)
 //	@Tags			module
 //	@Accept			json
 //	@Produce		json
 //	@Security		BearerAuth
 //	@Param			uuid	path	string				true	"Course UUID"
-//	@Param			body	body	ReorderModulesDto	true	"Ordered module IDs"
+//	@Param			body	body	ReorderModulesDto	true	"Ordered module UUIDs"
 //	@Success		204
 //	@Failure		400	{object}	ginutil.ErrorResponse
 //	@Failure		401	{object}	ginutil.ErrorResponse
@@ -730,7 +671,7 @@ func (ctn *CourseCtn) reorderModules(c *gin.Context) {
 		return
 	}
 
-	if !ctn.checkTeacherOrAdmin(c, courseUuid) {
+	if !authutils.CheckCourseAccess(c, courseUuid, ctn.CourseService.IsTeacherOrAdmin, ErrCourseNotFound) {
 		return
 	}
 
@@ -740,14 +681,7 @@ func (ctn *CourseCtn) reorderModules(c *gin.Context) {
 		return
 	}
 
-	err := ctn.CourseService.ReorderModules(courseUuid, input.ModuleIDs)
-	if err != nil {
-		if errors.Is(err, ErrCourseNotFound) || errors.Is(err, ErrModuleNotFound) {
-			ginutil.RespondWithError(c, http.StatusNotFound, err.Error())
-			return
-		}
-		ctn.logger.Errorf("Failed to reorder modules: %v", err)
-		ginutil.RespondWithError(c, http.StatusInternalServerError, "Failed to reorder modules")
+	if ctn.handleError(c, ctn.CourseService.ReorderModules(courseUuid, input.ModuleUuids), "Failed to reorder modules") {
 		return
 	}
 

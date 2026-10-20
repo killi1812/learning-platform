@@ -128,9 +128,9 @@
                 :loading="enrollingUuid === course.uuid"
                 size="small"
                 variant="text"
-                @click.stop="handleUnenroll(course.uuid)"
+                @click.stop="handleWithdraw(course.uuid)"
               >
-                Unenroll
+                Withdraw
               </v-btn>
             </div>
           </template>
@@ -212,7 +212,8 @@ import { useRouter } from 'vue-router'
 import CourseCard from '@/components/CourseCard.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useToast } from '@/composables/useToast'
-import { courseApi, type Course, type CourseRole, type CreateCoursePayload } from '@/api/course'
+import { listCourses, getMyCourses, selfEnroll, withdraw, createCourse } from '@/api/course'
+import type { Course, CourseRole, CreateCoursePayload } from '@/types/course'
 
 const emit = defineEmits<{
   (e: 'select-course', courseUuid: string): void
@@ -261,10 +262,7 @@ function selectCourse(courseUuid: string) {
 async function fetchCourses() {
   loading.value = true
   try {
-    const list = await courseApi.listCourses(
-      selectedTerm.value || undefined,
-      selectedYear.value || undefined,
-    )
+    const list = await listCourses(selectedTerm.value || undefined, selectedYear.value || undefined)
     courses.value = list
     await fetchMyEnrollments()
   } catch (err: unknown) {
@@ -280,21 +278,21 @@ async function fetchMyEnrollments() {
     return
   }
   try {
-    const myCourses = await courseApi.getMyCourses()
+    const myCourses = await getMyCourses()
     const map: Record<string, CourseRole> = {}
     myCourses.forEach(mc => {
       map[mc.course.uuid] = mc.role
     })
     enrolledMap.value = map
-  } catch {
-    // Ignore unauthorized
+  } catch (err: unknown) {
+    toast.error(err instanceof Error ? err.message : 'Failed to load enrolled courses.')
   }
 }
 
 async function handleEnroll(courseUuid: string) {
   enrollingUuid.value = courseUuid
   try {
-    const res = await courseApi.selfEnroll(courseUuid)
+    const res = await selfEnroll(courseUuid)
     enrolledMap.value[courseUuid] = res.role
     toast.success('Successfully enrolled as STUDENT in the course!')
   } catch (err: unknown) {
@@ -304,14 +302,14 @@ async function handleEnroll(courseUuid: string) {
   }
 }
 
-async function handleUnenroll(courseUuid: string) {
+async function handleWithdraw(courseUuid: string) {
   enrollingUuid.value = courseUuid
   try {
-    await courseApi.unenroll(courseUuid)
+    await withdraw(courseUuid)
     delete enrolledMap.value[courseUuid]
-    toast.success('Successfully unenrolled from course.')
+    toast.success('Successfully withdrew from course.')
   } catch (err: unknown) {
-    toast.error(err instanceof Error ? err.message : 'Failed to unenroll.')
+    toast.error(err instanceof Error ? err.message : 'Failed to withdraw.')
   } finally {
     enrollingUuid.value = undefined
   }
@@ -321,7 +319,7 @@ async function handleCreateCourse() {
   if (!newCourse.value.title.trim()) return
   creating.value = true
   try {
-    const created = await courseApi.createCourse(newCourse.value)
+    const created = await createCourse(newCourse.value)
     createDialogOpen.value = false
     newCourse.value = {
       title: '',

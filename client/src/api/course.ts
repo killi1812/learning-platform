@@ -1,4 +1,4 @@
-import { publicApi, authApi, getApiErrorMessage } from './client'
+import { authApi, getApiErrorMessage } from './client'
 import type {
   Course,
   CourseRole,
@@ -6,21 +6,6 @@ import type {
   UpdateCoursePayload,
   Enrollment,
   MyCourse,
-  Module,
-  CreateModulePayload,
-  UpdateModulePayload,
-} from '@/types/course'
-
-export type {
-  Course,
-  CourseTerm,
-  CourseRole,
-  CreateCoursePayload,
-  UpdateCoursePayload,
-  Enrollment,
-  MyCourse,
-  ContentType,
-  ModuleContentItem,
   Module,
   CreateModulePayload,
   UpdateModulePayload,
@@ -39,15 +24,15 @@ export async function listCourses(term?: string, year?: number): Promise<Course[
   const params: Record<string, string> = {}
   if (term) params.term = term
   if (year) params.year = year.toString()
-  return wrapRequest(publicApi.get<Course[]>('/course', { params }))
+  return wrapRequest(authApi.get<Course[]>('/course', { params }))
 }
 
 export async function getCourse(uuid: string): Promise<Course> {
-  return wrapRequest(publicApi.get<Course>(`/course/${uuid}`))
+  return wrapRequest(authApi.get<Course>(`/course/${uuid}`))
 }
 
 export async function getMyCourses(): Promise<MyCourse[]> {
-  return wrapRequest(authApi.get<MyCourse[]>('/course/my-courses'))
+  return wrapRequest(authApi.get<MyCourse[]>('/course/my-course'))
 }
 
 export async function createCourse(data: CreateCoursePayload): Promise<Course> {
@@ -66,7 +51,7 @@ export async function selfEnroll(courseUuid: string): Promise<Enrollment> {
   return wrapRequest(authApi.post<Enrollment>(`/course/${courseUuid}/enroll`))
 }
 
-export async function unenroll(courseUuid: string): Promise<void> {
+export async function withdraw(courseUuid: string): Promise<void> {
   await wrapRequest(authApi.delete<void>(`/course/${courseUuid}/enroll`))
 }
 
@@ -82,11 +67,11 @@ export async function addEnrollment(
 }
 
 export async function listModules(courseUuid: string): Promise<Module[]> {
-  return wrapRequest(publicApi.get<Module[]>(`/course/${courseUuid}/module`))
+  return wrapRequest(authApi.get<Module[]>(`/course/${courseUuid}/module`))
 }
 
-export async function getModule(courseUuid: string, moduleId: number): Promise<Module> {
-  return wrapRequest(publicApi.get<Module>(`/course/${courseUuid}/module/${moduleId}`))
+export async function getModule(courseUuid: string, moduleUuid: string): Promise<Module> {
+  return wrapRequest(authApi.get<Module>(`/course/${courseUuid}/module/${moduleUuid}`))
 }
 
 export async function createModule(courseUuid: string, data: CreateModulePayload): Promise<Module> {
@@ -95,35 +80,16 @@ export async function createModule(courseUuid: string, data: CreateModulePayload
 
 export async function updateModule(
   courseUuid: string,
-  moduleId: number,
+  moduleUuid: string,
   data: UpdateModulePayload,
 ): Promise<Module> {
-  return wrapRequest(authApi.put<Module>(`/course/${courseUuid}/module/${moduleId}`, data))
+  return wrapRequest(authApi.put<Module>(`/course/${courseUuid}/module/${moduleUuid}`, data))
 }
 
-export async function deleteModule(courseUuid: string, moduleId: number): Promise<void> {
-  await wrapRequest(authApi.delete<void>(`/course/${courseUuid}/module/${moduleId}`))
+export async function deleteModule(courseUuid: string, moduleUuid: string): Promise<void> {
+  await wrapRequest(authApi.delete<void>(`/course/${courseUuid}/module/${moduleUuid}`))
 }
 
-export async function reorderModules(courseUuid: string, moduleIds: number[]): Promise<void> {
-  await wrapRequest(authApi.put<void>(`/course/${courseUuid}/module/reorder`, { moduleIds }))
-}
-
-export const courseApi = {
-  listCourses,
-  getCourse,
-  getMyCourses,
-  createCourse,
-  updateCourse,
-  deleteCourse,
-  selfEnroll,
-  unenroll,
-  getCourseEnrollments,
-  addEnrollment,
-  listModules,
-  getModule,
-  createModule,
-  updateModule,
-  deleteModule,
-  reorderModules,
+export async function reorderModules(courseUuid: string, moduleUuids: string[]): Promise<void> {
+  await wrapRequest(authApi.put<void>(`/course/${courseUuid}/module/reorder`, { moduleUuids }))
 }

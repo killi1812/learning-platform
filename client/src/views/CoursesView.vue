@@ -76,7 +76,8 @@
 import { ref, computed, onMounted } from 'vue'
 import CourseCard from '@/components/CourseCard.vue'
 import { useToast } from '@/composables/useToast'
-import { getMyCourses, type MyCourse } from '@/api/course'
+import { getMyCourses } from '@/api/course'
+import type { MyCourse } from '@/types/course'
 
 const toast = useToast()
 const myCourses = ref<MyCourse[]>([])

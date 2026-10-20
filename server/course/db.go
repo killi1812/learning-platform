@@ -30,17 +30,17 @@ type ICourseService interface {
 
 	SelfEnroll(courseUuid uuid.UUID, userUuid uuid.UUID) (*Enrollment, error)
 	EnrollByEmail(courseUuid uuid.UUID, email string, role CourseRole) (*Enrollment, error)
-	Unenroll(courseUuid uuid.UUID, userUuid uuid.UUID) error
+	Withdraw(courseUuid uuid.UUID, userUuid uuid.UUID) error
 	GetCourseEnrollments(courseUuid uuid.UUID) ([]Enrollment, error)
 	GetUserEnrollments(userUuid uuid.UUID) ([]Enrollment, error)
 	IsTeacherOrAdmin(courseUuid uuid.UUID, userUuid uuid.UUID, isSystemAdmin bool) (bool, error)
 
 	CreateModule(courseUuid uuid.UUID, m *Module) (*Module, error)
-	GetModule(courseUuid uuid.UUID, moduleID uint) (*Module, error)
+	GetModule(courseUuid uuid.UUID, moduleUuid uuid.UUID) (*Module, error)
 	ListModules(courseUuid uuid.UUID) ([]Module, error)
-	UpdateModule(courseUuid uuid.UUID, moduleID uint, updated *Module) (*Module, error)
-	DeleteModule(courseUuid uuid.UUID, moduleID uint) error
-	ReorderModules(courseUuid uuid.UUID, moduleIDs []uint) error
+	UpdateModule(courseUuid uuid.UUID, moduleUuid uuid.UUID, updated *Module) (*Module, error)
+	DeleteModule(courseUuid uuid.UUID, moduleUuid uuid.UUID) error
+	ReorderModules(courseUuid uuid.UUID, moduleUuids []uuid.UUID) error
 }
 
 type CourseService struct {
@@ -55,26 +55,75 @@ func NewCourseService(db *gorm.DB, logger *zap.SugaredLogger) ICourseService {
 	}
 }
 
-// CreateCourse inserts a new course and automatically enrolls the creator as TEACHER.
-func (s *CourseService) CreateCourse(c *Course, creatorUuid uuid.UUID) (*Course, error) {
-	if c.Uuid == uuid.Nil {
-		c.Uuid = uuid.New()
+func (s *CourseService) findCourse(courseUuid uuid.UUID) (*Course, error) {
+	var c Course
+	if err := s.db.Where("uuid = ?", courseUuid).First(&c).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrCourseNotFound
+		}
+		return nil, err
 	}
+	return &c, nil
+}
 
-	var creator user.User
-	if err := s.db.Where("uuid = ?", creatorUuid).First(&creator).Error; err != nil {
+func (s *CourseService) findUser(userUuid uuid.UUID) (*user.User, error) {
+	var u user.User
+	if err := s.db.Where("uuid = ?", userUuid).First(&u).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrUserNotFound
 		}
-		s.logger.Errorf("Failed to find creator user: %v", err)
+		return nil, err
+	}
+	return &u, nil
+}
+
+func (s *CourseService) resolvePrerequisite(courseID uint, selfUuid uuid.UUID, m *Module) (*uint, error) {
+	if m.DependsOn != nil && m.DependsOn.Uuid != uuid.Nil {
+		if selfUuid != uuid.Nil && m.DependsOn.Uuid == selfUuid {
+			return nil, ErrSelfPrerequisite
+		}
+		var dep Module
+		if err := s.db.Where("uuid = ?", m.DependsOn.Uuid).First(&dep).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, ErrModuleNotFound
+			}
+			return nil, err
+		}
+		if dep.CourseID != courseID {
+			return nil, ErrCrossCoursePrerequisite
+		}
+		return &dep.ID, nil
+	}
+	if m.DependsOnID != nil {
+		var dep Module
+		if err := s.db.First(&dep, *m.DependsOnID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, ErrModuleNotFound
+			}
+			return nil, err
+		}
+		if dep.CourseID != courseID {
+			return nil, ErrCrossCoursePrerequisite
+		}
+		if selfUuid != uuid.Nil && dep.Uuid == selfUuid {
+			return nil, ErrSelfPrerequisite
+		}
+		return &dep.ID, nil
+	}
+	return nil, nil
+}
+
+// CreateCourse inserts a new course and automatically enrolls the creator as TEACHER.
+func (s *CourseService) CreateCourse(c *Course, creatorUuid uuid.UUID) (*Course, error) {
+	creator, err := s.findUser(creatorUuid)
+	if err != nil {
 		return nil, err
 	}
 
-	err := s.db.Transaction(func(tx *gorm.DB) error {
+	err = s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(c).Error; err != nil {
 			return err
 		}
-
 		enrollment := Enrollment{
 			UserID:     creator.ID,
 			UserEmail:  creator.Email,
@@ -84,7 +133,6 @@ func (s *CourseService) CreateCourse(c *Course, creatorUuid uuid.UUID) (*Course,
 		}
 		return tx.Create(&enrollment).Error
 	})
-
 	if err != nil {
 		s.logger.Errorf("Failed to create course with teacher enrollment: %v", err)
 		return nil, err
@@ -93,14 +141,13 @@ func (s *CourseService) CreateCourse(c *Course, creatorUuid uuid.UUID) (*Course,
 	c.Enrollments = []Enrollment{
 		{
 			UserID:     creator.ID,
-			User:       &creator,
+			User:       creator,
 			UserEmail:  creator.Email,
 			CourseID:   c.ID,
 			Role:       RoleTeacher,
 			EnrolledAt: time.Now(),
 		},
 	}
-
 	return c, nil
 }
 
@@ -120,14 +167,12 @@ func (s *CourseService) GetCourse(courseUuid uuid.UUID) (*Course, error) {
 func (s *CourseService) ListCourses(term *Term, year *int) ([]Course, error) {
 	var courses []Course
 	query := s.db.Model(&Course{}).Preload("Enrollments.User")
-
 	if term != nil && *term != "" {
 		query = query.Where("term = ?", *term)
 	}
 	if year != nil && *year != 0 {
 		query = query.Where("year = ?", *year)
 	}
-
 	if err := query.Order("year desc, term asc, title asc").Find(&courses).Error; err != nil {
 		return nil, err
 	}
@@ -153,35 +198,14 @@ func (s *CourseService) UpdateCourse(courseUuid uuid.UUID, updated *Course) (*Co
 
 // DeleteCourse removes a course and cascades deletion of modules and enrollments.
 func (s *CourseService) DeleteCourse(courseUuid uuid.UUID) error {
-	var existing Course
-	if err := s.db.Where("uuid = ?", courseUuid).First(&existing).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrCourseNotFound
-		}
+	existing, err := s.findCourse(courseUuid)
+	if err != nil {
 		return err
 	}
-
-	return s.db.Delete(&existing).Error
+	return s.db.Unscoped().Delete(existing).Error
 }
 
-// SelfEnroll enrolls the authenticated user into the course as a STUDENT.
-func (s *CourseService) SelfEnroll(courseUuid uuid.UUID, userUuid uuid.UUID) (*Enrollment, error) {
-	var u user.User
-	if err := s.db.Where("uuid = ?", userUuid).First(&u).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrUserNotFound
-		}
-		return nil, err
-	}
-
-	var c Course
-	if err := s.db.Where("uuid = ?", courseUuid).First(&c).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrCourseNotFound
-		}
-		return nil, err
-	}
-
+func (s *CourseService) createEnrollment(c *Course, u *user.User, role CourseRole) (*Enrollment, error) {
 	var existing Enrollment
 	if err := s.db.Where("user_id = ? AND course_id = ?", u.ID, c.ID).First(&existing).Error; err == nil {
 		return nil, ErrAlreadyEnrolled
@@ -189,18 +213,30 @@ func (s *CourseService) SelfEnroll(courseUuid uuid.UUID, userUuid uuid.UUID) (*E
 
 	enrollment := Enrollment{
 		UserID:     u.ID,
+		User:       u,
 		UserEmail:  u.Email,
 		CourseID:   c.ID,
-		Course:     &c,
-		Role:       RoleStudent,
+		Course:     c,
+		Role:       role,
 		EnrolledAt: time.Now(),
 	}
-
 	if err := s.db.Create(&enrollment).Error; err != nil {
 		return nil, err
 	}
-	enrollment.User = &u
 	return &enrollment, nil
+}
+
+// SelfEnroll enrolls the authenticated user into the course as a STUDENT.
+func (s *CourseService) SelfEnroll(courseUuid uuid.UUID, userUuid uuid.UUID) (*Enrollment, error) {
+	u, err := s.findUser(userUuid)
+	if err != nil {
+		return nil, err
+	}
+	c, err := s.findCourse(courseUuid)
+	if err != nil {
+		return nil, err
+	}
+	return s.createEnrollment(c, u, RoleStudent)
 }
 
 // EnrollByEmail allows a teacher to add a user to the course by email with a specified role.
@@ -208,7 +244,6 @@ func (s *CourseService) EnrollByEmail(courseUuid uuid.UUID, email string, role C
 	if role == "" {
 		role = RoleStudent
 	}
-
 	var u user.User
 	if err := s.db.Where("email = ?", email).First(&u).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -216,55 +251,25 @@ func (s *CourseService) EnrollByEmail(courseUuid uuid.UUID, email string, role C
 		}
 		return nil, err
 	}
-
-	var c Course
-	if err := s.db.Where("uuid = ?", courseUuid).First(&c).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrCourseNotFound
-		}
+	c, err := s.findCourse(courseUuid)
+	if err != nil {
 		return nil, err
 	}
-
-	var existing Enrollment
-	if err := s.db.Where("user_id = ? AND course_id = ?", u.ID, c.ID).First(&existing).Error; err == nil {
-		return nil, ErrAlreadyEnrolled
-	}
-
-	enrollment := Enrollment{
-		UserID:     u.ID,
-		UserEmail:  u.Email,
-		CourseID:   c.ID,
-		Course:     &c,
-		Role:       role,
-		EnrolledAt: time.Now(),
-	}
-
-	if err := s.db.Create(&enrollment).Error; err != nil {
-		return nil, err
-	}
-	enrollment.User = &u
-	return &enrollment, nil
+	return s.createEnrollment(c, &u, role)
 }
 
-// Unenroll removes a user's enrollment from the specified course.
-func (s *CourseService) Unenroll(courseUuid uuid.UUID, userUuid uuid.UUID) error {
-	var u user.User
-	if err := s.db.Where("uuid = ?", userUuid).First(&u).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrUserNotFound
-		}
+// Withdraw removes a user's enrollment from the specified course.
+func (s *CourseService) Withdraw(courseUuid uuid.UUID, userUuid uuid.UUID) error {
+	u, err := s.findUser(userUuid)
+	if err != nil {
+		return err
+	}
+	c, err := s.findCourse(courseUuid)
+	if err != nil {
 		return err
 	}
 
-	var c Course
-	if err := s.db.Where("uuid = ?", courseUuid).First(&c).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrCourseNotFound
-		}
-		return err
-	}
-
-	res := s.db.Where("user_id = ? AND course_id = ?", u.ID, c.ID).Delete(&Enrollment{})
+	res := s.db.Unscoped().Where("user_id = ? AND course_id = ?", u.ID, c.ID).Delete(&Enrollment{})
 	if res.Error != nil {
 		return res.Error
 	}
@@ -276,11 +281,8 @@ func (s *CourseService) Unenroll(courseUuid uuid.UUID, userUuid uuid.UUID) error
 
 // GetCourseEnrollments lists all enrollments for a given course.
 func (s *CourseService) GetCourseEnrollments(courseUuid uuid.UUID) ([]Enrollment, error) {
-	var c Course
-	if err := s.db.Where("uuid = ?", courseUuid).First(&c).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrCourseNotFound
-		}
+	c, err := s.findCourse(courseUuid)
+	if err != nil {
 		return nil, err
 	}
 
@@ -293,11 +295,8 @@ func (s *CourseService) GetCourseEnrollments(courseUuid uuid.UUID) ([]Enrollment
 
 // GetUserEnrollments retrieves all enrollments for a given user, preloading course details.
 func (s *CourseService) GetUserEnrollments(userUuid uuid.UUID) ([]Enrollment, error) {
-	var u user.User
-	if err := s.db.Where("uuid = ?", userUuid).First(&u).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrUserNotFound
-		}
+	u, err := s.findUser(userUuid)
+	if err != nil {
 		return nil, err
 	}
 
@@ -313,59 +312,40 @@ func (s *CourseService) IsTeacherOrAdmin(courseUuid uuid.UUID, userUuid uuid.UUI
 	if isSystemAdmin {
 		return true, nil
 	}
-
-	var u user.User
-	if err := s.db.Where("uuid = ?", userUuid).First(&u).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return false, ErrUserNotFound
-		}
+	u, err := s.findUser(userUuid)
+	if err != nil {
 		return false, err
 	}
-
-	var c Course
-	if err := s.db.Where("uuid = ?", courseUuid).First(&c).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return false, ErrCourseNotFound
-		}
+	c, err := s.findCourse(courseUuid)
+	if err != nil {
 		return false, err
 	}
 
 	var enrollment Enrollment
-	err := s.db.Where("user_id = ? AND course_id = ? AND role = ?", u.ID, c.ID, RoleTeacher).First(&enrollment).Error
-	if err != nil {
+	if err := s.db.Where("user_id = ? AND course_id = ? AND role = ?", u.ID, c.ID, RoleTeacher).First(&enrollment).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return false, nil
 		}
 		return false, err
 	}
-
 	return true, nil
 }
 
 // CreateModule adds a module to the course, validating prerequisites and auto-incrementing position if not specified.
 func (s *CourseService) CreateModule(courseUuid uuid.UUID, m *Module) (*Module, error) {
-	var c Course
-	if err := s.db.Where("uuid = ?", courseUuid).First(&c).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrCourseNotFound
-		}
+	c, err := s.findCourse(courseUuid)
+	if err != nil {
 		return nil, err
 	}
 
-	if m.DependsOnID != nil {
-		var dep Module
-		if err := s.db.First(&dep, *m.DependsOnID).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, ErrModuleNotFound
-			}
-			return nil, err
-		}
-		if dep.CourseID != c.ID {
-			return nil, ErrCrossCoursePrerequisite
-		}
+	depID, err := s.resolvePrerequisite(c.ID, uuid.Nil, m)
+	if err != nil {
+		return nil, err
 	}
-
+	m.DependsOnID = depID
+	m.DependsOn = nil
 	m.CourseID = c.ID
+
 	if m.Position == 0 {
 		var count int64
 		s.db.Model(&Module{}).Where("course_id = ?", c.ID).Count(&count)
@@ -376,22 +356,18 @@ func (s *CourseService) CreateModule(courseUuid uuid.UUID, m *Module) (*Module, 
 		s.logger.Errorf("Failed to create module: %v", err)
 		return nil, err
 	}
-
-	return s.GetModule(courseUuid, m.ID)
+	return s.GetModule(courseUuid, m.Uuid)
 }
 
-// GetModule fetches a module by ID ensuring it belongs to the given course.
-func (s *CourseService) GetModule(courseUuid uuid.UUID, moduleID uint) (*Module, error) {
-	var c Course
-	if err := s.db.Where("uuid = ?", courseUuid).First(&c).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrCourseNotFound
-		}
+// GetModule fetches a module by UUID ensuring it belongs to the given course.
+func (s *CourseService) GetModule(courseUuid uuid.UUID, moduleUuid uuid.UUID) (*Module, error) {
+	c, err := s.findCourse(courseUuid)
+	if err != nil {
 		return nil, err
 	}
 
 	var m Module
-	if err := s.db.Preload("DependsOn").Where("id = ? AND course_id = ?", moduleID, c.ID).First(&m).Error; err != nil {
+	if err := s.db.Preload("DependsOn").Where("uuid = ? AND course_id = ?", moduleUuid, c.ID).First(&m).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrModuleNotFound
 		}
@@ -402,11 +378,8 @@ func (s *CourseService) GetModule(courseUuid uuid.UUID, moduleID uint) (*Module,
 
 // ListModules retrieves all modules for a course ordered by position.
 func (s *CourseService) ListModules(courseUuid uuid.UUID) ([]Module, error) {
-	var c Course
-	if err := s.db.Where("uuid = ?", courseUuid).First(&c).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrCourseNotFound
-		}
+	c, err := s.findCourse(courseUuid)
+	if err != nil {
 		return nil, err
 	}
 
@@ -418,85 +391,55 @@ func (s *CourseService) ListModules(courseUuid uuid.UUID) ([]Module, error) {
 }
 
 // UpdateModule modifies title, position, and prerequisite of an existing module.
-func (s *CourseService) UpdateModule(courseUuid uuid.UUID, moduleID uint, updated *Module) (*Module, error) {
-	var c Course
-	if err := s.db.Where("uuid = ?", courseUuid).First(&c).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrCourseNotFound
-		}
+func (s *CourseService) UpdateModule(courseUuid uuid.UUID, moduleUuid uuid.UUID, updated *Module) (*Module, error) {
+	c, err := s.findCourse(courseUuid)
+	if err != nil {
 		return nil, err
 	}
 
 	var existing Module
-	if err := s.db.Where("id = ? AND course_id = ?", moduleID, c.ID).First(&existing).Error; err != nil {
+	if err := s.db.Where("uuid = ? AND course_id = ?", moduleUuid, c.ID).First(&existing).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrModuleNotFound
 		}
 		return nil, err
 	}
 
-	if updated.DependsOnID != nil {
-		if *updated.DependsOnID == moduleID {
-			return nil, ErrSelfPrerequisite
-		}
-		var dep Module
-		if err := s.db.First(&dep, *updated.DependsOnID).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, ErrModuleNotFound
-			}
-			return nil, err
-		}
-		if dep.CourseID != c.ID {
-			return nil, ErrCrossCoursePrerequisite
-		}
+	depID, err := s.resolvePrerequisite(c.ID, moduleUuid, updated)
+	if err != nil {
+		return nil, err
 	}
 
 	existing.Title = updated.Title
 	existing.Position = updated.Position
-	existing.DependsOnID = updated.DependsOnID
+	existing.DependsOnID = depID
 
 	if err := s.db.Save(&existing).Error; err != nil {
 		s.logger.Errorf("Failed to update module: %v", err)
 		return nil, err
 	}
-
-	return s.GetModule(courseUuid, existing.ID)
+	return s.GetModule(courseUuid, existing.Uuid)
 }
 
 // DeleteModule removes a module from the course.
-func (s *CourseService) DeleteModule(courseUuid uuid.UUID, moduleID uint) error {
-	var c Course
-	if err := s.db.Where("uuid = ?", courseUuid).First(&c).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrCourseNotFound
-		}
+func (s *CourseService) DeleteModule(courseUuid uuid.UUID, moduleUuid uuid.UUID) error {
+	existing, err := s.GetModule(courseUuid, moduleUuid)
+	if err != nil {
 		return err
 	}
-
-	var existing Module
-	if err := s.db.Where("id = ? AND course_id = ?", moduleID, c.ID).First(&existing).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrModuleNotFound
-		}
-		return err
-	}
-
-	return s.db.Delete(&existing).Error
+	return s.db.Unscoped().Delete(existing).Error
 }
 
-// ReorderModules updates sequential positions for a list of module IDs within a course.
-func (s *CourseService) ReorderModules(courseUuid uuid.UUID, moduleIDs []uint) error {
-	var c Course
-	if err := s.db.Where("uuid = ?", courseUuid).First(&c).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrCourseNotFound
-		}
+// ReorderModules updates sequential positions for a list of module UUIDs within a course.
+func (s *CourseService) ReorderModules(courseUuid uuid.UUID, moduleUuids []uuid.UUID) error {
+	c, err := s.findCourse(courseUuid)
+	if err != nil {
 		return err
 	}
 
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		for idx, modID := range moduleIDs {
-			res := tx.Model(&Module{}).Where("id = ? AND course_id = ?", modID, c.ID).Update("position", idx)
+		for idx, modUuid := range moduleUuids {
+			res := tx.Model(&Module{}).Where("uuid = ? AND course_id = ?", modUuid, c.ID).Update("position", idx)
 			if res.Error != nil {
 				return res.Error
 			}

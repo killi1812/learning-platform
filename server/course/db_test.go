@@ -208,12 +208,12 @@ func TestCourseService_CRUDAndEnrollment(t *testing.T) {
 		assert.Equal(t, "Updated desc", updated.Description)
 	})
 
-	t.Run("Unenroll removes student enrollment", func(t *testing.T) {
-		err := svc.Unenroll(createdCourse.Uuid, student.Uuid)
+	t.Run("Withdraw removes student enrollment", func(t *testing.T) {
+		err := svc.Withdraw(createdCourse.Uuid, student.Uuid)
 		assert.NoError(t, err)
 
-		// Repeating unenroll returns ErrEnrollmentNotFound
-		err = svc.Unenroll(createdCourse.Uuid, student.Uuid)
+		// Repeating withdraw returns ErrEnrollmentNotFound
+		err = svc.Withdraw(createdCourse.Uuid, student.Uuid)
 		assert.ErrorIs(t, err, ErrEnrollmentNotFound)
 	})
 
@@ -252,11 +252,11 @@ func TestCourseService_CRUDAndEnrollment(t *testing.T) {
 		assert.ErrorIs(t, err, ErrAlreadyEnrolled)
 	})
 
-	t.Run("Unenroll non-existent user or course returns error", func(t *testing.T) {
-		err := svc.Unenroll(createdCourse.Uuid, uuid.New())
+	t.Run("Withdraw non-existent user or course returns error", func(t *testing.T) {
+		err := svc.Withdraw(createdCourse.Uuid, uuid.New())
 		assert.ErrorIs(t, err, ErrUserNotFound)
 
-		err = svc.Unenroll(uuid.New(), student.Uuid)
+		err = svc.Withdraw(uuid.New(), student.Uuid)
 		assert.ErrorIs(t, err, ErrCourseNotFound)
 	})
 
@@ -355,7 +355,7 @@ func TestCourseService_Modules(t *testing.T) {
 	})
 
 	t.Run("GetModule returns module with dependsOn", func(t *testing.T) {
-		found, err := svc.GetModule(course.Uuid, mod2.ID)
+		found, err := svc.GetModule(course.Uuid, mod2.Uuid)
 		assert.NoError(t, err)
 		assert.NotNil(t, found)
 		assert.Equal(t, mod2.Title, found.Title)
@@ -364,10 +364,10 @@ func TestCourseService_Modules(t *testing.T) {
 	})
 
 	t.Run("GetModule non-existent returns error", func(t *testing.T) {
-		_, err := svc.GetModule(course.Uuid, 9999)
+		_, err := svc.GetModule(course.Uuid, uuid.New())
 		assert.ErrorIs(t, err, ErrModuleNotFound)
 
-		_, err = svc.GetModule(uuid.New(), mod1.ID)
+		_, err = svc.GetModule(uuid.New(), mod1.Uuid)
 		assert.ErrorIs(t, err, ErrCourseNotFound)
 	})
 
@@ -375,8 +375,8 @@ func TestCourseService_Modules(t *testing.T) {
 		modules, err := svc.ListModules(course.Uuid)
 		assert.NoError(t, err)
 		assert.Len(t, modules, 2)
-		assert.Equal(t, mod1.ID, modules[0].ID)
-		assert.Equal(t, mod2.ID, modules[1].ID)
+		assert.Equal(t, mod1.Uuid, modules[0].Uuid)
+		assert.Equal(t, mod2.Uuid, modules[1].Uuid)
 
 		// Non-existent course
 		_, err = svc.ListModules(uuid.New())
@@ -384,7 +384,7 @@ func TestCourseService_Modules(t *testing.T) {
 	})
 
 	t.Run("UpdateModule updates title and prerequisite", func(t *testing.T) {
-		updated, err := svc.UpdateModule(course.Uuid, mod1.ID, &Module{
+		updated, err := svc.UpdateModule(course.Uuid, mod1.Uuid, &Module{
 			Title:    "Week 1: Foundations",
 			Position: 0,
 		})
@@ -393,7 +393,7 @@ func TestCourseService_Modules(t *testing.T) {
 	})
 
 	t.Run("UpdateModule with self as prerequisite returns ErrSelfPrerequisite", func(t *testing.T) {
-		_, err := svc.UpdateModule(course.Uuid, mod1.ID, &Module{
+		_, err := svc.UpdateModule(course.Uuid, mod1.Uuid, &Module{
 			Title:       "Week 1",
 			DependsOnID: &mod1.ID,
 		})
@@ -402,7 +402,7 @@ func TestCourseService_Modules(t *testing.T) {
 
 	t.Run("UpdateModule with non-existent prerequisite returns ErrModuleNotFound", func(t *testing.T) {
 		ghostID := uint(9999)
-		_, err := svc.UpdateModule(course.Uuid, mod1.ID, &Module{
+		_, err := svc.UpdateModule(course.Uuid, mod1.Uuid, &Module{
 			Title:       "Week 1",
 			DependsOnID: &ghostID,
 		})
@@ -414,7 +414,7 @@ func TestCourseService_Modules(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NotEmpty(t, otherModules)
 
-		_, err = svc.UpdateModule(course.Uuid, mod1.ID, &Module{
+		_, err = svc.UpdateModule(course.Uuid, mod1.Uuid, &Module{
 			Title:       "Week 1",
 			DependsOnID: &otherModules[0].ID,
 		})
@@ -422,49 +422,49 @@ func TestCourseService_Modules(t *testing.T) {
 	})
 
 	t.Run("UpdateModule non-existent returns error", func(t *testing.T) {
-		_, err := svc.UpdateModule(course.Uuid, 9999, &Module{Title: "Ghost"})
+		_, err := svc.UpdateModule(course.Uuid, uuid.New(), &Module{Title: "Ghost"})
 		assert.ErrorIs(t, err, ErrModuleNotFound)
 
-		_, err = svc.UpdateModule(uuid.New(), mod1.ID, &Module{Title: "Ghost"})
+		_, err = svc.UpdateModule(uuid.New(), mod1.Uuid, &Module{Title: "Ghost"})
 		assert.ErrorIs(t, err, ErrCourseNotFound)
 	})
 
 	t.Run("ReorderModules updates positions sequentially", func(t *testing.T) {
 		// Reorder: mod2 first, then mod1
-		err := svc.ReorderModules(course.Uuid, []uint{mod2.ID, mod1.ID})
+		err := svc.ReorderModules(course.Uuid, []uuid.UUID{mod2.Uuid, mod1.Uuid})
 		assert.NoError(t, err)
 
 		list, err := svc.ListModules(course.Uuid)
 		assert.NoError(t, err)
-		assert.Equal(t, mod2.ID, list[0].ID)
+		assert.Equal(t, mod2.Uuid, list[0].Uuid)
 		assert.Equal(t, 0, list[0].Position)
-		assert.Equal(t, mod1.ID, list[1].ID)
+		assert.Equal(t, mod1.Uuid, list[1].Uuid)
 		assert.Equal(t, 1, list[1].Position)
 	})
 
 	t.Run("ReorderModules non-existent course returns ErrCourseNotFound", func(t *testing.T) {
-		err := svc.ReorderModules(uuid.New(), []uint{mod1.ID})
+		err := svc.ReorderModules(uuid.New(), []uuid.UUID{mod1.Uuid})
 		assert.ErrorIs(t, err, ErrCourseNotFound)
 	})
 
 	t.Run("ReorderModules non-existent module returns ErrModuleNotFound", func(t *testing.T) {
-		err := svc.ReorderModules(course.Uuid, []uint{9999})
+		err := svc.ReorderModules(course.Uuid, []uuid.UUID{uuid.New()})
 		assert.ErrorIs(t, err, ErrModuleNotFound)
 	})
 
 	t.Run("DeleteModule deletes module and cascades SET NULL on dependent", func(t *testing.T) {
-		err := svc.DeleteModule(course.Uuid, mod1.ID)
+		err := svc.DeleteModule(course.Uuid, mod1.Uuid)
 		assert.NoError(t, err)
 
-		_, err = svc.GetModule(course.Uuid, mod1.ID)
+		_, err = svc.GetModule(course.Uuid, mod1.Uuid)
 		assert.ErrorIs(t, err, ErrModuleNotFound)
 
 		// Non-existent module
-		err = svc.DeleteModule(course.Uuid, 9999)
+		err = svc.DeleteModule(course.Uuid, uuid.New())
 		assert.ErrorIs(t, err, ErrModuleNotFound)
 
 		// Non-existent course
-		err = svc.DeleteModule(uuid.New(), mod2.ID)
+		err = svc.DeleteModule(uuid.New(), mod2.Uuid)
 		assert.ErrorIs(t, err, ErrCourseNotFound)
 	})
 }

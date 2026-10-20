@@ -91,7 +91,6 @@ func TestUpdateCourseDto_ToModel(t *testing.T) {
 func TestCourseDto_FromModel(t *testing.T) {
 	t.Run("nil model returns empty dto", func(t *testing.T) {
 		dto := CourseDto{}.FromModel(nil)
-		assert.Equal(t, uint(0), dto.ID)
 		assert.Empty(t, dto.Title)
 		assert.Empty(t, dto.Uuid)
 	})
@@ -111,7 +110,6 @@ func TestCourseDto_FromModel(t *testing.T) {
 			Year:        2026,
 		}
 		dto := CourseDto{}.FromModel(c)
-		assert.Equal(t, uint(12), dto.ID)
 		assert.Equal(t, c.Uuid.String(), dto.Uuid)
 		assert.Equal(t, "Learning Systems", dto.Title)
 		assert.Equal(t, "LMS details", dto.Description)
@@ -123,7 +121,7 @@ func TestCourseDto_FromModel(t *testing.T) {
 func TestEnrollmentDto_FromModel(t *testing.T) {
 	t.Run("nil model returns empty dto", func(t *testing.T) {
 		dto := EnrollmentDto{}.FromModel(nil)
-		assert.Equal(t, uint(0), dto.ID)
+		assert.Empty(t, dto.UserEmail)
 	})
 
 	t.Run("valid model converts to dto", func(t *testing.T) {
@@ -139,10 +137,7 @@ func TestEnrollmentDto_FromModel(t *testing.T) {
 			EnrolledAt: now,
 		}
 		dto := EnrollmentDto{}.FromModel(e)
-		assert.Equal(t, uint(5), dto.ID)
-		assert.Equal(t, uint(10), dto.UserID)
 		assert.Equal(t, "student@hvl.no", dto.UserEmail)
-		assert.Equal(t, uint(12), dto.CourseID)
 		assert.Equal(t, courseUuid.String(), dto.CourseUuid)
 		assert.Equal(t, RoleStudent, dto.Role)
 		assert.Equal(t, now, dto.EnrolledAt)
@@ -152,17 +147,19 @@ func TestEnrollmentDto_FromModel(t *testing.T) {
 func TestModuleDtos(t *testing.T) {
 	t.Run("CreateModuleDto with position and dependsOn", func(t *testing.T) {
 		pos := 3
-		depID := uint(1)
+		depUuid := uuid.New()
+		depUuidStr := depUuid.String()
 		dto := CreateModuleDto{
-			Title:       "Week 2: Advanced Topics",
-			Position:    &pos,
-			DependsOnID: &depID,
+			Title:         "Week 2: Advanced Topics",
+			Position:      &pos,
+			DependsOnUuid: &depUuidStr,
 		}
 		model := dto.ToModel(10)
 		assert.Equal(t, uint(10), model.CourseID)
 		assert.Equal(t, "Week 2: Advanced Topics", model.Title)
 		assert.Equal(t, 3, model.Position)
-		assert.Equal(t, &depID, model.DependsOnID)
+		assert.NotNil(t, model.DependsOn)
+		assert.Equal(t, depUuid, model.DependsOn.Uuid)
 
 		// nil position defaults to 0
 		dto2 := CreateModuleDto{Title: "Week 1"}
@@ -172,17 +169,19 @@ func TestModuleDtos(t *testing.T) {
 
 	t.Run("UpdateModuleDto to model", func(t *testing.T) {
 		pos := 5
-		depID := uint(2)
+		depUuid := uuid.New()
+		depUuidStr := depUuid.String()
 		dto := UpdateModuleDto{
-			Title:       "Week 2 Updated",
-			Position:    &pos,
-			DependsOnID: &depID,
+			Title:         "Week 2 Updated",
+			Position:      &pos,
+			DependsOnUuid: &depUuidStr,
 		}
 		model := dto.ToModel(10)
 		assert.Equal(t, uint(10), model.CourseID)
 		assert.Equal(t, "Week 2 Updated", model.Title)
 		assert.Equal(t, 5, model.Position)
-		assert.Equal(t, &depID, model.DependsOnID)
+		assert.NotNil(t, model.DependsOn)
+		assert.Equal(t, depUuid, model.DependsOn.Uuid)
 
 		// nil position defaults to 0
 		dto2 := UpdateModuleDto{Title: "Week 1 Updated"}
@@ -192,19 +191,23 @@ func TestModuleDtos(t *testing.T) {
 
 	t.Run("ModuleDto FromModel with nil model", func(t *testing.T) {
 		dto := ModuleDto{}.FromModel(nil)
-		assert.Equal(t, uint(0), dto.ID)
+		assert.Empty(t, dto.Uuid)
 	})
 
 	t.Run("ModuleDto FromModel with DependsOn", func(t *testing.T) {
 		depID := uint(1)
+		depUuid := uuid.New()
+		modUuid := uuid.New()
 		dep := &Module{
 			Model:    gorm.Model{ID: depID},
+			Uuid:     depUuid,
 			CourseID: 10,
 			Title:    "Prerequisite Module",
 			Position: 0,
 		}
 		m := &Module{
 			Model:       gorm.Model{ID: 2},
+			Uuid:        modUuid,
 			CourseID:    10,
 			Title:       "Dependent Module",
 			Position:    1,
@@ -212,11 +215,11 @@ func TestModuleDtos(t *testing.T) {
 			DependsOn:   dep,
 		}
 		dto := ModuleDto{}.FromModel(m)
-		assert.Equal(t, uint(2), dto.ID)
+		assert.Equal(t, modUuid.String(), dto.Uuid)
 		assert.Equal(t, "Dependent Module", dto.Title)
 		assert.Equal(t, 1, dto.Position)
 		assert.NotNil(t, dto.DependsOn)
-		assert.Equal(t, uint(1), dto.DependsOn.ID)
+		assert.Equal(t, depUuid.String(), dto.DependsOn.Uuid)
 		assert.Equal(t, "Prerequisite Module", dto.DependsOn.Title)
 	})
 }

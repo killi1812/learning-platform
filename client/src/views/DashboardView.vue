@@ -99,7 +99,8 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import CourseCard from '@/components/CourseCard.vue'
 import { useToast } from '@/composables/useToast'
-import { getMyCourses, type MyCourse } from '@/api/course'
+import { getMyCourses } from '@/api/course'
+import type { MyCourse } from '@/types/course'
 
 const emit = defineEmits<{
   (e: 'select-course', courseUuid: string): void

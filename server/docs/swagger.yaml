@@ -68,8 +68,6 @@ definitions:
         type: string
       description:
         type: string
-      id:
-        type: integer
       teachers:
         items:
           type: string
@@ -117,8 +115,8 @@ definitions:
     type: object
   course.CreateModuleDto:
     properties:
-      dependsOnId:
-        type: integer
+      dependsOnUuid:
+        type: string
       position:
         type: integer
       title:
@@ -130,36 +128,32 @@ definitions:
     type: object
   course.EnrollmentDto:
     properties:
-      courseId:
-        type: integer
       courseUuid:
         type: string
       enrolledAt:
         type: string
-      id:
-        type: integer
       role:
         $ref: '#/definitions/course.CourseRole'
       userEmail:
         type: string
-      userId:
-        type: integer
+      userUuid:
+        type: string
       username:
         type: string
     type: object
   course.ModuleDto:
     properties:
-      courseId:
-        type: integer
+      courseUuid:
+        type: string
       dependsOn:
         $ref: '#/definitions/course.ModuleDto'
-      dependsOnId:
-        type: integer
-      id:
-        type: integer
+      dependsOnUuid:
+        type: string
       position:
         type: integer
       title:
+        type: string
+      uuid:
         type: string
     type: object
   course.MyCourseDto:
@@ -173,13 +167,13 @@ definitions:
     type: object
   course.ReorderModulesDto:
     properties:
-      moduleIds:
+      moduleUuids:
         items:
-          type: integer
+          type: string
         minItems: 1
         type: array
     required:
-    - moduleIds
+    - moduleUuids
     type: object
   course.UpdateCourseDto:
     properties:
@@ -205,8 +199,8 @@ definitions:
     type: object
   course.UpdateModuleDto:
     properties:
-      dependsOnId:
-        type: integer
+      dependsOnUuid:
+        type: string
       position:
         type: integer
       title:
@@ -668,7 +662,7 @@ paths:
             $ref: '#/definitions/ginutil.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: Unenroll from course
+      summary: Withdraw from course
       tags:
       - course
     post:
@@ -888,7 +882,7 @@ paths:
       summary: Create module
       tags:
       - module
-  /course/{uuid}/module/{moduleId}:
+  /course/{uuid}/module/{moduleUuid}:
     delete:
       description: Deletes a module from the course (Teacher or Admin only)
       parameters:
@@ -897,11 +891,11 @@ paths:
         name: uuid
         required: true
         type: string
-      - description: Module ID
+      - description: Module UUID
         in: path
-        name: moduleId
+        name: moduleUuid
         required: true
-        type: integer
+        type: string
       produces:
       - application/json
       responses:
@@ -940,11 +934,11 @@ paths:
         name: uuid
         required: true
         type: string
-      - description: Module ID
+      - description: Module UUID
         in: path
-        name: moduleId
+        name: moduleUuid
         required: true
-        type: integer
+        type: string
       produces:
       - application/json
       responses:
@@ -956,6 +950,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
         "404":
           description: Not Found
           schema:
@@ -964,6 +962,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Get module
       tags:
       - module
@@ -978,11 +978,11 @@ paths:
         name: uuid
         required: true
         type: string
-      - description: Module ID
+      - description: Module UUID
         in: path
-        name: moduleId
+        name: moduleUuid
         required: true
-        type: integer
+        type: string
       - description: Updated module information
         in: body
         name: module
@@ -1026,14 +1026,14 @@ paths:
       consumes:
       - application/json
       description: Updates positions of modules sequentially according to provided
-        ID array (Teacher or Admin only)
+        UUID array (Teacher or Admin only)
       parameters:
       - description: Course UUID
         in: path
         name: uuid
         required: true
         type: string
-      - description: Ordered module IDs
+      - description: Ordered module UUIDs
         in: body
         name: body
         required: true
@@ -1069,7 +1069,7 @@ paths:
       summary: Reorder modules
       tags:
       - module
-  /course/my-courses:
+  /course/my-course:
     get:
       description: Returns all courses the authenticated user is enrolled in with
         their roles

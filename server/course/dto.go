@@ -3,6 +3,8 @@ package course
 import (
 	"errors"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 var (
@@ -56,7 +58,6 @@ func (d UpdateCourseDto) ToModel() (*Course, error) {
 }
 
 type CourseDto struct {
-	ID          uint      `json:"id,omitempty"`
 	Uuid        string    `json:"uuid"`
 	CreatedAt   time.Time `json:"createdAt"`
 	UpdatedAt   time.Time `json:"updatedAt"`
@@ -82,7 +83,6 @@ func (CourseDto) FromModel(c *Course) CourseDto {
 		}
 	}
 	return CourseDto{
-		ID:          c.ID,
 		Uuid:        c.Uuid.String(),
 		CreatedAt:   c.CreatedAt,
 		UpdatedAt:   c.UpdatedAt,
@@ -95,11 +95,9 @@ func (CourseDto) FromModel(c *Course) CourseDto {
 }
 
 type EnrollmentDto struct {
-	ID         uint       `json:"id"`
-	UserID     uint       `json:"userId"`
+	UserUuid   string     `json:"userUuid,omitempty"`
 	Username   string     `json:"username,omitempty"`
 	UserEmail  string     `json:"userEmail"`
-	CourseID   uint       `json:"courseId"`
 	CourseUuid string     `json:"courseUuid,omitempty"`
 	Role       CourseRole `json:"role"`
 	EnrolledAt time.Time  `json:"enrolledAt"`
@@ -110,14 +108,12 @@ func (EnrollmentDto) FromModel(e *Enrollment) EnrollmentDto {
 		return EnrollmentDto{}
 	}
 	dto := EnrollmentDto{
-		ID:         e.ID,
-		UserID:     e.UserID,
 		UserEmail:  e.UserEmail,
-		CourseID:   e.CourseID,
 		Role:       e.Role,
 		EnrolledAt: e.EnrolledAt,
 	}
 	if e.User != nil {
+		dto.UserUuid = e.User.Uuid.String()
 		dto.Username = e.User.Username
 	}
 	if e.Course != nil {
@@ -138,9 +134,9 @@ type MyCourseDto struct {
 }
 
 type CreateModuleDto struct {
-	Title       string `json:"title" binding:"required,min=2,max=255"`
-	Position    *int   `json:"position,omitempty"`
-	DependsOnID *uint  `json:"dependsOnId,omitempty"`
+	Title         string  `json:"title" binding:"required,min=2,max=255"`
+	Position      *int    `json:"position,omitempty"`
+	DependsOnUuid *string `json:"dependsOnUuid,omitempty"`
 }
 
 func (d CreateModuleDto) ToModel(courseIDs ...uint) *Module {
@@ -152,18 +148,23 @@ func (d CreateModuleDto) ToModel(courseIDs ...uint) *Module {
 	if len(courseIDs) > 0 {
 		courseID = courseIDs[0]
 	}
-	return &Module{
-		CourseID:    courseID,
-		Title:       d.Title,
-		Position:    pos,
-		DependsOnID: d.DependsOnID,
+	m := &Module{
+		CourseID: courseID,
+		Title:    d.Title,
+		Position: pos,
 	}
+	if d.DependsOnUuid != nil && *d.DependsOnUuid != "" {
+		if depUuid, err := uuid.Parse(*d.DependsOnUuid); err == nil {
+			m.DependsOn = &Module{Uuid: depUuid}
+		}
+	}
+	return m
 }
 
 type UpdateModuleDto struct {
-	Title       string `json:"title" binding:"required,min=2,max=255"`
-	Position    *int   `json:"position,omitempty"`
-	DependsOnID *uint  `json:"dependsOnId,omitempty"`
+	Title         string  `json:"title" binding:"required,min=2,max=255"`
+	Position      *int    `json:"position,omitempty"`
+	DependsOnUuid *string `json:"dependsOnUuid,omitempty"`
 }
 
 func (d UpdateModuleDto) ToModel(courseIDs ...uint) *Module {
@@ -175,21 +176,26 @@ func (d UpdateModuleDto) ToModel(courseIDs ...uint) *Module {
 	if len(courseIDs) > 0 {
 		courseID = courseIDs[0]
 	}
-	return &Module{
-		CourseID:    courseID,
-		Title:       d.Title,
-		Position:    pos,
-		DependsOnID: d.DependsOnID,
+	m := &Module{
+		CourseID: courseID,
+		Title:    d.Title,
+		Position: pos,
 	}
+	if d.DependsOnUuid != nil && *d.DependsOnUuid != "" {
+		if depUuid, err := uuid.Parse(*d.DependsOnUuid); err == nil {
+			m.DependsOn = &Module{Uuid: depUuid}
+		}
+	}
+	return m
 }
 
 type ModuleDto struct {
-	ID          uint       `json:"id"`
-	CourseID    uint       `json:"courseId"`
-	Title       string     `json:"title"`
-	Position    int        `json:"position"`
-	DependsOnID *uint      `json:"dependsOnId,omitempty"`
-	DependsOn   *ModuleDto `json:"dependsOn,omitempty"`
+	Uuid          string     `json:"uuid"`
+	CourseUuid    string     `json:"courseUuid,omitempty"`
+	Title         string     `json:"title"`
+	Position      int        `json:"position"`
+	DependsOnUuid *string    `json:"dependsOnUuid,omitempty"`
+	DependsOn     *ModuleDto `json:"dependsOn,omitempty"`
 }
 
 func (ModuleDto) FromModel(m *Module) ModuleDto {
@@ -197,13 +203,16 @@ func (ModuleDto) FromModel(m *Module) ModuleDto {
 		return ModuleDto{}
 	}
 	dto := ModuleDto{
-		ID:          m.ID,
-		CourseID:    m.CourseID,
-		Title:       m.Title,
-		Position:    m.Position,
-		DependsOnID: m.DependsOnID,
+		Uuid:     m.Uuid.String(),
+		Title:    m.Title,
+		Position: m.Position,
+	}
+	if m.Course != nil && m.Course.Uuid != uuid.Nil {
+		dto.CourseUuid = m.Course.Uuid.String()
 	}
 	if m.DependsOn != nil {
+		depUuid := m.DependsOn.Uuid.String()
+		dto.DependsOnUuid = &depUuid
 		depDto := ModuleDto{}.FromModel(m.DependsOn)
 		dto.DependsOn = &depDto
 	}
@@ -211,5 +220,5 @@ func (ModuleDto) FromModel(m *Module) ModuleDto {
 }
 
 type ReorderModulesDto struct {
-	ModuleIDs []uint `json:"moduleIds" binding:"required,min=1"`
+	ModuleUuids []uuid.UUID `json:"moduleUuids" binding:"required,min=1"`
 }

@@ -103,7 +103,7 @@
         <div v-else class="d-flex flex-column ga-3">
           <v-card
             v-for="(mod, index) in modules"
-            :key="mod.id"
+            :key="mod.uuid"
             class="pa-4 bg-surface"
             elevation="1"
             rounded="lg"
@@ -129,30 +129,6 @@
 
               <!-- Teacher Reorder and Manage Controls -->
               <div v-if="isTeacher" class="d-flex align-center ga-1">
-                <v-menu>
-                  <template #activator="{ props: menuProps }">
-                    <v-btn
-                      v-bind="menuProps"
-                      color="primary"
-                      density="comfortable"
-                      prepend-icon="mdi-plus"
-                      size="small"
-                      variant="tonal"
-                    >
-                      Add Content
-                    </v-btn>
-                  </template>
-                  <v-list density="compact">
-                    <v-list-item
-                      v-for="option in contentTypeOptions"
-                      :key="option.type"
-                      :prepend-icon="option.icon"
-                      :title="option.label"
-                      @click="handleAddContentClick(mod, option.type)"
-                    />
-                  </v-list>
-                </v-menu>
-
                 <v-btn
                   density="comfortable"
                   :disabled="index === 0"
@@ -182,55 +158,10 @@
                   icon="mdi-delete-outline"
                   title="Delete Module"
                   variant="text"
-                  @click="handleDeleteModule(mod.id)"
+                  @click="handleDeleteModule(mod.uuid)"
                 />
               </div>
             </div>
-
-            <!-- Module Content Items Slot & List -->
-            <slot :is-teacher="isTeacher" :module="mod" name="module-content">
-              <v-list
-                v-if="mod.contents && mod.contents.length > 0"
-                class="mt-3 bg-surface-variant rounded pa-1"
-                density="comfortable"
-              >
-                <v-list-item
-                  v-for="item in mod.contents"
-                  :key="item.id"
-                  class="rounded"
-                  link
-                  @click="handleSelectContent(mod, item)"
-                >
-                  <template #prepend>
-                    <v-icon
-                      color="primary"
-                      :icon="getContentTypeMeta(item.type).icon"
-                      size="small"
-                    />
-                  </template>
-
-                  <v-list-item-title class="text-body-2 font-weight-medium text-high-emphasis">
-                    {{ item.title }}
-                  </v-list-item-title>
-
-                  <template #append>
-                    <v-chip color="secondary" size="x-small" variant="tonal">
-                      {{ getContentTypeMeta(item.type).label }}
-                    </v-chip>
-                  </template>
-                </v-list-item>
-              </v-list>
-
-              <v-sheet
-                v-else
-                class="mt-3 pa-3 rounded text-caption bg-surface-variant d-flex align-center justify-space-between ga-2"
-              >
-                <div class="d-flex align-center ga-2">
-                  <v-icon color="medium-emphasis" icon="mdi-layers-outline" size="small" />
-                  <span class="text-medium-emphasis">No content items in this module yet.</span>
-                </div>
-              </v-sheet>
-            </slot>
           </v-card>
         </div>
       </div>
@@ -259,8 +190,8 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="e in enrollments" :key="e.id">
-                <td class="font-weight-medium">{{ e.userEmail || `User #${e.userId}` }}</td>
+              <tr v-for="e in enrollments" :key="e.userEmail">
+                <td class="font-weight-medium">{{ e.userEmail }}</td>
                 <td>
                   <v-chip
                     :color="e.role === 'TEACHER' ? 'primary' : 'secondary'"
@@ -369,11 +300,11 @@
           />
 
           <v-select
-            v-model="moduleForm.dependsOnId"
+            v-model="moduleForm.dependsOnUuid"
             clearable
             :items="availablePrerequisites"
             item-title="title"
-            item-value="id"
+            item-value="uuid"
             label="Prerequisite Module (Optional)"
             placeholder="None"
             variant="outlined"
@@ -451,14 +382,19 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useToast } from '@/composables/useToast'
 import {
-  courseApi as api,
-  type Course,
-  type Module,
-  type ContentType,
-  type ModuleContentItem,
-  type Enrollment,
-  type UpdateCoursePayload,
+  getCourse,
+  getMyCourses,
+  listModules,
+  getCourseEnrollments,
+  updateModule,
+  createModule,
+  reorderModules,
+  deleteModule,
+  addEnrollment,
+  updateCourse,
+  deleteCourse,
 } from '@/api/course'
+import type { Course, Module, Enrollment, UpdateCoursePayload } from '@/types/course'
 
 const props = defineProps<{
   courseUuid?: string
@@ -467,8 +403,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'back'): void
   (e: 'course-deleted'): void
-  (e: 'add-content', payload: { module: Module; type: ContentType }): void
-  (e: 'select-content', payload: { module: Module; content: ModuleContentItem }): void
 }>()
 
 const route = useRoute()
@@ -489,31 +423,6 @@ const isTeacher = computed(
   () => userRole.value === 'TEACHER' || hasRole('admin') || hasRole('superadmin'),
 )
 
-const contentTypeOptions: Array<{ type: ContentType; label: string; icon: string }> = [
-  { type: 'STATIC_PAGE', label: 'Static Page', icon: 'mdi-file-document-outline' },
-  { type: 'QUIZ', label: 'Quiz', icon: 'mdi-help-circle-outline' },
-  { type: 'ASSIGNMENT', label: 'Assignment', icon: 'mdi-clipboard-text-outline' },
-  { type: 'CODING_EXERCISE', label: 'Coding Exercise', icon: 'mdi-code-tags' },
-]
-
-function getContentTypeMeta(type: ContentType) {
-  return (
-    contentTypeOptions.find(opt => opt.type === type) || {
-      type,
-      label: type,
-      icon: 'mdi-file-outline',
-    }
-  )
-}
-
-function handleAddContentClick(mod: Module, type: ContentType) {
-  emit('add-content', { module: mod, type })
-}
-
-function handleSelectContent(mod: Module, item: ModuleContentItem) {
-  emit('select-content', { module: mod, content: item })
-}
-
 function goBack() {
   emit('back')
   router.push('/courses')
@@ -532,10 +441,10 @@ const deletingCourse = ref(false)
 // Module dialog form
 const moduleDialogOpen = ref(false)
 const isEditingModule = ref(false)
-const editingModuleId = ref<number | undefined>(undefined)
-const moduleForm = ref<{ title: string; dependsOnId?: number }>({
+const editingModuleUuid = ref<string | undefined>(undefined)
+const moduleForm = ref<{ title: string; dependsOnUuid?: string }>({
   title: '',
-  dependsOnId: undefined,
+  dependsOnUuid: undefined,
 })
 const savingModule = ref(false)
 
@@ -547,7 +456,7 @@ const addingEnrollment = ref(false)
 
 const availablePrerequisites = computed(() => {
   return modules.value.filter(m => {
-    if (isEditingModule.value && m.id === editingModuleId.value) {
+    if (isEditingModule.value && m.uuid === editingModuleUuid.value) {
       return false
     }
     return true
@@ -558,7 +467,7 @@ async function fetchCourseDetails() {
   if (!resolvedCourseUuid.value) return
   loading.value = true
   try {
-    course.value = await api.getCourse(resolvedCourseUuid.value)
+    course.value = await getCourse(resolvedCourseUuid.value)
     editCourseData.value = {
       title: course.value.title,
       description: course.value.description,
@@ -567,16 +476,16 @@ async function fetchCourseDetails() {
     }
 
     // Determine current user's role in this course
-    const myCourses = await api.getMyCourses().catch(() => [])
+    const myCourses = await getMyCourses().catch(() => [])
     const mine = myCourses.find(mc => mc.course.uuid === resolvedCourseUuid.value)
     userRole.value = mine ? mine.role : undefined
 
     // Load modules
-    modules.value = await api.listModules(resolvedCourseUuid.value)
+    modules.value = await listModules(resolvedCourseUuid.value)
 
     // Load enrollments if teacher
     if (isTeacher.value) {
-      enrollments.value = await api.getCourseEnrollments(resolvedCourseUuid.value).catch(() => [])
+      enrollments.value = await getCourseEnrollments(resolvedCourseUuid.value).catch(() => [])
     }
   } catch (err: unknown) {
     toast.error(err instanceof Error ? err.message : 'Failed to load course details.')
@@ -587,15 +496,15 @@ async function fetchCourseDetails() {
 
 function openCreateModuleDialog() {
   isEditingModule.value = false
-  editingModuleId.value = undefined
-  moduleForm.value = { title: '', dependsOnId: undefined }
+  editingModuleUuid.value = undefined
+  moduleForm.value = { title: '', dependsOnUuid: undefined }
   moduleDialogOpen.value = true
 }
 
 function openEditModuleDialog(mod: Module) {
   isEditingModule.value = true
-  editingModuleId.value = mod.id
-  moduleForm.value = { title: mod.title, dependsOnId: mod.dependsOnId }
+  editingModuleUuid.value = mod.uuid
+  moduleForm.value = { title: mod.title, dependsOnUuid: mod.dependsOnUuid }
   moduleDialogOpen.value = true
 }
 
@@ -603,21 +512,21 @@ async function handleSaveModule() {
   if (!moduleForm.value.title.trim()) return
   savingModule.value = true
   try {
-    if (isEditingModule.value && editingModuleId.value) {
-      await api.updateModule(resolvedCourseUuid.value, editingModuleId.value, {
+    if (isEditingModule.value && editingModuleUuid.value) {
+      await updateModule(resolvedCourseUuid.value, editingModuleUuid.value, {
         title: moduleForm.value.title,
-        dependsOnId: moduleForm.value.dependsOnId,
+        dependsOnUuid: moduleForm.value.dependsOnUuid,
       })
       toast.success('Module updated successfully.')
     } else {
-      await api.createModule(resolvedCourseUuid.value, {
+      await createModule(resolvedCourseUuid.value, {
         title: moduleForm.value.title,
-        dependsOnId: moduleForm.value.dependsOnId,
+        dependsOnUuid: moduleForm.value.dependsOnUuid,
       })
       toast.success('Module created successfully.')
     }
     moduleDialogOpen.value = false
-    modules.value = await api.listModules(resolvedCourseUuid.value)
+    modules.value = await listModules(resolvedCourseUuid.value)
   } catch (err: unknown) {
     toast.error(err instanceof Error ? err.message : 'Failed to save module.')
   } finally {
@@ -636,22 +545,22 @@ async function moveModule(index: number, direction: -1 | 1) {
 
   modules.value = reordered
   try {
-    await api.reorderModules(
+    await reorderModules(
       resolvedCourseUuid.value,
-      reordered.map(m => m.id),
+      reordered.map(m => m.uuid),
     )
   } catch (err: unknown) {
     toast.error(err instanceof Error ? err.message : 'Failed to reorder modules.')
-    modules.value = await api.listModules(resolvedCourseUuid.value)
+    modules.value = await listModules(resolvedCourseUuid.value)
   }
 }
 
-async function handleDeleteModule(moduleId: number) {
+async function handleDeleteModule(moduleUuid: string) {
   if (!confirm('Are you sure you want to delete this module?')) return
   try {
-    await api.deleteModule(resolvedCourseUuid.value, moduleId)
+    await deleteModule(resolvedCourseUuid.value, moduleUuid)
     toast.success('Module deleted.')
-    modules.value = await api.listModules(resolvedCourseUuid.value)
+    modules.value = await listModules(resolvedCourseUuid.value)
   } catch (err: unknown) {
     toast.error(err instanceof Error ? err.message : 'Failed to delete module.')
   }
@@ -661,15 +570,15 @@ async function handleAddEnrollment() {
   if (!newEnrollmentEmail.value.trim()) return
   addingEnrollment.value = true
   try {
-    await api.addEnrollment(resolvedCourseUuid.value, {
+    await addEnrollment(resolvedCourseUuid.value, {
       email: newEnrollmentEmail.value,
       role: newEnrollmentRole.value,
     })
     addEnrollmentDialogOpen.value = false
     newEnrollmentEmail.value = ''
     toast.success('Participant enrolled successfully.')
-    enrollments.value = await api.getCourseEnrollments(resolvedCourseUuid.value)
-    course.value = await api.getCourse(resolvedCourseUuid.value)
+    enrollments.value = await getCourseEnrollments(resolvedCourseUuid.value)
+    course.value = await getCourse(resolvedCourseUuid.value)
   } catch (err: unknown) {
     toast.error(err instanceof Error ? err.message : 'Failed to add participant.')
   } finally {
@@ -680,7 +589,7 @@ async function handleAddEnrollment() {
 async function handleUpdateCourse() {
   savingCourse.value = true
   try {
-    const updated = await api.updateCourse(resolvedCourseUuid.value, editCourseData.value)
+    const updated = await updateCourse(resolvedCourseUuid.value, editCourseData.value)
     course.value = updated
     toast.success('Course details updated successfully.')
   } catch (err: unknown) {
@@ -699,7 +608,7 @@ async function handleDeleteCourse() {
     return
   deletingCourse.value = true
   try {
-    await api.deleteCourse(resolvedCourseUuid.value)
+    await deleteCourse(resolvedCourseUuid.value)
     toast.success('Course deleted.')
     emit('course-deleted')
     router.push('/courses')
