@@ -3,6 +3,7 @@ package course
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/notification"
@@ -49,12 +50,20 @@ type ICourseService interface {
 	DeleteModule(courseUuid uuid.UUID, moduleUuid uuid.UUID) error
 	ReorderModules(courseUuid uuid.UUID, moduleUuids []uuid.UUID) error
 }
-
 type CourseService struct {
 	db            *gorm.DB
 	storage       storage.IStorageService
 	notifications notification.INotificationService
 	logger        *zap.SugaredLogger
+}
+
+type IGroupService interface {
+	UserJoinGroup(groupUuid uuid.UUID, user *user.User) (*Group, error)
+	GetGroup(groupUuid uuid.UUID) (*Group, error)
+}
+type GroupService struct {
+	db     *gorm.DB
+	logger *zap.SugaredLogger
 }
 
 func NewCourseService(db *gorm.DB, storage storage.IStorageService, notifications notification.INotificationService, logger *zap.SugaredLogger) ICourseService {
@@ -81,6 +90,13 @@ func (s *CourseService) notifyEnrolledStudents(courseID uint, content notificati
 	}
 	if _, err := s.notifications.NotifySystemMany(studentUuids, content); err != nil {
 		s.logger.Errorf("Failed to notify enrolled students for course %d: %v", courseID, err)
+	}
+}
+
+func NewGroupService(db *gorm.DB, logger *zap.SugaredLogger) IGroupService {
+	return &GroupService{
+		db:     db,
+		logger: logger,
 	}
 }
 
@@ -620,4 +636,36 @@ func (s *CourseService) ReorderModules(courseUuid uuid.UUID, moduleUuids []uuid.
 		}
 		return nil
 	})
+}
+
+func (g *GroupService) UserJoinGroup(groupUuid uuid.UUID, user *user.User) (*Group, error) {
+	g.logger.Error("Testing")
+	var group Group
+
+	err := g.db.Where("uuid = ?", groupUuid).First(&group).Error
+	if err != nil {
+		g.logger.Error(err)
+		return nil, err
+	}
+
+	if slices.Contains(group.Members, *user) {
+		g.logger.Errorf("User %v is already in group %v", user, group)
+		return nil, err
+	}
+
+	g.db.Model(&group).Association("group_members").Append(&user)
+
+	return &group, nil
+}
+
+func (g *GroupService) GetGroup(groupUuid uuid.UUID) (*Group, error) {
+	g.logger.Debugf("Getting group %v from database", groupUuid)
+	var group Group
+
+	err := g.db.Where("uuid = ?", groupUuid).First(&group).Error
+	if err != nil {
+		g.logger.Errorf("Error fetching group %v. Error: %v", groupUuid, err)
+		return nil, err
+	}
+	return &group, nil
 }

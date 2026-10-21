@@ -859,7 +859,6 @@ paths:
       summary: Revoke Session
       tags:
       - auth
-<<<<<<< HEAD
   /course:
     get:
       description: Returns all courses with optional filtering by term and year
@@ -977,15 +976,10 @@ paths:
         name: uuid
         required: true
         type: string
-=======
-  /group/join:
-    post:
->>>>>>> 38dfec8 (GroupService)
       produces:
       - application/json
       responses:
         "200":
-<<<<<<< HEAD
           description: OK
           schema:
             $ref: '#/definitions/course.CourseDto'
@@ -3018,14 +3012,40 @@ paths:
       summary: Get current user's courses
       tags:
       - course
-=======
-          description: Information about server
+  /group/join/{uuid}:
+    post:
+      consumes:
+      - application/json
+      description: Adds the authenticated student to the specified group.
+      parameters:
+      - description: Group UUID
+        format: uuid
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Successfully joined the group
+        "400":
+          description: Invalid or missing user UUID
           schema:
-            type: string
-      summary: Lets a student join a group if available
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: User or group not found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Join a group
       tags:
-      - info
->>>>>>> 38dfec8 (GroupService)
+      - Groups
   /healthz:
     get:
       description: Returns the health status of the server.

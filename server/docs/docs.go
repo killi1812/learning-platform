@@ -301,7 +301,6 @@ const docTemplate = `{
                 }
             }
         },
-<<<<<<< HEAD
         "/course": {
             "get": {
                 "security": [
@@ -365,15 +364,10 @@ const docTemplate = `{
                 "consumes": [
                     "application/json"
                 ],
-=======
-        "/group/join": {
-            "post": {
->>>>>>> 38dfec8 (GroupService)
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-<<<<<<< HEAD
                     "course"
                 ],
                 "summary": "Create course",
@@ -1927,16 +1921,6 @@ const docTemplate = `{
                         "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/ginutil.ErrorResponse"
-=======
-                    "info"
-                ],
-                "summary": "Lets a student join a group if available",
-                "responses": {
-                    "200": {
-                        "description": "Information about server",
-                        "schema": {
-                            "type": "string"
->>>>>>> 38dfec8 (GroupService)
                         }
                     }
                 }
@@ -3589,6 +3573,59 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/group/join/{uuid}": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Adds the authenticated student to the specified group.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Groups"
+                ],
+                "summary": "Join a group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Group UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successfully joined the group"
+                    },
+                    "400": {
+                        "description": "Invalid or missing user UUID",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "User or group not found",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
                         "schema": {
                             "$ref": "#/definitions/ginutil.ErrorResponse"
                         }

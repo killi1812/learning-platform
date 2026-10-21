@@ -4,14 +4,12 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"slices"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/ginutil"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -19,16 +17,16 @@ import (
 type CourseCtn struct {
 	CourseService ICourseService
 	logger        *zap.SugaredLogger
-	userService user.IUserCrudService
-	groupService IGroupService
+	userService   user.IUserCrudService
+	groupService  IGroupService
 }
 
 func NewCourseCtn(courseService ICourseService, logger *zap.SugaredLogger, userService user.IUserCrudService, groupService IGroupService) app.Api {
 	return &CourseCtn{
 		CourseService: courseService,
 		logger:        logger,
-		userService:  userService,
-		groupService: groupService,
+		userService:   userService,
+		groupService:  groupService,
 	}
 }
 
@@ -37,6 +35,10 @@ func (ctn *CourseCtn) RegisterEndpoints(api *gin.RouterGroup) {
 	courses.Use(authutils.Protect())
 
 	courses.POST("/join/:uuid", ctn.AddStudentToGroup)
+	// courses.GET("/:uuid", ctn.GetGroup)       // TODO: read a group
+	// courses.POST("/:uuid", ctn.PostGroup)     // TODO: create a group
+	// courses.PATCH("/:uuid", ctn.PatchGroup)   // TODO: update a group
+	// courses.DELETE("/:uuid", ctn.DeleteGroup) // TODO: delete a group, note see soft delete on GORM
 
 	// Course catalog routes (match both /course and /course/)
 	courses.GET("", ctn.list)
@@ -90,14 +92,20 @@ func (ctn *CourseCtn) handleError(c *gin.Context, err error, fallbackMsg string)
 	return true
 }
 
-
 // AddStudentToGroup godoc
 //
-//	@Summary	Lets a student join a group if available
-//	@Tags		info
-//	@Produce	json
-//	@Success	200	{object}	string	"Information about server"
-//	@Router		/group/join [post]
+//	@Summary		Join a group
+//	@Description	Adds the authenticated student to the specified group.
+//	@Tags			Groups
+//	@Accept			json
+//	@Produce		json
+//	@Param			uuid	path	string	true	"Group UUID"	format(uuid)
+//	@Security		BearerAuth
+//	@Success		200	"Successfully joined the group"
+//	@Failure		400	{object}	ginutil.ErrorResponse	"Invalid or missing user UUID"
+//	@Failure		404	{object}	ginutil.ErrorResponse	"User or group not found"
+//	@Failure		500	{object}	ginutil.ErrorResponse	"Internal server error"
+//	@Router			/group/join/{uuid} [post]
 func (cnt *CourseCtn) AddStudentToGroup(c *gin.Context) {
 	groupUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
 	if !ok {
@@ -131,43 +139,6 @@ func (cnt *CourseCtn) AddStudentToGroup(c *gin.Context) {
 	println(group)
 
 	c.AbortWithStatus(http.StatusOK)
-}
-
-
-type IGroupService interface {
-	UserJoinGroup(groupUuid uuid.UUID, user *user.User) (*Group, error)
-}
-type GroupService struct {
-	db     *gorm.DB
-	logger *zap.SugaredLogger
-	groups map[uuid.UUID]Group
-}
-
-func (g *GroupService) UserJoinGroup(groupUuid uuid.UUID, user *user.User) (*Group, error) {
-	g.logger.Error("Testing")
-	var group Group
-
-	err := g.db.Where("uuid = ?").First(&group).Error
-	if err != nil {
-		g.logger.Error(err)
-		return nil, err
-	}
-
-	if slices.Contains(group.Members, *user) {
-		g.logger.Errorf("User %v is already in group %v", user, group)
-		return nil, err
-	}
-
-	g.db.Model(&group).Association("group_members").Append(&user)
-
-	return &group, nil
-}
-
-func NewGroupService(db *gorm.DB, logger *zap.SugaredLogger) IGroupService {
-	return &GroupService{
-		db:     db,
-		logger: logger,
-	}
 }
 
 // ListCourses godoc

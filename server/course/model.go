@@ -68,6 +68,7 @@ type Enrollment struct {
 // Group represents a collaboration group of students within a course.
 type Group struct {
 	gorm.Model
+	Uuid     uuid.UUID   `json:"uuid" gorm:"type:uuid;uniqueIndex;not null"`
 	CourseID uint        `json:"courseId" gorm:"not null;index"`
 	Course   *Course     `json:"course,omitempty" gorm:"foreignKey:CourseID;constraint:OnDelete:CASCADE;"`
 	Name     string      `json:"name" gorm:"type:varchar(255);not null"`

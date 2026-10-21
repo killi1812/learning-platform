@@ -228,3 +228,17 @@ func (ModuleDto) FromModel(m *Module) ModuleDto {
 type ReorderModulesDto struct {
 	ModuleUuids []uuid.UUID `json:"moduleUuids" binding:"required,min=1"`
 }
+
+type GroupDto struct {
+	GroupUuid uuid.UUID `json:"groupUuid"`
+	Name      string    `json:"name"`
+}
+
+// FromModel returns a dto from model struct
+func (GroupDto) FromModel(m *Group) GroupDto {
+	dto := &GroupDto{
+		GroupUuid: m.Uuid,
+		Name:      m.Name,
+	}
+	return *dto
+}
