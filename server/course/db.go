@@ -60,6 +60,7 @@ type CourseService struct {
 type IGroupService interface {
 	UserJoinGroup(groupUuid uuid.UUID, user *user.User) (*Group, error)
 	GetGroup(groupUuid uuid.UUID) (*Group, error)
+	DeleteGroup(groupUuid uuid.UUID) error
 }
 type GroupService struct {
 	db     *gorm.DB
@@ -668,4 +669,15 @@ func (g *GroupService) GetGroup(groupUuid uuid.UUID) (*Group, error) {
 		return nil, err
 	}
 	return &group, nil
+}
+
+func (g *GroupService) DeleteGroup(groupUuid uuid.UUID) error {
+	g.logger.Debugf("Getting group %v from database", groupUuid)
+
+	err := g.db.Model(&Group{}).Unscoped().Delete("uuid = ?", groupUuid).Error
+	if err != nil {
+		g.logger.Errorf("Error deleting group %v. Error: %v", groupUuid, err)
+		return err
+	}
+	return nil
 }

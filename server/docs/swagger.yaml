@@ -3012,6 +3012,37 @@ paths:
       summary: Get current user's courses
       tags:
       - course
+  /group/{uuid}:
+    delete:
+      parameters:
+      - description: Group UUID
+        format: uuid
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: ""
+        "400":
+          description: Invalid or missing user UUID
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: User or group not found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Deletes a group
+      tags:
+      - Groups
   /group/join/{uuid}:
     post:
       consumes:

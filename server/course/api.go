@@ -92,6 +92,43 @@ func (ctn *CourseCtn) handleError(c *gin.Context, err error, fallbackMsg string)
 	return true
 }
 
+func (cnt *CourseCtn) PostGroup(c *gin.Context) {
+	cnt.logger.Debugf("Inside PostGroup")
+}
+
+func (cnt *CourseCtn) PatchGroup(c *gin.Context) {
+}
+
+// DeleteGroup godoc
+//
+//	@Summary	Deletes a group
+//	@Tags		Groups
+//	@Produce	json
+//	@Param		uuid	path	string	true	"Group UUID"	format(uuid)
+//	@Security	BearerAuth
+//	@Success	204	""
+//	@Failure	400	{object}	ginutil.ErrorResponse	"Invalid or missing user UUID"
+//	@Failure	404	{object}	ginutil.ErrorResponse	"User or group not found"
+//	@Failure	500	{object}	ginutil.ErrorResponse	"Internal server error"
+//	@Router		/group/{uuid} [delete]
+func (cnt *CourseCtn) DeleteGroup(c *gin.Context) {
+	cnt.logger.Debugf("Inside DeleteGroup")
+	groupUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
+	if !ok {
+		cnt.logger.Errorf("error parsing uuid value = %s", c.Param("uuid"))
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+
+	err := cnt.groupService.DeleteGroup(groupUuid)
+	if err != nil {
+		cnt.logger.Errorf("Can't delete group, %v", err)
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+	c.AbortWithStatus(http.StatusNoContent)
+}
+
 // AddStudentToGroup godoc
 //
 //	@Summary		Join a group
