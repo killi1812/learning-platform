@@ -34,11 +34,15 @@ func (ctn *CourseCtn) RegisterEndpoints(api *gin.RouterGroup) {
 	courses := api.Group("/course")
 	courses.Use(authutils.Protect())
 
-	courses.POST("/join/:uuid", ctn.AddStudentToGroup)
-	// courses.GET("/:uuid", ctn.GetGroup)       // TODO: read a group
-	// courses.POST("/:uuid", ctn.PostGroup)     // TODO: create a group
-	// courses.PATCH("/:uuid", ctn.PatchGroup)   // TODO: update a group
-	// courses.DELETE("/:uuid", ctn.DeleteGroup) // TODO: delete a group, note see soft delete on GORM
+	group := api.Group("/group")
+	group.Use(authutils.Protect())
+
+
+	group.POST("/join/:uuid", ctn.AddStudentToGroup)
+	group.GET("/:uuid", ctn.GetGroup)       // TODO: read a group
+	group.POST("/:uuid", ctn.PostGroup)     // TODO: create a group
+	group.PATCH("/:uuid", ctn.PatchGroup)   // TODO: update a group
+	group.DELETE("/:uuid", ctn.DeleteGroup) // TODO: delete a group, note see soft delete on GORM
 
 	// Course catalog routes (match both /course and /course/)
 	courses.GET("", ctn.list)
@@ -92,11 +96,32 @@ func (ctn *CourseCtn) handleError(c *gin.Context, err error, fallbackMsg string)
 	return true
 }
 
-func (cnt *CourseCtn) PostGroup(c *gin.Context) {
-	cnt.logger.Debugf("Inside PostGroup")
+func (ctn *CourseCtn) GetGroup(c *gin.Context) {
+	ctn.logger.Debugf("Inside GetGroup")
+
+	groupUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
+	if !ok {
+		ctn.logger.Errorf("error parsing uuid value = %s", c.Param("uuid"))
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+
+	group, err := ctn.groupService.GetGroup(groupUuid)
+	if err != nil {
+		ctn.logger.Errorf("Can't delete group, %v", err)
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+	dto := GroupDto{}
+	dto = dto.FromModel(group)
+	c.AbortWithStatusJSON(http.StatusNoContent, dto)
 }
 
-func (cnt *CourseCtn) PatchGroup(c *gin.Context) {
+func (ctn *CourseCtn) PostGroup(c *gin.Context) {
+	ctn.logger.Debugf("Inside PostGroup")
+}
+
+func (ctn *CourseCtn) PatchGroup(c *gin.Context) {
 }
 
 // DeleteGroup godoc
@@ -111,18 +136,18 @@ func (cnt *CourseCtn) PatchGroup(c *gin.Context) {
 //	@Failure	404	{object}	ginutil.ErrorResponse	"User or group not found"
 //	@Failure	500	{object}	ginutil.ErrorResponse	"Internal server error"
 //	@Router		/group/{uuid} [delete]
-func (cnt *CourseCtn) DeleteGroup(c *gin.Context) {
-	cnt.logger.Debugf("Inside DeleteGroup")
+func (ctn *CourseCtn) DeleteGroup(c *gin.Context) {
+	ctn.logger.Debugf("Inside DeleteGroup")
 	groupUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
 	if !ok {
-		cnt.logger.Errorf("error parsing uuid value = %s", c.Param("uuid"))
+		ctn.logger.Errorf("error parsing uuid value = %s", c.Param("uuid"))
 		c.Status(http.StatusInternalServerError)
 		return
 	}
 
-	err := cnt.groupService.DeleteGroup(groupUuid)
+	err := ctn.groupService.DeleteGroup(groupUuid)
 	if err != nil {
-		cnt.logger.Errorf("Can't delete group, %v", err)
+		ctn.logger.Errorf("Can't delete group, %v", err)
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
@@ -143,34 +168,34 @@ func (cnt *CourseCtn) DeleteGroup(c *gin.Context) {
 //	@Failure		404	{object}	ginutil.ErrorResponse	"User or group not found"
 //	@Failure		500	{object}	ginutil.ErrorResponse	"Internal server error"
 //	@Router			/group/join/{uuid} [post]
-func (cnt *CourseCtn) AddStudentToGroup(c *gin.Context) {
+func (ctn *CourseCtn) AddStudentToGroup(c *gin.Context) {
 	groupUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
 	if !ok {
-		cnt.logger.Errorf("error parsing uuid value = %s", c.Param("uuid"))
+		ctn.logger.Errorf("error parsing uuid value = %s", c.Param("uuid"))
 		c.Status(http.StatusInternalServerError)
 		return
 	}
 
 	userUuid, err := authutils.GetUserUUID(c)
 	if err != nil {
-		cnt.logger.Errorf("Can't get user UUID, %v", err)
+		ctn.logger.Errorf("Can't get user UUID, %v", err)
 		c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 
-	user, err := cnt.userService.Read(userUuid)
+	user, err := ctn.userService.Read(userUuid)
 	if err != nil {
-		cnt.logger.Errorf("Can't get user, %v", err)
+		ctn.logger.Errorf("Can't get user, %v", err)
 		c.AbortWithError(http.StatusNotFound, err)
 		return
 	}
 
-	cnt.logger.Infof("Student %v is trying to join group %v", userUuid, groupUuid)
+	ctn.logger.Infof("Student %v is trying to join group %v", userUuid, groupUuid)
 	// TODO: service layer look at the user/db.go
 
-	group, err := cnt.groupService.UserJoinGroup(groupUuid, user)
+	group, err := ctn.groupService.UserJoinGroup(groupUuid, user)
 	if ginutil.HandleServiceError(c, err, gorm.ErrRecordNotFound) {
-		cnt.logger.Errorf("User %v could not join group %v, %v", user, groupUuid, err)
+		ctn.logger.Errorf("User %v could not join group %v, %v", user, groupUuid, err)
 		return
 	}
 	println(group)
