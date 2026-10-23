@@ -2,6 +2,7 @@ package authutils_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -195,6 +196,75 @@ func (suite *MiddlewareTestSuite) TestProtect_SessionValidator() {
 	wRevoked := suite.performRequest(http.MethodGet, "/protected/general", tokenRevoked)
 	assert.Equal(suite.T(), http.StatusUnauthorized, wRevoked.Code)
 	assert.Contains(suite.T(), wRevoked.Body.String(), "Session revoked or expired")
+}
+
+func (suite *MiddlewareTestSuite) TestCheckCourseAccess() {
+	notFoundErr := errors.New("course not found")
+	validUserUuid := uuid.New()
+	courseUuid := uuid.New()
+
+	// 1. Missing claims -> 401
+	w1 := httptest.NewRecorder()
+	c1, _ := gin.CreateTestContext(w1)
+	ok1 := authutils.CheckCourseAccess(c1, courseUuid, func(cUuid, uUuid uuid.UUID, isAdmin bool) (bool, error) {
+		return true, nil
+	}, notFoundErr)
+	assert.False(suite.T(), ok1)
+	assert.Equal(suite.T(), http.StatusUnauthorized, w1.Code)
+
+	// 2. Invalid user UUID in claims -> 401
+	w2 := httptest.NewRecorder()
+	c2, _ := gin.CreateTestContext(w2)
+	badClaims := &authutils.Claims{Role: authutils.ROLE_USER}
+	badClaims.ID = "not-a-uuid"
+	c2.Set(authutils.ContextClaimsKey, badClaims)
+	ok2 := authutils.CheckCourseAccess(c2, courseUuid, func(cUuid, uUuid uuid.UUID, isAdmin bool) (bool, error) {
+		return true, nil
+	}, notFoundErr)
+	assert.False(suite.T(), ok2)
+	assert.Equal(suite.T(), http.StatusUnauthorized, w2.Code)
+
+	validClaims := &authutils.Claims{Role: authutils.ROLE_USER}
+	validClaims.ID = validUserUuid.String()
+
+	// 3. NotFound error -> 404
+	w3 := httptest.NewRecorder()
+	c3, _ := gin.CreateTestContext(w3)
+	c3.Set(authutils.ContextClaimsKey, validClaims)
+	ok3 := authutils.CheckCourseAccess(c3, courseUuid, func(cUuid, uUuid uuid.UUID, isAdmin bool) (bool, error) {
+		return false, notFoundErr
+	}, notFoundErr)
+	assert.False(suite.T(), ok3)
+	assert.Equal(suite.T(), http.StatusNotFound, w3.Code)
+
+	// 4. Unexpected error -> 500
+	w4 := httptest.NewRecorder()
+	c4, _ := gin.CreateTestContext(w4)
+	c4.Set(authutils.ContextClaimsKey, validClaims)
+	ok4 := authutils.CheckCourseAccess(c4, courseUuid, func(cUuid, uUuid uuid.UUID, isAdmin bool) (bool, error) {
+		return false, errors.New("db error")
+	}, notFoundErr)
+	assert.False(suite.T(), ok4)
+	assert.Equal(suite.T(), http.StatusInternalServerError, w4.Code)
+
+	// 5. Forbidden (!allowed) -> 403
+	w5 := httptest.NewRecorder()
+	c5, _ := gin.CreateTestContext(w5)
+	c5.Set(authutils.ContextClaimsKey, validClaims)
+	ok5 := authutils.CheckCourseAccess(c5, courseUuid, func(cUuid, uUuid uuid.UUID, isAdmin bool) (bool, error) {
+		return false, nil
+	}, notFoundErr)
+	assert.False(suite.T(), ok5)
+	assert.Equal(suite.T(), http.StatusForbidden, w5.Code)
+
+	// 6. Allowed -> true
+	w6 := httptest.NewRecorder()
+	c6, _ := gin.CreateTestContext(w6)
+	c6.Set(authutils.ContextClaimsKey, validClaims)
+	ok6 := authutils.CheckCourseAccess(c6, courseUuid, func(cUuid, uUuid uuid.UUID, isAdmin bool) (bool, error) {
+		return true, nil
+	}, notFoundErr)
+	assert.True(suite.T(), ok6)
 }
 
 func TestMiddlewareSuite(t *testing.T) {

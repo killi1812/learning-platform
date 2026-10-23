@@ -32,10 +32,12 @@ func init() {
 func main() {
 	app.Provide(user.NewUserCrudService)
 	app.Provide(auth.NewAuthService)
+	app.Provide(course.NewCourseService)
 
 	app.RegisterApi(info.NewInfoApi)
 	app.RegisterApi(user.NewUserCtn)
 	app.RegisterApi(auth.NewAuthCtn)
+	app.RegisterApi(course.NewCourseCtn)
 
 	app.RegisterModel(&user.User{})
 	// Course

@@ -2,6 +2,7 @@ package authutils
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"slices"
 	"sync"
@@ -21,6 +22,9 @@ const (
 
 // SessionValidator checks whether a session is still active and valid in the database.
 type SessionValidator func(ctx context.Context, userUuid, sessionUuid uuid.UUID) bool
+
+// CourseAccessChecker checks whether a user (or system admin) has required access to a course.
+type CourseAccessChecker func(courseUuid, userUuid uuid.UUID, isSysAdmin bool) (bool, error)
 
 var (
 	sessionValidatorMu     sync.RWMutex
@@ -110,4 +114,36 @@ func GetUserRole(c *gin.Context) (Role, error) {
 		return "", cerror.ErrUserIsNil
 	}
 	return claims.Role, nil
+}
+
+// CheckCourseAccess verifies the authenticated user's access to a course using the provided checker.
+// Aborts with 401/403/404/500 and returns false if access is denied or an error occurs.
+func CheckCourseAccess(c *gin.Context, courseUuid uuid.UUID, checker CourseAccessChecker, notFoundErr error) bool {
+	claims, ok := GetClaims(c)
+	if !ok || claims == nil {
+		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
+		return false
+	}
+	userUuid, err := GetUserUUID(c)
+	if err != nil {
+		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
+		return false
+	}
+
+	isSysAdmin := claims.Role == ROLE_ADMIN
+	allowed, err := checker(courseUuid, userUuid, isSysAdmin)
+	if err != nil {
+		if notFoundErr != nil && errors.Is(err, notFoundErr) {
+			ginutil.RespondWithError(c, http.StatusNotFound, err.Error())
+			return false
+		}
+		zap.S().Errorf("Failed to check course role: %v", err)
+		ginutil.RespondWithError(c, http.StatusInternalServerError, "Internal server error")
+		return false
+	}
+	if !allowed {
+		ginutil.RespondWithError(c, http.StatusForbidden, "Forbidden: insufficient permissions")
+		return false
+	}
+	return true
 }

@@ -49,6 +49,167 @@ definitions:
       accessToken:
         type: string
     type: object
+  course.AddEnrollmentDto:
+    properties:
+      email:
+        type: string
+      role:
+        allOf:
+        - $ref: '#/definitions/course.CourseRole'
+        enum:
+        - STUDENT
+        - TEACHER
+    required:
+    - email
+    type: object
+  course.CourseDto:
+    properties:
+      createdAt:
+        type: string
+      description:
+        type: string
+      teachers:
+        items:
+          type: string
+        type: array
+      term:
+        type: string
+      title:
+        type: string
+      updatedAt:
+        type: string
+      uuid:
+        type: string
+      year:
+        type: integer
+    type: object
+  course.CourseRole:
+    enum:
+    - STUDENT
+    - TEACHER
+    type: string
+    x-enum-varnames:
+    - RoleStudent
+    - RoleTeacher
+  course.CreateCourseDto:
+    properties:
+      description:
+        type: string
+      term:
+        enum:
+        - SPRING
+        - AUTUMN
+        type: string
+      title:
+        maxLength: 255
+        minLength: 2
+        type: string
+      year:
+        maximum: 2100
+        minimum: 2000
+        type: integer
+    required:
+    - term
+    - title
+    - year
+    type: object
+  course.CreateModuleDto:
+    properties:
+      dependsOnUuid:
+        type: string
+      position:
+        type: integer
+      title:
+        maxLength: 255
+        minLength: 2
+        type: string
+    required:
+    - title
+    type: object
+  course.EnrollmentDto:
+    properties:
+      courseUuid:
+        type: string
+      enrolledAt:
+        type: string
+      role:
+        $ref: '#/definitions/course.CourseRole'
+      userEmail:
+        type: string
+      userUuid:
+        type: string
+      username:
+        type: string
+    type: object
+  course.ModuleDto:
+    properties:
+      courseUuid:
+        type: string
+      dependsOn:
+        $ref: '#/definitions/course.ModuleDto'
+      dependsOnUuid:
+        type: string
+      position:
+        type: integer
+      title:
+        type: string
+      uuid:
+        type: string
+    type: object
+  course.MyCourseDto:
+    properties:
+      course:
+        $ref: '#/definitions/course.CourseDto'
+      enrolledAt:
+        type: string
+      role:
+        $ref: '#/definitions/course.CourseRole'
+    type: object
+  course.ReorderModulesDto:
+    properties:
+      moduleUuids:
+        items:
+          type: string
+        minItems: 1
+        type: array
+    required:
+    - moduleUuids
+    type: object
+  course.UpdateCourseDto:
+    properties:
+      description:
+        type: string
+      term:
+        enum:
+        - SPRING
+        - AUTUMN
+        type: string
+      title:
+        maxLength: 255
+        minLength: 2
+        type: string
+      year:
+        maximum: 2100
+        minimum: 2000
+        type: integer
+    required:
+    - term
+    - title
+    - year
+    type: object
+  course.UpdateModuleDto:
+    properties:
+      dependsOnUuid:
+        type: string
+      position:
+        type: integer
+      title:
+        maxLength: 255
+        minLength: 2
+        type: string
+    required:
+    - title
+    type: object
   ginutil.ErrorResponse:
     properties:
       error:
@@ -288,6 +449,652 @@ paths:
       summary: Revoke Session
       tags:
       - auth
+  /course:
+    get:
+      description: Returns all courses with optional filtering by term and year
+      parameters:
+      - description: Term (SPRING or AUTUMN)
+        in: query
+        name: term
+        type: string
+      - description: Academic Year (e.g. 2026)
+        in: query
+        name: year
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/course.CourseDto'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      summary: List courses
+      tags:
+      - course
+    post:
+      consumes:
+      - application/json
+      description: Creates a new course and auto-enrolls creator as TEACHER
+      parameters:
+      - description: Course information
+        in: body
+        name: course
+        required: true
+        schema:
+          $ref: '#/definitions/course.CreateCourseDto'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/course.CourseDto'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create course
+      tags:
+      - course
+  /course/{uuid}:
+    delete:
+      description: Deletes a course and all related modules/enrollments (Teacher or
+        Admin only)
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete course
+      tags:
+      - course
+    get:
+      description: Returns a single course with details
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/course.CourseDto'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      summary: Get course by UUID
+      tags:
+      - course
+    put:
+      consumes:
+      - application/json
+      description: Updates course metadata (Teacher or Admin only)
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Updated course information
+        in: body
+        name: course
+        required: true
+        schema:
+          $ref: '#/definitions/course.UpdateCourseDto'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/course.CourseDto'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update course
+      tags:
+      - course
+  /course/{uuid}/enroll:
+    delete:
+      description: Removes the authenticated user's enrollment from the course
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Withdraw from course
+      tags:
+      - course
+    post:
+      description: Enrolls the authenticated user into the course as STUDENT
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/course.EnrollmentDto'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Self-enroll in course
+      tags:
+      - course
+  /course/{uuid}/enrollments:
+    get:
+      description: Lists all enrollments for a course (Teacher or Admin only)
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/course.EnrollmentDto'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get course enrollments
+      tags:
+      - course
+    post:
+      consumes:
+      - application/json
+      description: Enrolls a user into the course with a specific role (Teacher or
+        Admin only)
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Enrollment details
+        in: body
+        name: enrollment
+        required: true
+        schema:
+          $ref: '#/definitions/course.AddEnrollmentDto'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/course.EnrollmentDto'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Add user to course by email
+      tags:
+      - course
+  /course/{uuid}/module:
+    get:
+      description: Returns all modules of a course ordered by position
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/course.ModuleDto'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      summary: List modules in course
+      tags:
+      - module
+    post:
+      consumes:
+      - application/json
+      description: Creates a new module in a course (Teacher or Admin only)
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Module information
+        in: body
+        name: module
+        required: true
+        schema:
+          $ref: '#/definitions/course.CreateModuleDto'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/course.ModuleDto'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create module
+      tags:
+      - module
+  /course/{uuid}/module/{moduleUuid}:
+    delete:
+      description: Deletes a module from the course (Teacher or Admin only)
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Module UUID
+        in: path
+        name: moduleUuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete module
+      tags:
+      - module
+    get:
+      description: Returns a single module with its prerequisite dependency
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Module UUID
+        in: path
+        name: moduleUuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/course.ModuleDto'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get module
+      tags:
+      - module
+    put:
+      consumes:
+      - application/json
+      description: Updates an existing module's title, position, or prerequisite (Teacher
+        or Admin only)
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Module UUID
+        in: path
+        name: moduleUuid
+        required: true
+        type: string
+      - description: Updated module information
+        in: body
+        name: module
+        required: true
+        schema:
+          $ref: '#/definitions/course.UpdateModuleDto'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/course.ModuleDto'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update module
+      tags:
+      - module
+  /course/{uuid}/module/reorder:
+    put:
+      consumes:
+      - application/json
+      description: Updates positions of modules sequentially according to provided
+        UUID array (Teacher or Admin only)
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Ordered module UUIDs
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/course.ReorderModulesDto'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Reorder modules
+      tags:
+      - module
+  /course/my-course:
+    get:
+      description: Returns all courses the authenticated user is enrolled in with
+        their roles
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/course.MyCourseDto'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get current user's courses
+      tags:
+      - course
   /healthz:
     get:
       description: Returns the health status of the server.

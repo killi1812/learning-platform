@@ -1,44 +1,103 @@
 <template>
-  <v-container class="py-6">
-    <div class="d-flex align-center justify-space-between mb-6">
-      <div>
-        <h1 class="text-h4 font-weight-bold">My Courses</h1>
-        <p class="text-medium-emphasis">Enrolled courses for the current semester</p>
-      </div>
-      <v-btn color="primary" prepend-icon="mdi-plus">Explore Courses</v-btn>
+  <v-container class="py-6" max-width="1400">
+    <div class="d-flex flex-wrap align-center justify-space-between mb-6 ga-4">
+      <h1 class="text-h4 font-weight-bold text-high-emphasis my-0">My Courses</h1>
+      <v-btn
+        color="primary"
+        prepend-icon="mdi-book-search-outline"
+        size="large"
+        variant="elevated"
+        to="/catalog"
+      >
+        Explore Course Catalog
+      </v-btn>
     </div>
 
-    <v-row>
-      <v-col v-for="course in courseList" :key="course.id" cols="12" md="6" lg="4">
-        <v-card elevation="2" rounded="lg">
-          <v-card-item>
-            <template #prepend>
-              <v-avatar color="primary" rounded="lg">
-                <v-icon color="white" icon="mdi-book-open-page-variant" />
-              </v-avatar>
-            </template>
-            <v-card-title class="font-weight-bold">{{ course.code }}</v-card-title>
-            <v-card-subtitle>{{ course.name }}</v-card-subtitle>
-          </v-card-item>
-          <v-card-text>
-            <div class="d-flex justify-space-between text-caption mb-1">
-              <span>Progress</span>
-              <span>{{ course.progress }}%</span>
-            </div>
-            <v-progress-linear :model-value="course.progress" color="primary" height="6" rounded />
-          </v-card-text>
-        </v-card>
-      </v-col>
-    </v-row>
+    <div v-if="loading" class="d-flex justify-center py-12">
+      <v-progress-circular color="primary" indeterminate size="64" />
+    </div>
+
+    <v-card
+      v-else-if="myCourses.length === 0"
+      class="pa-12 text-center bg-surface-variant"
+      elevation="0"
+      rounded="lg"
+    >
+      <v-icon class="mb-4 text-medium-emphasis" icon="mdi-school-outline" size="64" />
+      <h3 class="text-h6 font-weight-medium text-high-emphasis">
+        You are not enrolled in any courses
+      </h3>
+      <p class="text-body-2 text-medium-emphasis mb-6">
+        Browse our course catalog to freely register for courses this semester.
+      </p>
+      <v-btn
+        color="primary"
+        prepend-icon="mdi-book-search-outline"
+        variant="elevated"
+        to="/catalog"
+      >
+        Explore Courses
+      </v-btn>
+    </v-card>
+
+    <div v-else>
+      <!-- Teaching Section (only shown if teaching at least one course) -->
+      <div v-if="teachingCourses.length > 0" class="mb-8">
+        <h2 class="text-h6 font-weight-bold text-high-emphasis mb-4">Teaching:</h2>
+        <v-row>
+          <v-col v-for="item in teachingCourses" :key="item.course.uuid" cols="12" md="6" lg="4">
+            <CourseCard
+              :course="item.course"
+              :role="item.role"
+              :to="`/courses/${item.course.uuid}`"
+            />
+          </v-col>
+        </v-row>
+      </div>
+
+      <!-- Enrolled Section (only shown if enrolled as student in at least one course) -->
+      <div v-if="enrolledCourses.length > 0">
+        <h2 class="text-h6 font-weight-bold text-high-emphasis mb-4">Enrolled:</h2>
+        <v-row>
+          <v-col v-for="item in enrolledCourses" :key="item.course.uuid" cols="12" md="6" lg="4">
+            <CourseCard
+              :course="item.course"
+              :role="item.role"
+              :to="`/courses/${item.course.uuid}`"
+            />
+          </v-col>
+        </v-row>
+      </div>
+    </div>
   </v-container>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import CourseCard from '@/components/CourseCard.vue'
+import { useToast } from '@/composables/useToast'
+import { getMyCourses } from '@/api/course'
+import type { MyCourse } from '@/types/course'
 
-const courseList = ref([
-  { id: 1, code: 'DAT250', name: 'Advanced Software Technologies', progress: 75 },
-  { id: 2, code: 'DAT251', name: 'Modern Systems Architecture', progress: 40 },
-  { id: 3, code: 'INF100', name: 'Introduction to Programming', progress: 100 },
-])
+const toast = useToast()
+const myCourses = ref<MyCourse[]>([])
+const loading = ref(false)
+
+const teachingCourses = computed(() => myCourses.value.filter(item => item.role === 'TEACHER'))
+const enrolledCourses = computed(() => myCourses.value.filter(item => item.role === 'STUDENT'))
+
+async function fetchMyCourses() {
+  loading.value = true
+  try {
+    myCourses.value = await getMyCourses()
+  } catch (err: unknown) {
+    toast.error(err instanceof Error ? err.message : 'Failed to load enrolled courses.')
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(() => {
+  fetchMyCourses()
+})
 </script>
