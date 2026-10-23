@@ -2,13 +2,12 @@ definitions:
   auth.LoginDto:
     properties:
       email:
-        example: user@example.com
+        example: superadmin@example.com
         type: string
       password:
-        example: Pa$$w0rd123
+        example: Pa$$w0rd
         type: string
       sessionId:
-        example: 550e8400-e29b-41d4-a716-446655440000
         type: string
     required:
     - email
