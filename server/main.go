@@ -11,6 +11,7 @@ import (
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/submission"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/seed"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/storage"
 
 	"go.uber.org/zap"
 )
@@ -30,14 +31,19 @@ func init() {
 }
 
 func main() {
+	app.Provide(func() storage.IStorageService {
+		return storage.NewSeaweedStorageService(app.SeaweedFSEndpoint)
+	})
 	app.Provide(user.NewUserCrudService)
 	app.Provide(auth.NewAuthService)
 	app.Provide(course.NewCourseService)
+	app.Provide(content.NewContentService)
 
 	app.RegisterApi(info.NewInfoApi)
 	app.RegisterApi(user.NewUserCtn)
 	app.RegisterApi(auth.NewAuthCtn)
 	app.RegisterApi(course.NewCourseCtn)
+	app.RegisterApi(content.NewContentCtn)
 
 	app.RegisterModel(&user.User{})
 	// Course

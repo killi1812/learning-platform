@@ -49,6 +49,42 @@ definitions:
       accessToken:
         type: string
     type: object
+  content.StaticPageDto:
+    properties:
+      contentType:
+        type: string
+      createdAt:
+        type: string
+      description:
+        type: string
+      fileName:
+        type: string
+      fileSize:
+        type: integer
+      moduleUuid:
+        type: string
+      position:
+        type: integer
+      sourceUrl:
+        type: string
+      title:
+        type: string
+      updatedAt:
+        type: string
+      uuid:
+        type: string
+    type: object
+  content.UpdateStaticPageDto:
+    properties:
+      description:
+        type: string
+      title:
+        maxLength: 255
+        minLength: 2
+        type: string
+    required:
+    - title
+    type: object
   course.AddEnrollmentDto:
     properties:
       email:
@@ -1021,6 +1057,313 @@ paths:
       summary: Update module
       tags:
       - module
+  /course/{uuid}/module/{moduleUuid}/static-page:
+    get:
+      description: Returns all static page materials for a given course module
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Module UUID
+        in: path
+        name: moduleUuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/content.StaticPageDto'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List static pages / materials in module
+      tags:
+      - content
+    post:
+      consumes:
+      - multipart/form-data
+      description: Uploads course material file (.pdf, .pptx, .md, .txt) to object
+        storage or creates link (Teacher or Admin only)
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Module UUID
+        in: path
+        name: moduleUuid
+        required: true
+        type: string
+      - description: Course material file
+        in: formData
+        name: file
+        type: file
+      - description: Title of material
+        in: formData
+        name: title
+        type: string
+      - description: Optional description
+        in: formData
+        name: description
+        type: string
+      - description: Optional iframe or external URL
+        in: formData
+        name: sourceUrl
+        type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/content.StaticPageDto'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Upload or create static page material
+      tags:
+      - content
+  /course/{uuid}/module/{moduleUuid}/static-page/{pageUuid}:
+    delete:
+      description: Deletes static page material from object storage and database (Teacher
+        or Admin only)
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Module UUID
+        in: path
+        name: moduleUuid
+        required: true
+        type: string
+      - description: Static page content UUID
+        in: path
+        name: pageUuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete static page material
+      tags:
+      - content
+    get:
+      description: Returns metadata for a specific static page
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Module UUID
+        in: path
+        name: moduleUuid
+        required: true
+        type: string
+      - description: Static page content UUID
+        in: path
+        name: pageUuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/content.StaticPageDto'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get static page material details
+      tags:
+      - content
+    put:
+      consumes:
+      - application/json
+      description: Updates title and description for course material (Teacher or Admin
+        only)
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Module UUID
+        in: path
+        name: moduleUuid
+        required: true
+        type: string
+      - description: Static page content UUID
+        in: path
+        name: pageUuid
+        required: true
+        type: string
+      - description: Updated page metadata
+        in: body
+        name: page
+        required: true
+        schema:
+          $ref: '#/definitions/content.UpdateStaticPageDto'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/content.StaticPageDto'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update static page metadata
+      tags:
+      - content
+  /course/{uuid}/module/{moduleUuid}/static-page/{pageUuid}/preview:
+    get:
+      description: Streams file content with inline Content-Disposition for browser
+        embedded preview
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Module UUID
+        in: path
+        name: moduleUuid
+        required: true
+        type: string
+      - description: Static page content UUID
+        in: path
+        name: pageUuid
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Preview or stream static page material file
+      tags:
+      - content
   /course/{uuid}/module/reorder:
     put:
       consumes:

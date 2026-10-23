@@ -18,10 +18,11 @@ var (
 
 // Environment variables
 var (
-	Port         int
-	AccessKey    string
-	RefreshKey   string
-	MongoConn    string
-	DatabaseConn string
-	RunMigrate   bool
+	Port              int
+	AccessKey         string
+	RefreshKey        string
+	MongoConn         string
+	DatabaseConn      string
+	SeaweedFSEndpoint string
+	RunMigrate        bool
 )

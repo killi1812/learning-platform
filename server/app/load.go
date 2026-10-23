@@ -36,6 +36,7 @@ func LoadConfig() {
 
 	MongoConn = loadString("MONGO_CONN")
 	DatabaseConn = loadString("DATABASE_CONN")
+	SeaweedFSEndpoint = loadStringDefault("SEAWEEDFS_ENDPOINT", "http://localhost:8888")
 
 	zap.S().Debugf("Finished loading env variables")
 }
@@ -90,6 +91,14 @@ func loadString(name string) string {
 		zap.S().Debugf("Loaded %s = [REDACTED]", name)
 	} else {
 		zap.S().Debugf("Loaded %s = %s", name, rez)
+	}
+	return rez
+}
+
+func loadStringDefault(name, defVal string) string {
+	rez := strings.TrimSpace(os.Getenv(name))
+	if rez == "" {
+		return defVal
 	}
 	return rez
 }
