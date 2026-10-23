@@ -2,7 +2,6 @@ package auth
 
 import (
 	"errors"
-	"net"
 	"net/http"
 	"strings"
 
@@ -42,55 +41,6 @@ func (c *AuthCtn) RegisterEndpoints(api *gin.RouterGroup) {
 	protected.DELETE("/session/:uuid", c.revokeSession)
 }
 
-const (
-	RefreshTokenCookieName   = "refresh_token"
-	RefreshTokenCookiePath   = "/api/auth"
-	RefreshTokenCookieMaxAge = 7 * 24 * 3600 // 7 days in seconds
-)
-
-func isSecureCookie(c *gin.Context) bool {
-	if c.Request.TLS != nil {
-		return true
-	}
-	if strings.EqualFold(c.Request.Header.Get("X-Forwarded-Proto"), "https") {
-		return true
-	}
-	host := c.Request.Host
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
-	}
-	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
-		return false
-	}
-	return app.Build == app.BuildProd
-}
-
-func setRefreshTokenCookie(c *gin.Context, refreshToken string) {
-	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(
-		RefreshTokenCookieName,
-		refreshToken,
-		RefreshTokenCookieMaxAge,
-		RefreshTokenCookiePath,
-		"",
-		isSecureCookie(c),
-		true,
-	)
-}
-
-func clearRefreshTokenCookie(c *gin.Context) {
-	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(
-		RefreshTokenCookieName,
-		"",
-		-1,
-		RefreshTokenCookiePath,
-		"",
-		isSecureCookie(c),
-		true,
-	)
-}
-
 // Login godoc
 //
 //	@Summary		User login
@@ -119,7 +69,7 @@ func (l *AuthCtn) login(c *gin.Context) {
 		return
 	}
 
-	setRefreshTokenCookie(c, tokens.RefreshToken)
+	authutils.SetRefreshTokenCookie(c, tokens.RefreshToken)
 	c.JSON(http.StatusOK, TokenDto{AccessToken: tokens.AccessToken})
 }
 
@@ -155,7 +105,7 @@ func (l *AuthCtn) register(c *gin.Context) {
 		return
 	}
 
-	setRefreshTokenCookie(c, tokens.RefreshToken)
+	authutils.SetRefreshTokenCookie(c, tokens.RefreshToken)
 	c.JSON(http.StatusCreated, TokenDto{AccessToken: tokens.AccessToken})
 }
 
@@ -171,7 +121,7 @@ func (l *AuthCtn) register(c *gin.Context) {
 //	@Failure		401	{object}	ginutil.ErrorResponse
 //	@Router			/auth/refresh [post]
 func (l *AuthCtn) refreshToken(c *gin.Context) {
-	tokenStr, err := c.Cookie(RefreshTokenCookieName)
+	tokenStr, err := c.Cookie(authutils.RefreshTokenCookieName)
 	if err != nil || tokenStr == "" {
 		tokenStr = c.Request.Header.Get("Authorization")
 	}
@@ -184,12 +134,12 @@ func (l *AuthCtn) refreshToken(c *gin.Context) {
 	tokens, err := l.auth.RefreshTokens(tokenStr)
 	if err != nil {
 		l.logger.Errorf("Refresh failed err = %v", err)
-		clearRefreshTokenCookie(c)
+		authutils.ClearRefreshTokenCookie(c)
 		ginutil.RespondWithError(c, http.StatusUnauthorized, "Invalid or expired refresh token")
 		return
 	}
 
-	setRefreshTokenCookie(c, tokens.RefreshToken)
+	authutils.SetRefreshTokenCookie(c, tokens.RefreshToken)
 	c.JSON(http.StatusOK, TokenDto{AccessToken: tokens.AccessToken})
 }
 
@@ -205,7 +155,7 @@ func (l *AuthCtn) refreshToken(c *gin.Context) {
 //	@Failure		500	{object}	ginutil.ErrorResponse
 //	@Router			/auth/logout [post]
 func (l *AuthCtn) logoutCurrent(c *gin.Context) {
-	clearRefreshTokenCookie(c)
+	authutils.ClearRefreshTokenCookie(c)
 
 	userUuid, err := authutils.GetUserUUID(c)
 	if err != nil {
@@ -243,7 +193,7 @@ func (l *AuthCtn) logoutCurrent(c *gin.Context) {
 //	@Failure		500	{object}	ginutil.ErrorResponse
 //	@Router			/auth/logout-all [post]
 func (l *AuthCtn) logoutAll(c *gin.Context) {
-	clearRefreshTokenCookie(c)
+	authutils.ClearRefreshTokenCookie(c)
 
 	userUuid, err := authutils.GetUserUUID(c)
 	if err != nil {

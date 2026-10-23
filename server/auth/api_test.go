@@ -2,7 +2,6 @@ package auth
 
 import (
 	"bytes"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -151,7 +150,7 @@ func TestAuthCtn_Login(t *testing.T) {
 
 		var refreshCookie *http.Cookie
 		for _, c := range w.Result().Cookies() {
-			if c.Name == RefreshTokenCookieName {
+			if c.Name == authUtil.RefreshTokenCookieName {
 				refreshCookie = c
 				break
 			}
@@ -159,7 +158,7 @@ func TestAuthCtn_Login(t *testing.T) {
 		assert.NotNil(t, refreshCookie)
 		assert.Equal(t, "jwt-refresh-xyz", refreshCookie.Value)
 		assert.True(t, refreshCookie.HttpOnly)
-		assert.Equal(t, RefreshTokenCookiePath, refreshCookie.Path)
+		assert.Equal(t, authUtil.RefreshTokenCookiePath, refreshCookie.Path)
 	})
 
 	t.Run("Valid login without sessionId succeeds (sessionId is optional)", func(t *testing.T) {
@@ -239,7 +238,7 @@ func TestAuthCtn_RefreshToken(t *testing.T) {
 
 		req, _ := http.NewRequest(http.MethodPost, "/api/auth/refresh", nil)
 		req.AddCookie(&http.Cookie{
-			Name:  RefreshTokenCookieName,
+			Name:  authUtil.RefreshTokenCookieName,
 			Value: "cookie-refresh-token",
 		})
 		w := httptest.NewRecorder()
@@ -252,7 +251,7 @@ func TestAuthCtn_RefreshToken(t *testing.T) {
 
 		var refreshCookie *http.Cookie
 		for _, c := range w.Result().Cookies() {
-			if c.Name == RefreshTokenCookieName {
+			if c.Name == authUtil.RefreshTokenCookieName {
 				refreshCookie = c
 				break
 			}
@@ -260,7 +259,7 @@ func TestAuthCtn_RefreshToken(t *testing.T) {
 		assert.NotNil(t, refreshCookie)
 		assert.Equal(t, "new-rotated-refresh-token", refreshCookie.Value)
 		assert.True(t, refreshCookie.HttpOnly)
-		assert.Equal(t, RefreshTokenCookiePath, refreshCookie.Path)
+		assert.Equal(t, authUtil.RefreshTokenCookiePath, refreshCookie.Path)
 	})
 
 	t.Run("Valid refresh with Authorization header returns 200 with new tokens", func(t *testing.T) {
@@ -287,7 +286,7 @@ func TestAuthCtn_RefreshToken(t *testing.T) {
 
 		var refreshCookie *http.Cookie
 		for _, c := range w.Result().Cookies() {
-			if c.Name == RefreshTokenCookieName {
+			if c.Name == authUtil.RefreshTokenCookieName {
 				refreshCookie = c
 				break
 			}
@@ -322,7 +321,7 @@ func TestAuthCtn_RefreshToken(t *testing.T) {
 		assert.Equal(t, http.StatusUnauthorized, w.Code)
 		var refreshCookie *http.Cookie
 		for _, c := range w.Result().Cookies() {
-			if c.Name == RefreshTokenCookieName {
+			if c.Name == authUtil.RefreshTokenCookieName {
 				refreshCookie = c
 				break
 			}
@@ -356,7 +355,7 @@ func TestAuthCtn_DualLogout(t *testing.T) {
 
 		var refreshCookie *http.Cookie
 		for _, c := range w.Result().Cookies() {
-			if c.Name == RefreshTokenCookieName {
+			if c.Name == authUtil.RefreshTokenCookieName {
 				refreshCookie = c
 				break
 			}
@@ -384,7 +383,7 @@ func TestAuthCtn_DualLogout(t *testing.T) {
 
 		var refreshCookie *http.Cookie
 		for _, c := range w.Result().Cookies() {
-			if c.Name == RefreshTokenCookieName {
+			if c.Name == authUtil.RefreshTokenCookieName {
 				refreshCookie = c
 				break
 			}
@@ -585,7 +584,7 @@ func TestAuthCtn_Register(t *testing.T) {
 
 		var refreshCookie *http.Cookie
 		for _, c := range w.Result().Cookies() {
-			if c.Name == RefreshTokenCookieName {
+			if c.Name == authUtil.RefreshTokenCookieName {
 				refreshCookie = c
 				break
 			}
@@ -593,7 +592,7 @@ func TestAuthCtn_Register(t *testing.T) {
 		assert.NotNil(t, refreshCookie)
 		assert.Equal(t, "mock-registered-refresh-token", refreshCookie.Value)
 		assert.True(t, refreshCookie.HttpOnly)
-		assert.Equal(t, RefreshTokenCookiePath, refreshCookie.Path)
+		assert.Equal(t, authUtil.RefreshTokenCookiePath, refreshCookie.Path)
 	})
 
 	t.Run("Invalid register payload returns 400", func(t *testing.T) {
@@ -654,51 +653,3 @@ func TestNewAuthCtn(t *testing.T) {
 	assert.NotNil(t, ctn)
 }
 
-func TestIsSecureCookie(t *testing.T) {
-	// TLS connection
-	req1 := httptest.NewRequest(http.MethodGet, "https://example.com", nil)
-	req1.TLS = &tls.ConnectionState{}
-	w1 := httptest.NewRecorder()
-	c1, _ := gin.CreateTestContext(w1)
-	c1.Request = req1
-	assert.True(t, isSecureCookie(c1))
-
-	// X-Forwarded-Proto
-	req2 := httptest.NewRequest(http.MethodGet, "http://example.com", nil)
-	req2.Header.Set("X-Forwarded-Proto", "https")
-	w2 := httptest.NewRecorder()
-	c2, _ := gin.CreateTestContext(w2)
-	c2.Request = req2
-	assert.True(t, isSecureCookie(c2))
-
-	// Localhost with port
-	req3 := httptest.NewRequest(http.MethodGet, "http://localhost:8080", nil)
-	w3 := httptest.NewRecorder()
-	c3, _ := gin.CreateTestContext(w3)
-	c3.Request = req3
-	assert.False(t, isSecureCookie(c3))
-
-	// 127.0.0.1
-	req4 := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8080", nil)
-	w4 := httptest.NewRecorder()
-	c4, _ := gin.CreateTestContext(w4)
-	c4.Request = req4
-	assert.False(t, isSecureCookie(c4))
-
-	// [::1]
-	req5 := httptest.NewRequest(http.MethodGet, "http://[::1]:8080", nil)
-	w5 := httptest.NewRecorder()
-	c5, _ := gin.CreateTestContext(w5)
-	c5.Request = req5
-	assert.False(t, isSecureCookie(c5))
-
-	// Remote host in prod
-	oldBuild := app.Build
-	defer func() { app.Build = oldBuild }()
-	app.Build = app.BuildProd
-	req6 := httptest.NewRequest(http.MethodGet, "http://example.com:8080", nil)
-	w6 := httptest.NewRecorder()
-	c6, _ := gin.CreateTestContext(w6)
-	c6.Request = req6
-	assert.True(t, isSecureCookie(c6))
-}
