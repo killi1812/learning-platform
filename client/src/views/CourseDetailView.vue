@@ -525,14 +525,6 @@
             placeholder="https://example.com/embed"
             variant="outlined"
           />
-
-          <v-textarea
-            v-model="uploadDescription"
-            label="Description / Notes (Optional)"
-            placeholder="Brief description of the material..."
-            rows="2"
-            variant="outlined"
-          />
         </v-card-text>
 
         <v-card-actions class="pa-4 bg-surface-variant">
@@ -640,7 +632,6 @@ const modulePages = ref<Record<string, StaticPage[]>>({})
 const uploadDialogOpen = ref(false)
 const targetModuleUuid = ref<string>('')
 const uploadFile = ref<File | File[] | null>(null)
-const uploadDescription = ref('')
 const uploadSourceUrl = ref('')
 const uploading = ref(false)
 
@@ -671,7 +662,6 @@ async function loadAllModulePages() {
 function openUploadDialog(modUuid: string) {
   targetModuleUuid.value = modUuid
   uploadFile.value = null
-  uploadDescription.value = ''
   uploadSourceUrl.value = ''
   uploadDialogOpen.value = true
 }
@@ -689,7 +679,6 @@ async function handleUploadMaterial() {
   try {
     await uploadStaticPage(resolvedCourseUuid.value, targetModuleUuid.value, {
       file: rawFile || undefined,
-      description: uploadDescription.value.trim() || undefined,
       sourceUrl: uploadSourceUrl.value.trim() || undefined,
     })
     toast.success('Course material uploaded successfully.')
