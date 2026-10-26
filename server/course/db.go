@@ -14,6 +14,7 @@ var (
 	ErrCourseNotFound          = errors.New("course not found")
 	ErrAlreadyEnrolled         = errors.New("user is already enrolled in this course")
 	ErrEnrollmentNotFound      = errors.New("enrollment not found")
+	ErrCannotRemoveTeacher     = errors.New("cannot remove teacher from course")
 	ErrUserNotFound            = errors.New("user not found")
 	ErrUnauthorized            = errors.New("user does not have required permissions for this course")
 	ErrModuleNotFound          = errors.New("module not found")
@@ -34,6 +35,7 @@ type ICourseService interface {
 	GetCourseEnrollments(courseUuid uuid.UUID) ([]Enrollment, error)
 	GetUserEnrollments(userUuid uuid.UUID) ([]Enrollment, error)
 	IsTeacherOrAdmin(courseUuid uuid.UUID, userUuid uuid.UUID, isSystemAdmin bool) (bool, error)
+	IsEnrolledOrAdmin(courseUuid uuid.UUID, userUuid uuid.UUID, isSystemAdmin bool) (bool, error)
 
 	CreateModule(courseUuid uuid.UUID, m *Module) (*Module, error)
 	GetModule(courseUuid uuid.UUID, moduleUuid uuid.UUID) (*Module, error)
@@ -269,12 +271,21 @@ func (s *CourseService) Withdraw(courseUuid uuid.UUID, userUuid uuid.UUID) error
 		return err
 	}
 
-	res := s.db.Unscoped().Where("user_id = ? AND course_id = ?", u.ID, c.ID).Delete(&Enrollment{})
+	var enrollment Enrollment
+	if err := s.db.Where("user_id = ? AND course_id = ?", u.ID, c.ID).First(&enrollment).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrEnrollmentNotFound
+		}
+		return err
+	}
+
+	if enrollment.Role == RoleTeacher {
+		return ErrCannotRemoveTeacher
+	}
+
+	res := s.db.Unscoped().Delete(&enrollment)
 	if res.Error != nil {
 		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return ErrEnrollmentNotFound
 	}
 	return nil
 }
@@ -323,6 +334,30 @@ func (s *CourseService) IsTeacherOrAdmin(courseUuid uuid.UUID, userUuid uuid.UUI
 
 	var enrollment Enrollment
 	if err := s.db.Where("user_id = ? AND course_id = ? AND role = ?", u.ID, c.ID, RoleTeacher).First(&enrollment).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+// IsEnrolledOrAdmin checks whether the given user is enrolled in the course or a system administrator.
+func (s *CourseService) IsEnrolledOrAdmin(courseUuid uuid.UUID, userUuid uuid.UUID, isSystemAdmin bool) (bool, error) {
+	if isSystemAdmin {
+		return true, nil
+	}
+	u, err := s.findUser(userUuid)
+	if err != nil {
+		return false, err
+	}
+	c, err := s.findCourse(courseUuid)
+	if err != nil {
+		return false, err
+	}
+
+	var enrollment Enrollment
+	if err := s.db.Where("user_id = ? AND course_id = ?", u.ID, c.ID).First(&enrollment).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return false, nil
 		}

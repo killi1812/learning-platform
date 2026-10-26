@@ -195,6 +195,41 @@ func TestCourseService_CRUDAndEnrollment(t *testing.T) {
 		assert.True(t, isTeacher)
 	})
 
+	t.Run("IsEnrolledOrAdmin correctly checks enrollment", func(t *testing.T) {
+		// Teacher bob is enrolled
+		enrolled, err := svc.IsEnrolledOrAdmin(createdCourse.Uuid, teacher.Uuid, false)
+		assert.NoError(t, err)
+		assert.True(t, enrolled)
+
+		// Student alice is enrolled
+		enrolled, err = svc.IsEnrolledOrAdmin(createdCourse.Uuid, student.Uuid, false)
+		assert.NoError(t, err)
+		assert.True(t, enrolled)
+
+		// Unenrolled user
+		unenrolledUser := &user.User{
+			Uuid:     uuid.New(),
+			Email:    "random@hvl.no",
+			Username: "random",
+			Role:     authutils.ROLE_USER,
+		}
+		assert.NoError(t, svc.db.Create(unenrolledUser).Error)
+		enrolled, err = svc.IsEnrolledOrAdmin(createdCourse.Uuid, unenrolledUser.Uuid, false)
+		assert.NoError(t, err)
+		assert.False(t, enrolled)
+
+		// System admin overrides enrollment check
+		enrolled, err = svc.IsEnrolledOrAdmin(createdCourse.Uuid, unenrolledUser.Uuid, true)
+		assert.NoError(t, err)
+		assert.True(t, enrolled)
+
+		// Non-existent user or course
+		_, err = svc.IsEnrolledOrAdmin(createdCourse.Uuid, uuid.New(), false)
+		assert.Error(t, err)
+		_, err = svc.IsEnrolledOrAdmin(uuid.New(), student.Uuid, false)
+		assert.Error(t, err)
+	})
+
 	t.Run("UpdateCourse modifies course attributes", func(t *testing.T) {
 		updatedData := &Course{
 			Title:       "Distributed Systems v2",
@@ -209,7 +244,11 @@ func TestCourseService_CRUDAndEnrollment(t *testing.T) {
 	})
 
 	t.Run("Withdraw removes student enrollment", func(t *testing.T) {
-		err := svc.Withdraw(createdCourse.Uuid, student.Uuid)
+		// Cannot remove a teacher
+		err := svc.Withdraw(createdCourse.Uuid, teacher.Uuid)
+		assert.ErrorIs(t, err, ErrCannotRemoveTeacher)
+
+		err = svc.Withdraw(createdCourse.Uuid, student.Uuid)
 		assert.NoError(t, err)
 
 		// Repeating withdraw returns ErrEnrollmentNotFound

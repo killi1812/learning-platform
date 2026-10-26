@@ -46,6 +46,7 @@ func (ctn *CourseCtn) RegisterEndpoints(api *gin.RouterGroup) {
 	courses.DELETE("/:uuid/enroll", ctn.withdraw)
 	courses.GET("/:uuid/enrollments", ctn.getEnrollments)
 	courses.POST("/:uuid/enrollments", ctn.addEnrollment)
+	courses.DELETE("/:uuid/enrollments/:userUuid", ctn.removeEnrollment)
 
 	// Module modification routes
 	courses.POST("/:uuid/module", ctn.createModule)
@@ -66,7 +67,8 @@ func (ctn *CourseCtn) handleError(c *gin.Context, err error, fallbackMsg string)
 		ginutil.RespondWithError(c, http.StatusNotFound, err.Error())
 	case errors.Is(err, ErrAlreadyEnrolled):
 		ginutil.RespondWithError(c, http.StatusConflict, err.Error())
-	case errors.Is(err, ErrSelfPrerequisite),
+	case errors.Is(err, ErrCannotRemoveTeacher),
+		errors.Is(err, ErrSelfPrerequisite),
 		errors.Is(err, ErrCrossCoursePrerequisite):
 		ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
 	default:
@@ -457,6 +459,43 @@ func (ctn *CourseCtn) addEnrollment(c *gin.Context) {
 	c.JSON(http.StatusCreated, EnrollmentDto{}.FromModel(enrollment))
 }
 
+// RemoveEnrollment godoc
+//
+//	@Summary		Remove user from course
+//	@Description	Removes a user's enrollment from the course (Teacher or Admin only)
+//	@Tags			course
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			uuid		path	string	true	"Course UUID"
+//	@Param			userUuid	path	string	true	"User UUID"
+//	@Success		204
+//	@Failure		400	{object}	ginutil.ErrorResponse
+//	@Failure		401	{object}	ginutil.ErrorResponse
+//	@Failure		403	{object}	ginutil.ErrorResponse
+//	@Failure		404	{object}	ginutil.ErrorResponse
+//	@Failure		500	{object}	ginutil.ErrorResponse
+//	@Router			/course/{uuid}/enrollments/{userUuid} [delete]
+func (ctn *CourseCtn) removeEnrollment(c *gin.Context) {
+	courseUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
+	if !ok {
+		return
+	}
+	targetUserUuid, ok := ginutil.ParseUUIDParam(c, "userUuid")
+	if !ok {
+		return
+	}
+
+	if !authutils.CheckCourseAccess(c, courseUuid, ctn.CourseService.IsTeacherOrAdmin, ErrCourseNotFound) {
+		return
+	}
+
+	if ctn.handleError(c, ctn.CourseService.Withdraw(courseUuid, targetUserUuid), "Failed to remove enrollment") {
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
 // ListModules godoc
 //
 //	@Summary		List modules in course
@@ -472,6 +511,10 @@ func (ctn *CourseCtn) addEnrollment(c *gin.Context) {
 func (ctn *CourseCtn) listModules(c *gin.Context) {
 	courseUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
 	if !ok {
+		return
+	}
+
+	if !authutils.CheckCourseAccess(c, courseUuid, ctn.CourseService.IsEnrolledOrAdmin, ErrCourseNotFound) {
 		return
 	}
 
@@ -511,6 +554,10 @@ func (ctn *CourseCtn) getModule(c *gin.Context) {
 
 	moduleUuid, ok := ginutil.ParseUUIDParam(c, "moduleUuid")
 	if !ok {
+		return
+	}
+
+	if !authutils.CheckCourseAccess(c, courseUuid, ctn.CourseService.IsEnrolledOrAdmin, ErrCourseNotFound) {
 		return
 	}
 

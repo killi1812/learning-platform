@@ -166,6 +166,10 @@ func (ctn *ContentCtn) list(c *gin.Context) {
 		return
 	}
 
+	if !authutils.CheckCourseAccess(c, courseUuid, ctn.courseService.IsEnrolledOrAdmin, course.ErrCourseNotFound) {
+		return
+	}
+
 	pages, err := ctn.contentService.ListStaticPages(courseUuid, moduleUuid)
 	if ctn.handleError(c, err) {
 		return
@@ -209,6 +213,10 @@ func (ctn *ContentCtn) get(c *gin.Context) {
 		return
 	}
 
+	if !authutils.CheckCourseAccess(c, courseUuid, ctn.courseService.IsEnrolledOrAdmin, course.ErrCourseNotFound) {
+		return
+	}
+
 	sp, err := ctn.contentService.GetStaticPage(courseUuid, moduleUuid, pageUuid)
 	if ctn.handleError(c, err) {
 		return
@@ -243,6 +251,10 @@ func (ctn *ContentCtn) preview(c *gin.Context) {
 	}
 	pageUuid, ok := ginutil.ParseUUIDParam(c, "pageUuid")
 	if !ok {
+		return
+	}
+
+	if !authutils.CheckCourseAccess(c, courseUuid, ctn.courseService.IsEnrolledOrAdmin, course.ErrCourseNotFound) {
 		return
 	}
 

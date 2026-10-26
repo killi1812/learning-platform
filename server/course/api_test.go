@@ -30,6 +30,7 @@ type mockCourseService struct {
 	getCourseEnrollmentsFunc func(courseUuid uuid.UUID) ([]Enrollment, error)
 	getUserEnrollmentsFunc   func(userUuid uuid.UUID) ([]Enrollment, error)
 	isTeacherOrAdminFunc     func(courseUuid uuid.UUID, userUuid uuid.UUID, isSystemAdmin bool) (bool, error)
+	isEnrolledOrAdminFunc    func(courseUuid uuid.UUID, userUuid uuid.UUID, isSystemAdmin bool) (bool, error)
 	createModuleFunc         func(courseUuid uuid.UUID, m *Module) (*Module, error)
 	getModuleFunc            func(courseUuid uuid.UUID, moduleUuid uuid.UUID) (*Module, error)
 	listModulesFunc          func(courseUuid uuid.UUID) ([]Module, error)
@@ -122,6 +123,13 @@ func (m *mockCourseService) GetUserEnrollments(userUuid uuid.UUID) ([]Enrollment
 func (m *mockCourseService) IsTeacherOrAdmin(courseUuid uuid.UUID, userUuid uuid.UUID, isSystemAdmin bool) (bool, error) {
 	if m.isTeacherOrAdminFunc != nil {
 		return m.isTeacherOrAdminFunc(courseUuid, userUuid, isSystemAdmin)
+	}
+	return true, nil
+}
+
+func (m *mockCourseService) IsEnrolledOrAdmin(courseUuid uuid.UUID, userUuid uuid.UUID, isSystemAdmin bool) (bool, error) {
+	if m.isEnrolledOrAdminFunc != nil {
+		return m.isEnrolledOrAdminFunc(courseUuid, userUuid, isSystemAdmin)
 	}
 	return true, nil
 }
@@ -228,6 +236,7 @@ func TestCourseCtn_HappyPaths(t *testing.T) {
 	depUuid := uuid.New()
 	modUuid := uuid.New()
 	courseUuid := uuid.New()
+	targetUserUuid := uuid.New()
 	auth := generateAuthHeader(t, uuid.New(), authutils.ROLE_USER)
 
 	svc := &mockCourseService{
@@ -283,6 +292,8 @@ func TestCourseCtn_HappyPaths(t *testing.T) {
 		Email: "student@hvl.no", Role: RoleStudent,
 	})
 	assert.Equal(t, http.StatusCreated, w.Code)
+	w = doReq(r, http.MethodDelete, "/api/course/"+courseUuid.String()+"/enrollments/"+targetUserUuid.String(), auth, nil)
+	assert.Equal(t, http.StatusNoContent, w.Code)
 
 	// Modules CRUD & reorder
 	w = doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module", auth, nil)
@@ -304,6 +315,7 @@ func TestCourseCtn_ValidationAndParamErrors(t *testing.T) {
 	auth := generateAuthHeader(t, uuid.New(), authutils.ROLE_USER)
 	cID := uuid.New().String()
 	mID := uuid.New().String()
+	uID := uuid.New().String()
 
 	cases := []struct {
 		method string
@@ -325,6 +337,8 @@ func TestCourseCtn_ValidationAndParamErrors(t *testing.T) {
 		{http.MethodGet, "/api/course/bad-uuid/enrollments", auth, nil, http.StatusBadRequest},
 		{http.MethodPost, "/api/course/bad-uuid/enrollments", auth, "{}", http.StatusBadRequest},
 		{http.MethodPost, "/api/course/" + cID + "/enrollments", auth, "{bad", http.StatusBadRequest},
+		{http.MethodDelete, "/api/course/bad-uuid/enrollments/" + uID, auth, nil, http.StatusBadRequest},
+		{http.MethodDelete, "/api/course/" + cID + "/enrollments/bad-uuid", auth, nil, http.StatusBadRequest},
 		{http.MethodGet, "/api/course/bad-uuid/module", auth, nil, http.StatusBadRequest},
 		{http.MethodGet, "/api/course/bad-uuid/module/" + mID, auth, nil, http.StatusBadRequest},
 		{http.MethodGet, "/api/course/" + cID + "/module/bad-uuid", auth, nil, http.StatusBadRequest},
@@ -349,6 +363,7 @@ func TestCourseCtn_ServiceErrorsAndPermissions(t *testing.T) {
 	auth := generateAuthHeader(t, uuid.New(), authutils.ROLE_USER)
 	cID := uuid.New().String()
 	mID := uuid.New().String()
+	uID := uuid.New().String()
 	dbErr := errors.New("db error")
 
 	// Forbidden when not teacher/admin
@@ -363,6 +378,7 @@ func TestCourseCtn_ServiceErrorsAndPermissions(t *testing.T) {
 		{http.MethodDelete, "/api/course/" + cID, nil},
 		{http.MethodGet, "/api/course/" + cID + "/enrollments", nil},
 		{http.MethodPost, "/api/course/" + cID + "/enrollments", AddEnrollmentDto{Email: "a@b.c"}},
+		{http.MethodDelete, "/api/course/" + cID + "/enrollments/" + uID, nil},
 		{http.MethodPost, "/api/course/" + cID + "/module", CreateModuleDto{Title: "Module"}},
 		{http.MethodPut, "/api/course/" + cID + "/module/" + mID, UpdateModuleDto{Title: "Module"}},
 		{http.MethodDelete, "/api/course/" + cID + "/module/" + mID, nil},
@@ -370,6 +386,13 @@ func TestCourseCtn_ServiceErrorsAndPermissions(t *testing.T) {
 	} {
 		assert.Equal(t, http.StatusForbidden, doReq(rForbidden, tc.method, tc.path, auth, tc.body).Code)
 	}
+
+	// Forbidden when not enrolled/admin for modules
+	rNotEnrolled, _ := setupCourseTestRouter(&mockCourseService{
+		isEnrolledOrAdminFunc: func(uuid.UUID, uuid.UUID, bool) (bool, error) { return false, nil },
+	})
+	assert.Equal(t, http.StatusForbidden, doReq(rNotEnrolled, http.MethodGet, "/api/course/"+cID+"/module", auth, nil).Code)
+	assert.Equal(t, http.StatusForbidden, doReq(rNotEnrolled, http.MethodGet, "/api/course/"+cID+"/module/"+mID, auth, nil).Code)
 
 	// NotFound & Conflict & BadRequest service errors
 	rNotFound, _ := setupCourseTestRouter(&mockCourseService{
@@ -396,6 +419,13 @@ func TestCourseCtn_ServiceErrorsAndPermissions(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, doReq(rNotFound, http.MethodDelete, "/api/course/"+cID+"/enroll", auth, nil).Code)
 	assert.Equal(t, http.StatusNotFound, doReq(rNotFound, http.MethodGet, "/api/course/"+cID+"/enrollments", auth, nil).Code)
 	assert.Equal(t, http.StatusNotFound, doReq(rNotFound, http.MethodPost, "/api/course/"+cID+"/enrollments", auth, AddEnrollmentDto{Email: "a@b.c"}).Code)
+	assert.Equal(t, http.StatusNotFound, doReq(rNotFound, http.MethodDelete, "/api/course/"+cID+"/enrollments/"+uID, auth, nil).Code)
+
+	// Cannot remove teacher returns 400 BadRequest
+	rCannotRemoveTeacher, _ := setupCourseTestRouter(&mockCourseService{
+		withdrawFunc: func(uuid.UUID, uuid.UUID) error { return ErrCannotRemoveTeacher },
+	})
+	assert.Equal(t, http.StatusBadRequest, doReq(rCannotRemoveTeacher, http.MethodDelete, "/api/course/"+cID+"/enrollments/"+uID, auth, nil).Code)
 	assert.Equal(t, http.StatusNotFound, doReq(rNotFound, http.MethodGet, "/api/course/"+cID+"/module", auth, nil).Code)
 	assert.Equal(t, http.StatusNotFound, doReq(rNotFound, http.MethodGet, "/api/course/"+cID+"/module/"+mID, auth, nil).Code)
 	assert.Equal(t, http.StatusBadRequest, doReq(rNotFound, http.MethodPost, "/api/course/"+cID+"/module", auth, CreateModuleDto{Title: "Module"}).Code)
@@ -421,6 +451,7 @@ func TestCourseCtn_ServiceErrorsAndPermissions(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, doReq(rInternal, http.MethodDelete, "/api/course/"+cID+"/enroll", auth, nil).Code)
 	assert.Equal(t, http.StatusInternalServerError, doReq(rInternal, http.MethodGet, "/api/course/my-course", auth, nil).Code)
 	assert.Equal(t, http.StatusInternalServerError, doReq(rInternal, http.MethodPost, "/api/course/"+cID+"/enrollments", auth, AddEnrollmentDto{Email: "a@b.c"}).Code)
+	assert.Equal(t, http.StatusInternalServerError, doReq(rInternal, http.MethodDelete, "/api/course/"+cID+"/enrollments/"+uID, auth, nil).Code)
 	assert.Equal(t, http.StatusInternalServerError, doReq(rInternal, http.MethodPost, "/api/course/"+cID+"/module", auth, CreateModuleDto{Title: "Module"}).Code)
 	assert.Equal(t, http.StatusInternalServerError, doReq(rInternal, http.MethodPut, "/api/course/"+cID+"/module/"+mID, auth, UpdateModuleDto{Title: "Module"}).Code)
 	assert.Equal(t, http.StatusInternalServerError, doReq(rInternal, http.MethodPut, "/api/course/"+cID+"/module/reorder", auth, ReorderModulesDto{ModuleUuids: []uuid.UUID{uuid.New()}}).Code)

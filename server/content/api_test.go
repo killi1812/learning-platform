@@ -121,12 +121,20 @@ func (m *mockContentService) DeleteStaticPage(courseUuid, moduleUuid, contentUui
 
 type mockCourseServiceForContent struct {
 	course.ICourseService
-	isTeacherOrAdminFunc func(courseUuid, userUuid uuid.UUID, isSystemAdmin bool) (bool, error)
+	isTeacherOrAdminFunc  func(courseUuid, userUuid uuid.UUID, isSystemAdmin bool) (bool, error)
+	isEnrolledOrAdminFunc func(courseUuid, userUuid uuid.UUID, isSystemAdmin bool) (bool, error)
 }
 
 func (m *mockCourseServiceForContent) IsTeacherOrAdmin(courseUuid, userUuid uuid.UUID, isSystemAdmin bool) (bool, error) {
 	if m.isTeacherOrAdminFunc != nil {
 		return m.isTeacherOrAdminFunc(courseUuid, userUuid, isSystemAdmin)
+	}
+	return true, nil
+}
+
+func (m *mockCourseServiceForContent) IsEnrolledOrAdmin(courseUuid, userUuid uuid.UUID, isSystemAdmin bool) (bool, error) {
+	if m.isEnrolledOrAdminFunc != nil {
+		return m.isEnrolledOrAdminFunc(courseUuid, userUuid, isSystemAdmin)
 	}
 	return true, nil
 }
@@ -330,6 +338,28 @@ func TestContentCtn_ListAndGet(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, w.Code)
 	})
 
+	t.Run("list forbidden when not enrolled", func(t *testing.T) {
+		courseMock := &mockCourseServiceForContent{
+			isEnrolledOrAdminFunc: func(courseUuid, userUuid uuid.UUID, isSystemAdmin bool) (bool, error) {
+				return false, nil
+			},
+		}
+		r := setupContentApiTest(&mockContentService{}, courseMock)
+		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page", auth, nil)
+		assert.Equal(t, http.StatusForbidden, w.Code)
+	})
+
+	t.Run("get static page forbidden when not enrolled", func(t *testing.T) {
+		courseMock := &mockCourseServiceForContent{
+			isEnrolledOrAdminFunc: func(courseUuid, userUuid uuid.UUID, isSystemAdmin bool) (bool, error) {
+				return false, nil
+			},
+		}
+		r := setupContentApiTest(&mockContentService{}, courseMock)
+		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page/"+pageUuid.String(), auth, nil)
+		assert.Equal(t, http.StatusForbidden, w.Code)
+	})
+
 	t.Run("get static page successfully", func(t *testing.T) {
 		r := setupContentApiTest(&mockContentService{}, &mockCourseServiceForContent{})
 		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page/"+pageUuid.String(), auth, nil)
@@ -411,6 +441,17 @@ func TestContentCtn_Preview(t *testing.T) {
 		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page/"+pageUuid.String()+"/preview", auth, nil)
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Equal(t, "application/octet-stream", w.Header().Get("Content-Type"))
+	})
+
+	t.Run("preview forbidden when not enrolled", func(t *testing.T) {
+		courseMock := &mockCourseServiceForContent{
+			isEnrolledOrAdminFunc: func(courseUuid, userUuid uuid.UUID, isSystemAdmin bool) (bool, error) {
+				return false, nil
+			},
+		}
+		r := setupContentApiTest(&mockContentService{}, courseMock)
+		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page/"+pageUuid.String()+"/preview", auth, nil)
+		assert.Equal(t, http.StatusForbidden, w.Code)
 	})
 }
 
