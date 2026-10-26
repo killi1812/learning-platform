@@ -4,16 +4,22 @@ import (
 	"errors"
 	"fmt"
 
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/course"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 	"github.com/google/uuid"
 )
 
 // seedEnrollments enrolls teachers and students into courses and returns all created or existing enrollments.
-func seedEnrollments(courseService course.ICourseService, courses []*course.Course, teachers []*user.User, students []*user.User) ([]*course.Enrollment, error) {
+func seedEnrollments(courses []*course.Course, teachers []*user.User, students []*user.User) ([]*course.Enrollment, error) {
 	if len(courses) < 2 || len(teachers) < 2 || len(students) < 10 {
 		return nil, errors.New("insufficient courses, teachers, or students for enrollments")
 	}
+
+	var courseService course.ICourseService
+	app.Invoke(func(c course.ICourseService) {
+		courseService = c
+	})
 
 	c1 := courses[0]
 	c2 := courses[1]

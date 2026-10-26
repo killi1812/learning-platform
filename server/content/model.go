@@ -80,16 +80,15 @@ type Assignment struct {
 	AcceptsLateSubmissions bool           `json:"acceptsLateSubmissions" gorm:"not null;default:false"`
 
 	// 1-to-1 extension relations for Class Table Inheritance (HANDIN has no subtype extension table)
-	Quiz           *Quiz           `json:"quiz,omitempty" gorm:"foreignKey:ContentID;constraint:OnDelete:CASCADE;"`
-	CodingExercise *CodingExercise `json:"codingExercise,omitempty" gorm:"foreignKey:ContentID;constraint:OnDelete:CASCADE;"`
+	Quiz           *Quiz           `json:"quiz,omitempty" gorm:"foreignKey:ContentID;references:ContentID;constraint:OnDelete:CASCADE;"`
+	CodingExercise *CodingExercise `json:"codingExercise,omitempty" gorm:"foreignKey:ContentID;references:ContentID;constraint:OnDelete:CASCADE;"`
 }
 
 // Quiz is an Assignment subtype: an interactive knowledge check with configurable attempts and questions.
 type Quiz struct {
-	ContentID   uint        `json:"contentId" gorm:"primaryKey;autoIncrement:false"`
-	Assignment  *Assignment `json:"assignment,omitempty" gorm:"foreignKey:ContentID;references:ContentID;constraint:OnDelete:CASCADE;"`
-	MaxAttempts int         `json:"maxAttempts" gorm:"not null;default:1"`
-	Questions   []Question  `json:"questions,omitempty" gorm:"foreignKey:QuizID;references:ContentID;constraint:OnDelete:CASCADE;"`
+	ContentID   uint       `json:"contentId" gorm:"primaryKey;autoIncrement:false"`
+	MaxAttempts int        `json:"maxAttempts" gorm:"not null;default:1"`
+	Questions   []Question `json:"questions,omitempty" gorm:"foreignKey:QuizID;references:ContentID;constraint:OnDelete:CASCADE;"`
 }
 
 // Question represents an individual quiz prompt supporting hints and automated grading criteria.
@@ -108,9 +107,8 @@ type Question struct {
 
 // CodingExercise is an Assignment subtype: an automated coding task with starter code repo and test suites.
 type CodingExercise struct {
-	ContentID       uint        `json:"contentId" gorm:"primaryKey;autoIncrement:false"`
-	Assignment      *Assignment `json:"assignment,omitempty" gorm:"foreignKey:ContentID;references:ContentID;constraint:OnDelete:CASCADE;"`
-	StarterCodeRepo string      `json:"starterCodeRepo" gorm:"type:varchar(255);not null"`
+	ContentID       uint   `json:"contentId" gorm:"primaryKey;autoIncrement:false"`
+	StarterCodeRepo string `json:"starterCodeRepo" gorm:"type:varchar(255);not null"`
 	// TODO: This needs more thinking it is not opnly string. But that is for later
 	VisibleTestCases string `json:"visibleTestCases,omitempty" gorm:"type:text"`
 	HiddenTestCases  string `json:"hiddenTestCases,omitempty" gorm:"type:text"`

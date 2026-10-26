@@ -3,6 +3,7 @@ package seed
 import (
 	"fmt"
 
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
 )
@@ -10,7 +11,12 @@ import (
 const _DEFAULT_SEED_PASSWORD = "Pa$$w0rd"
 
 // seedTeachers creates 3 teacher accounts (or retrieves existing ones) and returns them.
-func seedTeachers(userCrud user.IUserCrudService) ([]*user.User, error) {
+func seedTeachers() ([]*user.User, error) {
+	var userCrud user.IUserCrudService
+	app.Invoke(func(u user.IUserCrudService) {
+		userCrud = u
+	})
+
 	teachers := make([]*user.User, 3)
 	for i := range 3 {
 		num := i + 1
