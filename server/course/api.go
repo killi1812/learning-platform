@@ -117,8 +117,39 @@ func (ctn *CourseCtn) GetGroup(c *gin.Context) {
 	c.AbortWithStatusJSON(http.StatusNoContent, dto)
 }
 
+
+// PostGroup godoc
+//
+//	@Summary		Creates a new group
+//	@Tags			Groups
+//	@Accept			json
+//	@Produce		json
+//	@Param			uuid	path	string	true	"Group UUID"	format(uuid)
+//	@Security		BearerAuth
+//	@Success		200	"Successfully created a group"
+//	@Failure		400	{object}	ginutil.ErrorResponse	"Invalid or missing user UUID"
+//	@Failure		404	{object}	ginutil.ErrorResponse	"User or group not found"
+//	@Failure		500	{object}	ginutil.ErrorResponse	"Internal server error"
+//	@Router			/group/{uuid} [post]
 func (ctn *CourseCtn) PostGroup(c *gin.Context) {
 	ctn.logger.Debugf("Inside PostGroup")
+
+	groupUuid, found := ginutil.ParseUUIDParam(c, "uuid")
+	if found {
+		ctn.logger.Errorf("The uuid value = %s already exists", c.Param("uuid"))
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+
+	group, err := ctn.groupService.PostGroup(groupUuid)
+	if err != nil {
+		ctn.logger.Errorf("Can't create group, %v", err)
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+	dto := GroupDto{}
+	dto = dto.FromModel(group)
+	c.AbortWithStatusJSON(http.StatusNoContent, dto)
 }
 
 func (ctn *CourseCtn) PatchGroup(c *gin.Context) {

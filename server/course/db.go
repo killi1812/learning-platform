@@ -60,6 +60,7 @@ type CourseService struct {
 type IGroupService interface {
 	UserJoinGroup(groupUuid uuid.UUID, user *user.User) (*Group, error)
 	GetGroup(groupUuid uuid.UUID) (*Group, error)
+	PostGroup(groupUuid uuid.UUID) (*Group, error)
 	DeleteGroup(groupUuid uuid.UUID) error
 }
 type GroupService struct {
@@ -666,6 +667,19 @@ func (g *GroupService) GetGroup(groupUuid uuid.UUID) (*Group, error) {
 	err := g.db.Where("uuid = ?", groupUuid).First(&group).Error
 	if err != nil {
 		g.logger.Errorf("Error fetching group %v. Error: %v", groupUuid, err)
+		return nil, err
+	}
+	return &group, nil
+}
+
+
+func (g *GroupService) PostGroup(groupUuid uuid.UUID) (*Group, error) {
+	g.logger.Debugf("Getting group %v from database", groupUuid)
+	var group Group
+
+	err := g.db.Create(&group).Error
+	if err != nil {
+		g.logger.Errorf("Error creating group %v. Error: %v", groupUuid, err)
 		return nil, err
 	}
 	return &group, nil
