@@ -124,6 +124,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useToast } from '@/composables/useToast'
 import VueOfficePptx from '@vue-office/pptx'
 import VueOfficeDocx from '@vue-office/docx'
 import { getStaticPage, getStaticPagePreviewBlob } from '@/api/content'
@@ -136,6 +137,7 @@ const props = defineProps<{
 }>()
 
 const router = useRouter()
+const toast = useToast()
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -241,7 +243,16 @@ async function loadPage() {
       }
     }
   } catch (err: unknown) {
-    error.value = err instanceof Error ? err.message : 'Failed to load static page material'
+    const errorMsg = err instanceof Error ? err.message : 'Failed to load static page material'
+    error.value = errorMsg
+    if (
+      errorMsg.includes('Forbidden') ||
+      errorMsg.includes('insufficient permissions') ||
+      errorMsg.includes('403')
+    ) {
+      toast.error('You must be enrolled in this course to access this material.')
+      router.push(`/courses/${props.courseUuid}`)
+    }
   } finally {
     loading.value = false
   }

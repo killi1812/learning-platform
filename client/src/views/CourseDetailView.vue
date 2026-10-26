@@ -17,7 +17,7 @@
           <v-icon start icon="mdi-information-outline" />
           Overview
         </v-tab>
-        <v-tab value="modules">
+        <v-tab v-if="isEnrolled" value="modules">
           <v-icon start icon="mdi-view-module" />
           Course Modules ({{ modules.length }})
         </v-tab>
@@ -25,11 +25,11 @@
           <v-icon start icon="mdi-account-group" />
           Participants ({{ enrollments.length }})
         </v-tab>
-        <v-tab value="assignments">
+        <v-tab v-if="isEnrolled" value="assignments">
           <v-icon start icon="mdi-clipboard-text-outline" />
           Assignments
         </v-tab>
-        <v-tab value="groups">
+        <v-tab v-if="isEnrolled" value="groups">
           <v-icon start icon="mdi-account-multiple" />
           Groups
         </v-tab>
@@ -41,6 +41,35 @@
 
       <!-- TAB: OVERVIEW -->
       <div v-if="activeTab === 'overview'">
+        <!-- Enrollment Protection Alert -->
+        <v-alert
+          v-if="!isEnrolled"
+          class="mb-6"
+          color="info"
+          icon="mdi-shield-lock-outline"
+          variant="tonal"
+        >
+          <div class="d-flex flex-wrap align-center justify-space-between ga-3">
+            <div>
+              <div class="text-subtitle-1 font-weight-bold">
+                You are not enrolled in this course
+              </div>
+              <div class="text-body-2 text-medium-emphasis">
+                Enroll as a participant to access modules, materials, assignments, and groups.
+              </div>
+            </div>
+            <v-btn
+              color="primary"
+              :loading="enrolling"
+              prepend-icon="mdi-account-plus"
+              variant="elevated"
+              @click="handleSelfEnroll"
+            >
+              Enroll in Course
+            </v-btn>
+          </div>
+        </v-alert>
+
         <v-card class="pa-6 bg-surface mb-6" elevation="1" rounded="lg">
           <div class="d-flex flex-wrap align-center ga-3 mb-4">
             <v-chip
@@ -77,7 +106,7 @@
       </div>
 
       <!-- TAB: MODULES -->
-      <div v-if="activeTab === 'modules'">
+      <div v-if="activeTab === 'modules' && isEnrolled">
         <div class="d-flex align-center justify-space-between mb-4">
           <h2 class="text-h5 font-weight-bold text-high-emphasis my-0">Course Modules</h2>
           <v-btn
@@ -289,6 +318,7 @@
                 <th class="text-left font-weight-bold">User Email</th>
                 <th class="text-left font-weight-bold">Course Role</th>
                 <th class="text-left font-weight-bold">Enrolled At</th>
+                <th class="text-right font-weight-bold">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -306,6 +336,18 @@
                 <td class="text-medium-emphasis">
                   {{ new Date(e.enrolledAt).toLocaleDateString() }}
                 </td>
+                <td class="text-right">
+                  <v-btn
+                    v-if="e.role === 'STUDENT'"
+                    color="error"
+                    :disabled="!e.userUuid"
+                    icon="mdi-delete-outline"
+                    :loading="deletingEnrollmentUserUuid === e.userUuid"
+                    size="small"
+                    variant="text"
+                    @click="handleRemoveEnrollment(e)"
+                  />
+                </td>
               </tr>
             </tbody>
           </v-table>
@@ -313,7 +355,7 @@
       </div>
 
       <!-- TAB: ASSIGNMENTS -->
-      <div v-if="activeTab === 'assignments'">
+      <div v-if="activeTab === 'assignments' && isEnrolled">
         <v-card class="pa-6 bg-surface mb-6 text-center" elevation="1" rounded="lg">
           <v-icon class="mb-3 text-medium-emphasis" icon="mdi-clipboard-text-outline" size="48" />
           <h2 class="text-h5 font-weight-bold text-high-emphasis mb-2">Assignments</h2>
@@ -324,7 +366,7 @@
       </div>
 
       <!-- TAB: GROUPS -->
-      <div v-if="activeTab === 'groups'">
+      <div v-if="activeTab === 'groups' && isEnrolled">
         <v-card class="pa-6 bg-surface mb-6 text-center" elevation="1" rounded="lg">
           <v-icon class="mb-3 text-medium-emphasis" icon="mdi-account-multiple" size="48" />
           <h2 class="text-h5 font-weight-bold text-high-emphasis mb-2">Groups</h2>
@@ -548,13 +590,14 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useToast } from '@/composables/useToast'
 import {
   getCourse,
   getMyCourses,
+  selfEnroll,
   listModules,
   getCourseEnrollments,
   updateModule,
@@ -562,6 +605,7 @@ import {
   reorderModules,
   deleteModule,
   addEnrollment,
+  removeEnrollment,
   updateCourse,
   deleteCourse,
 } from '@/api/course'
@@ -595,6 +639,15 @@ const userRole = ref<'STUDENT' | 'TEACHER' | undefined>(undefined)
 const isTeacher = computed(
   () => userRole.value === 'TEACHER' || hasRole('admin') || hasRole('superadmin'),
 )
+const isEnrolled = computed(() => !!userRole.value || hasRole('admin') || hasRole('superadmin'))
+const enrolling = ref(false)
+
+watch(activeTab, newTab => {
+  if (newTab !== 'overview' && !isEnrolled.value) {
+    activeTab.value = 'overview'
+    toast.info('You must be enrolled in this course to access course content.')
+  }
+})
 
 function goBack() {
   emit('back')
@@ -626,6 +679,7 @@ const addEnrollmentDialogOpen = ref(false)
 const newEnrollmentEmail = ref('')
 const newEnrollmentRole = ref<'STUDENT' | 'TEACHER'>('STUDENT')
 const addingEnrollment = ref(false)
+const deletingEnrollmentUserUuid = ref<string | undefined>(undefined)
 
 // Course materials state
 const modulePages = ref<Record<string, StaticPage[]>>({})
@@ -799,18 +853,37 @@ async function fetchCourseDetails() {
     const mine = myCourses.find(mc => mc.course.uuid === resolvedCourseUuid.value)
     userRole.value = mine ? mine.role : undefined
 
-    // Load modules
-    modules.value = await listModules(resolvedCourseUuid.value)
-    await loadAllModulePages()
+    if (isEnrolled.value) {
+      // Load modules
+      modules.value = await listModules(resolvedCourseUuid.value)
+      await loadAllModulePages()
 
-    // Load enrollments if teacher
-    if (isTeacher.value) {
-      enrollments.value = await getCourseEnrollments(resolvedCourseUuid.value).catch(() => [])
+      // Load enrollments if teacher
+      if (isTeacher.value) {
+        enrollments.value = await getCourseEnrollments(resolvedCourseUuid.value).catch(() => [])
+      }
+    } else {
+      activeTab.value = 'overview'
+      modules.value = []
     }
   } catch (err: unknown) {
     toast.error(err instanceof Error ? err.message : 'Failed to load course details.')
   } finally {
     loading.value = false
+  }
+}
+
+async function handleSelfEnroll() {
+  enrolling.value = true
+  try {
+    await selfEnroll(resolvedCourseUuid.value)
+    toast.success('Successfully enrolled in the course!')
+    await fetchCourseDetails()
+    activeTab.value = 'modules'
+  } catch (err: unknown) {
+    toast.error(err instanceof Error ? err.message : 'Failed to enroll in course.')
+  } finally {
+    enrolling.value = false
   }
 }
 
@@ -905,6 +978,22 @@ async function handleAddEnrollment() {
     toast.error(err instanceof Error ? err.message : 'Failed to add participant.')
   } finally {
     addingEnrollment.value = false
+  }
+}
+
+async function handleRemoveEnrollment(enrollment: Enrollment) {
+  if (!enrollment.userUuid || enrollment.role !== 'STUDENT') return
+  if (!confirm(`Are you sure you want to remove ${enrollment.userEmail} from this course?`)) return
+  deletingEnrollmentUserUuid.value = enrollment.userUuid
+  try {
+    await removeEnrollment(resolvedCourseUuid.value, enrollment.userUuid)
+    toast.success(`Removed ${enrollment.userEmail} from course.`)
+    enrollments.value = await getCourseEnrollments(resolvedCourseUuid.value)
+    course.value = await getCourse(resolvedCourseUuid.value)
+  } catch (err: unknown) {
+    toast.error(err instanceof Error ? err.message : 'Failed to remove participant.')
+  } finally {
+    deletingEnrollmentUserUuid.value = undefined
   }
 }
 
