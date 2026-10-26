@@ -4,15 +4,21 @@ import (
 	"errors"
 	"fmt"
 
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/course"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 )
 
 // seedCourses creates 2 seed courses (or retrieves existing ones) using the provided teachers and returns them.
-func seedCourses(courseService course.ICourseService, teachers []*user.User) ([]*course.Course, error) {
+func seedCourses(teachers []*user.User) ([]*course.Course, error) {
 	if len(teachers) < 3 {
 		return nil, errors.New("seedCourses requires at least 3 teachers")
 	}
+
+	var courseService course.ICourseService
+	app.Invoke(func(c course.ICourseService) {
+		courseService = c
+	})
 
 	existingCourses, err := courseService.ListCourses(nil, nil)
 	if err != nil {

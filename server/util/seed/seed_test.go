@@ -191,38 +191,41 @@ func TestSeedInsert(t *testing.T) {
 			&content.Assignment{},
 		)
 
-		userCrud := user.NewUserCrudService(db, zap.S())
-		courseSvc := course.NewCourseService(db, zap.S())
-		contentSvc := content.NewContentService(db, zap.S())
+		app.Test()
+		app.Provide(func() *gorm.DB { return db })
+		app.Provide(zap.S)
+		app.Provide(user.NewUserCrudService)
+		app.Provide(course.NewCourseService)
+		app.Provide(content.NewContentService)
 
-		teachers, err := seedTeachers(userCrud)
+		teachers, err := seedTeachers()
 		assert.NoError(t, err)
 		assert.Len(t, teachers, 3)
 		assert.Equal(t, "teacher1@example.com", teachers[0].Email)
 
-		students, err := seedStudents(userCrud)
+		students, err := seedStudents()
 		assert.NoError(t, err)
 		assert.Len(t, students, 10)
 		assert.Equal(t, "student1@example.com", students[0].Email)
 
-		courses, err := seedCourses(courseSvc, teachers)
+		courses, err := seedCourses(teachers)
 		assert.NoError(t, err)
 		assert.Len(t, courses, 2)
 
-		enrollments, err := seedEnrollments(courseSvc, courses, teachers, students)
+		enrollments, err := seedEnrollments(courses, teachers, students)
 		assert.NoError(t, err)
 		assert.NotEmpty(t, enrollments)
 
-		modules, err := seedModules(courseSvc, courses)
+		modules, err := seedModules(courses)
 		assert.NoError(t, err)
 		assert.Len(t, modules, 4)
 
-		assignments, err := seedAssignments(contentSvc, modules)
+		assignments, err := seedAssignments(modules)
 		assert.NoError(t, err)
 		assert.Len(t, assignments, 4)
 
 		// Calling seedTeachers again returns existing items without duplicating
-		teachersAgain, err := seedTeachers(userCrud)
+		teachersAgain, err := seedTeachers()
 		assert.NoError(t, err)
 		assert.Len(t, teachersAgain, 3)
 		assert.Equal(t, teachers[0].ID, teachersAgain[0].ID)
@@ -230,6 +233,11 @@ func TestSeedInsert(t *testing.T) {
 
 	t.Run("seedTeachers and seedStudents do not fail when users already exist with old email", func(t *testing.T) {
 		db := testutil.NewSqliteTestDb(t, &user.User{})
+		app.Test()
+		app.Provide(func() *gorm.DB { return db })
+		app.Provide(zap.S)
+		app.Provide(user.NewUserCrudService)
+
 		userCrud := user.NewUserCrudService(db, zap.S())
 
 		// Pre-create user with username "teacher1" and old email "teacher1@hvl.no"
@@ -240,7 +248,7 @@ func TestSeedInsert(t *testing.T) {
 		}, "Pa$$w0rd")
 		assert.NoError(t, err)
 
-		teachers, err := seedTeachers(userCrud)
+		teachers, err := seedTeachers()
 		assert.NoError(t, err)
 		assert.Len(t, teachers, 3)
 		assert.Equal(t, "teacher1@example.com", teachers[0].Email)

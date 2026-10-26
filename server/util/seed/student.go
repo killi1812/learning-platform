@@ -3,12 +3,18 @@ package seed
 import (
 	"fmt"
 
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
 )
 
 // seedStudents creates 10 student accounts (or retrieves existing ones) and returns them.
-func seedStudents(userCrud user.IUserCrudService) ([]*user.User, error) {
+func seedStudents() ([]*user.User, error) {
+	var userCrud user.IUserCrudService
+	app.Invoke(func(u user.IUserCrudService) {
+		userCrud = u
+	})
+
 	students := make([]*user.User, 10)
 	for i := range 10 {
 		num := i + 1

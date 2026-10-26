@@ -28,6 +28,18 @@ func TestContentAggregate_ClassTableInheritanceAndPreloads(t *testing.T) {
 		&content.CodingExercise{},
 		&content.StudentInteraction{},
 	)
+	assert.NoError(t, db.Exec("PRAGMA foreign_keys = ON").Error)
+
+	var assignmentsDDL, quizzesDDL, codingExercisesDDL string
+	assert.NoError(t, db.Raw("SELECT sql FROM sqlite_master WHERE type='table' AND name='assignments'").Scan(&assignmentsDDL).Error)
+	assert.NoError(t, db.Raw("SELECT sql FROM sqlite_master WHERE type='table' AND name='quizzes'").Scan(&quizzesDDL).Error)
+	assert.NoError(t, db.Raw("SELECT sql FROM sqlite_master WHERE type='table' AND name='coding_exercises'").Scan(&codingExercisesDDL).Error)
+
+	assert.Contains(t, assignmentsDDL, "REFERENCES `contents`(`id`)")
+	assert.NotContains(t, assignmentsDDL, "fk_quizzes_assignment")
+	assert.NotContains(t, assignmentsDDL, "fk_coding_exercises_assignment")
+	assert.Contains(t, quizzesDDL, "REFERENCES `assignments`(`content_id`)")
+	assert.Contains(t, codingExercisesDDL, "REFERENCES `assignments`(`content_id`)")
 
 	u := &user.User{
 		Uuid:         uuid.New(),

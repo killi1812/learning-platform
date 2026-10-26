@@ -4,12 +4,18 @@ import (
 	"fmt"
 	"time"
 
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/content"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/course"
 )
 
 // seedAssignments seeds 1 assignment per module (or retrieves existing ones) and returns them.
-func seedAssignments(contentService content.IContentService, modules []*course.Module) ([]*content.Content, error) {
+func seedAssignments(modules []*course.Module) ([]*content.Content, error) {
+	var contentService content.IContentService
+	app.Invoke(func(c content.IContentService) {
+		contentService = c
+	})
+
 	now := time.Now()
 	openDeadline := now.Add(14 * 24 * time.Hour)
 	pastDeadline := now.Add(-2 * 24 * time.Hour)

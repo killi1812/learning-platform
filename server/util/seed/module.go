@@ -3,11 +3,17 @@ package seed
 import (
 	"fmt"
 
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/course"
 )
 
 // seedModules seeds 2 modules per course (or retrieves existing ones) and returns them.
-func seedModules(courseService course.ICourseService, courses []*course.Course) ([]*course.Module, error) {
+func seedModules(courses []*course.Course) ([]*course.Module, error) {
+	var courseService course.ICourseService
+	app.Invoke(func(c course.ICourseService) {
+		courseService = c
+	})
+
 	allModules := make([]*course.Module, 0, len(courses)*2)
 
 	for _, crs := range courses {
