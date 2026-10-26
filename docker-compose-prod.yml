@@ -4,13 +4,13 @@ services:
     container_name: prod-postgres
     restart: always
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-learning_platform}
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - prod_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-learning_platform}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -42,9 +42,27 @@ services:
       default:
         aliases:
           - seaweedfs
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    container_name: prod-rabbitmq
+    restart: always
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    volumes:
+      - prod_rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      default:
+        aliases:
+          - rabbitmq
 
   app:
-    image: ${APP_IMAGE:-dat250-project-app:latest}
+    image: ${APP_IMAGE}
     build:
       context: .
       dockerfile: Dockerfile
@@ -54,9 +72,10 @@ services:
       - "8080"
     environment:
       PORT: 8080
-      DATABASE_CONN: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-learning_platform}?sslmode=disable
+      DATABASE_CONN: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?sslmode=disable
       MONGO_CONN: mongodb://mongo:27017
       SEAWEEDFS_ENDPOINT: http://seaweedfs:8888
+      RABBITMQ_CONN: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
       ACCESS_KEY: ${ACCESS_KEY}
       REFRESH_KEY: ${REFRESH_KEY}
       SUPERADMIN_PASSWORD: ${SUPERADMIN_PASSWORD}
@@ -81,10 +100,13 @@ services:
       - prod_caddy_config:/config
     depends_on:
       - app
+    rabbitmq:
+      condition: service_healthy
 
 volumes:
   prod_postgres_data:
   prod_mongo_data:
   prod_seaweedfs_data:
+  prod_rabbitmq_data:
   prod_caddy_data:
   prod_caddy_config:

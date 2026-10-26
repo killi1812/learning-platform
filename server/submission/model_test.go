@@ -2,6 +2,7 @@ package submission_test
 
 import (
 	"testing"
+	"time"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/content"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/course"
@@ -20,6 +21,7 @@ func TestSubmissionAggregate_IndividualGroupAndGrading(t *testing.T) {
 		&course.Group{},
 		&course.Module{},
 		&content.Content{},
+		&content.Assignment{},
 		&submission.Submission{},
 		&submission.GroupSubmission{},
 		&submission.IndividualSubmission{},
@@ -56,35 +58,49 @@ func TestSubmissionAggregate_IndividualGroupAndGrading(t *testing.T) {
 		ModuleID: m.ID,
 		Title:    "Exercise 1",
 		Position: 1,
-		Type:     content.TypeCodingExercise,
+		Type:     content.TypeAssignment,
 	}
 	assert.NoError(t, db.Create(cnt).Error)
+
+	asgn := &content.Assignment{
+		ContentID: cnt.ID,
+		Type:      content.AssignmentHandIn,
+	}
+	assert.NoError(t, db.Create(asgn).Error)
+
+	now := time.Now()
 
 	// Group Submission
 	grpSub := &submission.GroupSubmission{
 		Submission: submission.Submission{
-			ContentID:  cnt.ID,
-			Attempt:    1,
-			IsLate:     false,
-			PayloadURL: "https://git.app.uib.no/team-alpha/exercise1.git",
+			ContentID:   cnt.ID,
+			Attempt:     1,
+			IsLate:      false,
+			PayloadType: submission.PayloadTypeURL,
+			PayloadURL:  "https://git.app.uib.no/team-alpha/exercise1.git",
+			SubmittedAt: now,
 		},
 		GroupID: &grp.ID,
 		UserID:  &student.ID,
 	}
 	assert.NoError(t, db.Create(grpSub).Error)
+	assert.NotEqual(t, uuid.Nil, grpSub.Uuid)
 
 	// Individual Submission
 	indivSub := &submission.IndividualSubmission{
 		Submission: submission.Submission{
-			ContentID:  cnt.ID,
-			Attempt:    1,
-			IsLate:     false,
-			PayloadURL: "https://git.app.uib.no/student/exercise1.git",
+			ContentID:   cnt.ID,
+			Attempt:     1,
+			IsLate:      false,
+			PayloadType: submission.PayloadTypeURL,
+			PayloadURL:  "https://git.app.uib.no/student/exercise1.git",
+			SubmittedAt: now,
 		},
 		UserID:    &student.ID,
 		UserEmail: student.Email,
 	}
 	assert.NoError(t, db.Create(indivSub).Error)
+	assert.NotEqual(t, uuid.Nil, indivSub.Uuid)
 
 	// Preload Group Submission
 	var foundGrpSub submission.GroupSubmission
@@ -107,10 +123,12 @@ func TestSubmissionAggregate_IndividualGroupAndGrading(t *testing.T) {
 
 	// Base Submission & Grade
 	sub := &submission.Submission{
-		ContentID:  cnt.ID,
-		Attempt:    1,
-		IsLate:     false,
-		PayloadURL: "https://git.app.uib.no/student/exercise1-base.git",
+		ContentID:   cnt.ID,
+		Attempt:     1,
+		IsLate:      false,
+		PayloadType: submission.PayloadTypeURL,
+		PayloadURL:  "https://git.app.uib.no/student/exercise1-base.git",
+		SubmittedAt: now,
 	}
 	assert.NoError(t, db.Create(sub).Error)
 

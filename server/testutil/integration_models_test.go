@@ -16,7 +16,8 @@ import (
 
 func TestAllLmsModels_EndToEndAutoMigrateAndWorkflow(t *testing.T) {
 	// 1. AutoMigrate all 3 domain aggregates together
-	db := testutil.NewSqliteTestDb(t,
+	db := testutil.NewSqliteTestDb(
+		t,
 		&user.User{},
 		// Course aggregate
 		&course.Course{},
@@ -26,9 +27,10 @@ func TestAllLmsModels_EndToEndAutoMigrateAndWorkflow(t *testing.T) {
 		// Content aggregate
 		&content.Content{},
 		&content.File{},
+		&content.StaticPage{},
+		&content.Assignment{},
 		&content.Quiz{},
 		&content.Question{},
-		&content.Assignment{},
 		&content.CodingExercise{},
 		&content.StudentInteraction{},
 		// Submission aggregate
@@ -128,11 +130,16 @@ func TestAllLmsModels_EndToEndAutoMigrateAndWorkflow(t *testing.T) {
 		ModuleID: m1.ID,
 		Title:    "Readiness Quiz",
 		Position: 2,
-		Type:     content.TypeQuiz,
+		Type:     content.TypeAssignment,
 	}
 	assert.NoError(t, db.Create(cntQuiz).Error)
+	asgnQuiz := &content.Assignment{
+		ContentID: cntQuiz.ID,
+		Type:      content.AssignmentQuiz,
+	}
+	assert.NoError(t, db.Create(asgnQuiz).Error)
 	qz := &content.Quiz{
-		ContentID:   cntQuiz.ID,
+		ContentID:   asgnQuiz.ContentID,
 		MaxAttempts: 2,
 		Questions: []content.Question{
 			{
@@ -152,16 +159,21 @@ func TestAllLmsModels_EndToEndAutoMigrateAndWorkflow(t *testing.T) {
 		ModuleID: m2.ID,
 		Title:    "Exercise 1: Raft Implementation",
 		Position: 1,
-		Type:     content.TypeCodingExercise,
+		Type:     content.TypeAssignment,
 	}
 	assert.NoError(t, db.Create(cntEx).Error)
-	ex := &content.CodingExercise{
+	asgnEx := &content.Assignment{
 		ContentID:              cntEx.ID,
-		StarterCodeRepo:        "https://git.app.uib.no/exercises/raft.git",
+		Type:                   content.AssignmentCodingExercise,
 		AllowsGroupSubmission:  true,
 		AcceptsLateSubmissions: false,
-		VisibleTestCases:       "TestLeaderElection",
-		HiddenTestCases:        "TestNetworkPartition",
+	}
+	assert.NoError(t, db.Create(asgnEx).Error)
+	ex := &content.CodingExercise{
+		ContentID:        asgnEx.ContentID,
+		StarterCodeRepo:  "https://git.app.uib.no/exercises/raft.git",
+		VisibleTestCases: "TestLeaderElection",
+		HiddenTestCases:  "TestNetworkPartition",
 	}
 	assert.NoError(t, db.Create(ex).Error)
 
@@ -178,10 +190,11 @@ func TestAllLmsModels_EndToEndAutoMigrateAndWorkflow(t *testing.T) {
 	// 9. Submissions (Group submission for coding exercise, Individual submission for quiz)
 	grpSub := &submission.GroupSubmission{
 		Submission: submission.Submission{
-			ContentID:  cntEx.ID,
-			Attempt:    1,
-			IsLate:     false,
-			PayloadURL: "https://git.app.uib.no/group1/raft-submission.git",
+			ContentID:   cntEx.ID,
+			Attempt:     1,
+			IsLate:      false,
+			PayloadURL:  "https://git.app.uib.no/group1/raft-submission.git",
+			SubmittedAt: time.Now(),
 		},
 		GroupID: &grp.ID,
 		UserID:  &student.ID,
@@ -190,10 +203,11 @@ func TestAllLmsModels_EndToEndAutoMigrateAndWorkflow(t *testing.T) {
 
 	indivSub := &submission.IndividualSubmission{
 		Submission: submission.Submission{
-			ContentID:  cntQuiz.ID,
-			Attempt:    1,
-			IsLate:     false,
-			PayloadURL: "quiz-attempt-1",
+			ContentID:   cntQuiz.ID,
+			Attempt:     1,
+			IsLate:      false,
+			PayloadURL:  "quiz-attempt-1",
+			SubmittedAt: time.Now(),
 		},
 		UserID:    &student.ID,
 		UserEmail: student.Email,
@@ -201,10 +215,11 @@ func TestAllLmsModels_EndToEndAutoMigrateAndWorkflow(t *testing.T) {
 	assert.NoError(t, db.Create(indivSub).Error)
 
 	sub := &submission.Submission{
-		ContentID:  cntEx.ID,
-		Attempt:    1,
-		IsLate:     false,
-		PayloadURL: "https://git.app.uib.no/student/raft-submission.git",
+		ContentID:   cntEx.ID,
+		Attempt:     1,
+		IsLate:      false,
+		PayloadURL:  "https://git.app.uib.no/student/raft-submission.git",
+		SubmittedAt: time.Now(),
 	}
 	assert.NoError(t, db.Create(sub).Error)
 
