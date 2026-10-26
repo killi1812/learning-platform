@@ -608,6 +608,95 @@
                 }
             }
         },
+        "/course/{uuid}/content/{contentUuid}/submission": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Stamps receipt time, verifies eligibility, and enqueues the submission for asynchronous persistence.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "submission"
+                ],
+                "summary": "Submit assignment deliverable",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Course UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Content UUID",
+                        "name": "contentUuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Submission payload",
+                        "name": "submission",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/submission.CreateSubmissionDto"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/submission.SubmissionAcceptedDto"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/course/{uuid}/enroll": {
             "post": {
                 "security": [
@@ -1425,7 +1514,7 @@
                 "tags": [
                     "notification"
                 ],
-                "summary": "Send notification to users (dev)",
+                "summary": "Send notification to users",
                 "parameters": [
                     {
                         "description": "Recipients and content",
@@ -2297,7 +2386,7 @@
             "properties": {
                 "error": {
                     "type": "string",
-                    "example": "Invalid email or password"
+                    "example": "Example error, something went wrong"
                 }
             }
         },
@@ -2387,6 +2476,67 @@
             "properties": {
                 "count": {
                     "type": "integer"
+                }
+            }
+        },
+        "submission.CreateSubmissionDto": {
+            "type": "object",
+            "required": [
+                "payloadType",
+                "payloadUrl"
+            ],
+            "properties": {
+                "payloadType": {
+                    "enum": [
+                        "URL",
+                        "FILE"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/submission.PayloadType"
+                        }
+                    ],
+                    "example": "URL"
+                },
+                "payloadUrl": {
+                    "type": "string",
+                    "maxLength": 2048,
+                    "example": "https://git.app.uib.no/student/exercise1.git"
+                }
+            }
+        },
+        "submission.PayloadType": {
+            "type": "string",
+            "enum": [
+                "URL",
+                "FILE"
+            ],
+            "x-enum-comments": {
+                "PayloadTypeFile": "Reserved for uploaded documents; not accepted yet",
+                "PayloadTypeURL": "Link to a git repository or externally hosted document"
+            },
+            "x-enum-descriptions": [
+                "Link to a git repository or externally hosted document",
+                "Reserved for uploaded documents; not accepted yet"
+            ],
+            "x-enum-varnames": [
+                "PayloadTypeURL",
+                "PayloadTypeFile"
+            ]
+        },
+        "submission.SubmissionAcceptedDto": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "example": "QUEUED"
+                },
+                "submittedAt": {
+                    "type": "string"
+                },
+                "uuid": {
+                    "type": "string",
+                    "example": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
                 }
             }
         },

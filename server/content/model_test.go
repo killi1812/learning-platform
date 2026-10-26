@@ -20,9 +20,9 @@ func TestContentAggregate_ClassTableInheritanceAndPreloads(t *testing.T) {
 		&course.Module{},
 		&content.Content{},
 		&content.StaticPage{},
+		&content.Assignment{},
 		&content.Quiz{},
 		&content.Question{},
-		&content.Assignment{},
 		&content.CodingExercise{},
 		&content.StudentInteraction{},
 	)
@@ -50,6 +50,8 @@ func TestContentAggregate_ClassTableInheritanceAndPreloads(t *testing.T) {
 		Type:     content.TypeStaticPage,
 	}
 	assert.NoError(t, db.Create(cntPage).Error)
+	assert.NotEqual(t, uuid.Nil, cntPage.Uuid)
+
 	page := &content.StaticPage{
 		ContentID: cntPage.ID,
 		SourceURL: "https://docs.example.com/syllabus-embed.html",
@@ -57,19 +59,27 @@ func TestContentAggregate_ClassTableInheritanceAndPreloads(t *testing.T) {
 	}
 	assert.NoError(t, db.Create(page).Error)
 
-	// 2. Quiz with Questions
+	// 2. Quiz as Assignment subtype
 	cntQuiz := &content.Content{
 		ModuleID: m.ID,
 		Title:    "Chapter 1 Quiz",
 		Position: 2,
-		Type:     content.TypeQuiz,
+		Type:     content.TypeAssignment,
 	}
 	assert.NoError(t, db.Create(cntQuiz).Error)
+	assert.NotEqual(t, uuid.Nil, cntQuiz.Uuid)
+
 	deadline := time.Now().Add(24 * time.Hour)
+	asgnQuiz := &content.Assignment{
+		ContentID: cntQuiz.ID,
+		Type:      content.AssignmentQuiz,
+		Deadline:  &deadline,
+	}
+	assert.NoError(t, db.Create(asgnQuiz).Error)
+
 	qz := &content.Quiz{
-		ContentID:   cntQuiz.ID,
+		ContentID:   asgnQuiz.ContentID,
 		MaxAttempts: 2,
-		Deadline:    &deadline,
 		Questions: []content.Question{
 			{
 				Position:  1,
@@ -83,24 +93,49 @@ func TestContentAggregate_ClassTableInheritanceAndPreloads(t *testing.T) {
 	}
 	assert.NoError(t, db.Create(qz).Error)
 
-	// 3. CodingExercise
+	// 3. CodingExercise as Assignment subtype
 	cntEx := &content.Content{
 		ModuleID: m.ID,
 		Title:    "Lab 1",
 		Position: 3,
-		Type:     content.TypeCodingExercise,
+		Type:     content.TypeAssignment,
 	}
 	assert.NoError(t, db.Create(cntEx).Error)
-	ex := &content.CodingExercise{
+
+	asgnEx := &content.Assignment{
 		ContentID:              cntEx.ID,
-		StarterCodeRepo:        "https://git.app.uib.no/lab1.git",
+		Type:                   content.AssignmentCodingExercise,
 		AllowsGroupSubmission:  true,
 		AcceptsLateSubmissions: false,
-		VisibleTestCases:       "TestMain",
+	}
+	assert.NoError(t, db.Create(asgnEx).Error)
+
+	ex := &content.CodingExercise{
+		ContentID:        asgnEx.ContentID,
+		StarterCodeRepo:  "https://git.app.uib.no/lab1.git",
+		VisibleTestCases: "TestMain",
 	}
 	assert.NoError(t, db.Create(ex).Error)
 
-	// 4. StudentInteraction
+	// 4. Pure HandIn Assignment (no subtype extension table)
+	cntHandIn := &content.Content{
+		ModuleID: m.ID,
+		Title:    "Essay 1",
+		Position: 4,
+		Type:     content.TypeAssignment,
+	}
+	assert.NoError(t, db.Create(cntHandIn).Error)
+
+	asgnHandIn := &content.Assignment{
+		ContentID:              cntHandIn.ID,
+		Type:                   content.AssignmentHandIn,
+		Deadline:               &deadline,
+		AllowsGroupSubmission:  false,
+		AcceptsLateSubmissions: true,
+	}
+	assert.NoError(t, db.Create(asgnHandIn).Error)
+
+	// 5. StudentInteraction
 	now := time.Now()
 	inter := &content.StudentInteraction{
 		UserID:      u.ID,
@@ -118,9 +153,30 @@ func TestContentAggregate_ClassTableInheritanceAndPreloads(t *testing.T) {
 	assert.Equal(t, "https://docs.example.com/syllabus-embed.html", foundPage.StaticPage.SourceURL)
 	assert.Len(t, foundPage.Interactions, 1)
 
+	// Preload Assignment -> Quiz -> Questions
 	var foundQuiz content.Content
-	err = db.Preload("Quiz.Questions").First(&foundQuiz, cntQuiz.ID).Error
+	err = db.Preload("Assignment.Quiz.Questions").First(&foundQuiz, cntQuiz.ID).Error
 	assert.NoError(t, err)
-	assert.NotNil(t, foundQuiz.Quiz)
-	assert.Len(t, foundQuiz.Quiz.Questions, 1)
+	assert.NotNil(t, foundQuiz.Assignment)
+	assert.Equal(t, content.AssignmentQuiz, foundQuiz.Assignment.Type)
+	assert.NotNil(t, foundQuiz.Assignment.Quiz)
+	assert.Len(t, foundQuiz.Assignment.Quiz.Questions, 1)
+
+	// Preload Assignment -> CodingExercise
+	var foundEx content.Content
+	err = db.Preload("Assignment.CodingExercise").First(&foundEx, cntEx.ID).Error
+	assert.NoError(t, err)
+	assert.NotNil(t, foundEx.Assignment)
+	assert.Equal(t, content.AssignmentCodingExercise, foundEx.Assignment.Type)
+	assert.NotNil(t, foundEx.Assignment.CodingExercise)
+	assert.Equal(t, "https://git.app.uib.no/lab1.git", foundEx.Assignment.CodingExercise.StarterCodeRepo)
+
+	// Preload Assignment HandIn
+	var foundHandIn content.Content
+	err = db.Preload("Assignment").First(&foundHandIn, cntHandIn.ID).Error
+	assert.NoError(t, err)
+	assert.NotNil(t, foundHandIn.Assignment)
+	assert.Equal(t, content.AssignmentHandIn, foundHandIn.Assignment.Type)
+	assert.Nil(t, foundHandIn.Assignment.Quiz)
+	assert.Nil(t, foundHandIn.Assignment.CodingExercise)
 }

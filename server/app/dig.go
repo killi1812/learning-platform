@@ -1,6 +1,8 @@
 package app
 
 import (
+	"errors"
+
 	"go.uber.org/dig"
 	"go.uber.org/zap"
 )
@@ -25,4 +27,12 @@ func Invoke(service any, opts ...dig.InvokeOption) {
 	if err := digContainer.Invoke(service, opts...); err != nil {
 		zap.S().Panicf("Faild to provide service %T, err = %+v", service, err)
 	}
+}
+
+// InvokeErr executes an invocation on the global container and returns any error instead of panicking.
+func InvokeErr(service any, opts ...dig.InvokeOption) error {
+	if digContainer == nil {
+		return errors.New("dig container uninitialized")
+	}
+	return digContainer.Invoke(service, opts...)
 }
