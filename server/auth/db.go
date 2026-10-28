@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/notification"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 	authUtil "git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/cerror"
@@ -41,23 +42,26 @@ type IAuthService interface {
 }
 
 type AuthService struct {
-	db      *gorm.DB
-	mongoDb *mongo.Database
-	logger  *zap.SugaredLogger
+	db            *gorm.DB
+	mongoDb       *mongo.Database
+	logger        *zap.SugaredLogger
+	notifications notification.INotificationService
 }
 
 type AuthServiceParams struct {
 	dig.In
-	GormDb  *gorm.DB
-	MongoDb *mongo.Database `name:"mongo"`
-	Logger  *zap.SugaredLogger
+	GormDb        *gorm.DB
+	MongoDb       *mongo.Database `name:"mongo"`
+	Logger        *zap.SugaredLogger
+	Notifications notification.INotificationService
 }
 
 func NewAuthService(params AuthServiceParams) IAuthService {
 	svc := &AuthService{
-		db:      params.GormDb,
-		mongoDb: params.MongoDb,
-		logger:  params.Logger,
+		db:            params.GormDb,
+		mongoDb:       params.MongoDb,
+		logger:        params.Logger,
+		notifications: params.Notifications,
 	}
 	svc.RegisterSessionValidator()
 	return svc
@@ -200,6 +204,13 @@ func (s *AuthService) Login(email, password, userAgent, ip, requestedSessionId s
 	}, nil
 }
 
+// Welcome message sent to every new user on signup.
+var welcomeContent = notification.NotificationContent{
+	Title: "Welcome to the Learning Platform",
+	Body:  "Thanks for signing up. Browse the course catalog to enroll in courses.",
+	URL:   "/catalog",
+}
+
 func (s *AuthService) Register(username, email, password, userAgent, ip string) (*AuthResult, error) {
 	normUsername := strings.ToLower(strings.TrimSpace(username))
 	normEmail := strings.ToLower(strings.TrimSpace(email))
@@ -233,6 +244,11 @@ func (s *AuthService) Register(username, email, password, userAgent, ip string) 
 			return nil, cerror.ErrUserAlreadyExists
 		}
 		return nil, errors.New("registration failed")
+	}
+
+	// Best effort: a failed welcome message must not block signup.
+	if _, err := s.notifications.NotifySystem(usr.Uuid, welcomeContent); err != nil {
+		s.logger.Errorf("Failed to send welcome notification, err = %+v", err)
 	}
 
 	sessionUuid := uuid.New()

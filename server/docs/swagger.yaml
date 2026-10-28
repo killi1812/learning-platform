@@ -226,6 +226,57 @@ definitions:
       version:
         type: string
     type: object
+  notification.MarkAllSeenDto:
+    properties:
+      updated:
+        type: integer
+    type: object
+  notification.NotificationDto:
+    properties:
+      body:
+        type: string
+      createdAt:
+        type: string
+      seenAt:
+        type: string
+      title:
+        type: string
+      url:
+        type: string
+      uuid:
+        type: string
+    type: object
+  notification.SendNotificationDto:
+    properties:
+      body:
+        maxLength: 5000
+        minLength: 1
+        type: string
+      title:
+        maxLength: 255
+        minLength: 1
+        type: string
+      url:
+        description: URL is an internal path such as /courses/<uuid>. Absolute and
+          protocol-relative URLs are rejected.
+        maxLength: 2048
+        type: string
+      userUuids:
+        items:
+          type: string
+        maxItems: 500
+        minItems: 1
+        type: array
+    required:
+    - body
+    - title
+    - userUuids
+    type: object
+  notification.UnreadCountDto:
+    properties:
+      count:
+        type: integer
+    type: object
   user.NewUserDto:
     properties:
       email:
@@ -1122,6 +1173,193 @@ paths:
       summary: Get server info
       tags:
       - info
+  /notification:
+    get:
+      description: Returns the caller's notifications, newest first. Use before (RFC3339
+        created_at) to page.
+      parameters:
+      - description: Page size (max 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Return notifications created before this RFC3339 time
+        in: query
+        name: before
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/notification.NotificationDto'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List own notifications
+      tags:
+      - notification
+  /notification/{uuid}:
+    delete:
+      parameters:
+      - description: Notification UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete own notification
+      tags:
+      - notification
+  /notification/{uuid}/seen:
+    post:
+      parameters:
+      - description: Notification UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/notification.NotificationDto'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Mark notification as seen
+      tags:
+      - notification
+  /notification/seen-all:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/notification.MarkAllSeenDto'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Mark all notifications as seen
+      tags:
+      - notification
+  /notification/send:
+    post:
+      consumes:
+      - application/json
+      description: Creates one private notification per recipient and pushes to their
+        open streams. Admin only.
+      parameters:
+      - description: Recipients and content
+        in: body
+        name: notification
+        required: true
+        schema:
+          $ref: '#/definitions/notification.SendNotificationDto'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            items:
+              $ref: '#/definitions/notification.NotificationDto'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Send notification to users
+      tags:
+      - notification
+  /notification/stream:
+    get:
+      description: Server-Sent Events stream. Emits "notification" events with NotificationDto
+        payload. Closes when the access token expires; client must reconnect with
+        a fresh token and refetch the inbox.
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: event stream
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Stream new notifications (SSE)
+      tags:
+      - notification
+  /notification/unread-count:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/notification.UnreadCountDto'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Count unseen notifications
+      tags:
+      - notification
   /ping:
     get:
       description: Returns pong if the server is reachable.

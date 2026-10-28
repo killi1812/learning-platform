@@ -4,6 +4,8 @@
       <v-btn icon="mdi-theme-light-dark" class="mr-2" @click="$vuetify.theme.cycle()" />
 
       <template v-if="isAuthenticated">
+        <NotificationBell />
+
         <v-chip class="mr-2 font-weight-medium" color="white" variant="tonal">
           <v-icon icon="mdi-account" start />
           {{ currentUser?.username || 'User' }}
@@ -18,6 +20,7 @@
 </template>
 
 <script lang="ts" setup>
+import NotificationBell from '@/components/NotificationBell.vue'
 import { useAuth } from '@/composables/useAuth'
 
 const { isAuthenticated, currentUser } = useAuth()

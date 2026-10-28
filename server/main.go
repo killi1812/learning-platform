@@ -8,6 +8,7 @@ import (
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/content"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/course"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/info"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/notification"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/submission"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/seed"
@@ -33,11 +34,14 @@ func main() {
 	app.Provide(user.NewUserCrudService)
 	app.Provide(auth.NewAuthService)
 	app.Provide(course.NewCourseService)
+	app.Provide(notification.NewHub)
+	app.Provide(notification.NewNotificationService)
 
 	app.RegisterApi(info.NewInfoApi)
 	app.RegisterApi(user.NewUserCtn)
 	app.RegisterApi(auth.NewAuthCtn)
 	app.RegisterApi(course.NewCourseCtn)
+	app.RegisterApi(notification.NewNotificationCtn)
 
 	app.RegisterModel(&user.User{})
 	// Course
@@ -45,6 +49,8 @@ func main() {
 	app.RegisterModel(&course.Enrollment{})
 	app.RegisterModel(&course.Group{})
 	app.RegisterModel(&course.Module{})
+	// Notification
+	app.RegisterModel(&notification.Notification{})
 	// Content
 	app.RegisterModel(&content.Content{})
 	app.RegisterModel(&content.StaticPage{})
