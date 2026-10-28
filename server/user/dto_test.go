@@ -12,8 +12,6 @@ import (
 )
 
 func TestNewUserDto_ToModel(t *testing.T) {
-	userUUID := uuid.New()
-
 	tests := []struct {
 		name    string
 		dto     user.NewUserDto
@@ -38,7 +36,6 @@ func TestNewUserDto_ToModel(t *testing.T) {
 		{
 			name: "Valid DTO to Model - With UUID in DTO",
 			dto: user.NewUserDto{
-				Uuid:     userUUID.String(),
 				Username: "anotheruser",
 				Email:    "another.user@example.com",
 				Password: "securepass",
@@ -62,18 +59,6 @@ func TestNewUserDto_ToModel(t *testing.T) {
 			want:    nil,
 			wantErr: cerror.ErrUnknownRole,
 		},
-		{
-			name: "Invalid UUID in DTO",
-			dto: user.NewUserDto{
-				Uuid:     "this-is-not-a-uuid",
-				Username: "baduuid",
-				Role:     string(authutils.ROLE_USER),
-				Email:    "bad.uuid@example.com",
-				Password: "password",
-			},
-			want:    nil,
-			wantErr: cerror.ErrBadUuid,
-		},
 	}
 
 	for _, tt := range tests {
@@ -92,29 +77,6 @@ func TestNewUserDto_ToModel(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestNewUserDto_FromModel(t *testing.T) {
-	userUUID := uuid.New()
-	userModel := &user.User{
-		Uuid:         userUUID,
-		Username:     "modeluser",
-		Email:        "model.user@example.com",
-		PasswordHash: "somehash",
-		Role:         authutils.ROLE_ADMIN,
-	}
-
-	expectedDto := user.NewUserDto{
-		Uuid:     userUUID.String(),
-		Username: "modeluser",
-		Email:    "model.user@example.com",
-		Password: "",
-		Role:     string(authutils.ROLE_ADMIN),
-	}
-
-	gotDto := user.NewUserDto{}.FromModel(userModel)
-
-	assert.Equal(t, expectedDto, gotDto)
 }
 
 func TestUserDto_ToModel(t *testing.T) {
