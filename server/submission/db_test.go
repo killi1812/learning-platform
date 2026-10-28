@@ -138,6 +138,30 @@ func TestSubmissionService_ResolveTarget(t *testing.T) {
 		assert.ErrorIs(t, err, submission.ErrContentNotFound)
 	})
 
+	t.Run("Fails when content visibility window has expired", func(t *testing.T) {
+		past := time.Now().Add(-2 * time.Hour)
+		cntExpired := &content.Content{
+			ModuleID:     m.ID,
+			Title:        "Expired Content",
+			Position:     7,
+			Type:         content.TypeAssignment,
+			VisibleUntil: &past,
+		}
+		assert.NoError(t, db.Create(cntExpired).Error)
+		assert.NoError(t, db.Create(&content.Assignment{
+			ContentID: cntExpired.ID,
+			Type:      content.AssignmentHandIn,
+		}).Error)
+
+		_, err := svc.ResolveTarget(c.Uuid, cntExpired.Uuid, student.Uuid, time.Now())
+		assert.ErrorIs(t, err, submission.ErrContentNotFound)
+	})
+
+	t.Run("Fails when user does not exist", func(t *testing.T) {
+		_, err := svc.ResolveTarget(c.Uuid, cntOpen.Uuid, uuid.New(), time.Now())
+		assert.ErrorIs(t, err, submission.ErrNotEnrolled)
+	})
+
 	t.Run("Fails when content is a static page", func(t *testing.T) {
 		cntStatic := &content.Content{
 			ModuleID: m.ID,
@@ -341,5 +365,22 @@ func TestSubmissionService_SaveFromMessage(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, first.ID, second.ID)
 		assert.Equal(t, first.Attempt, second.Attempt)
+	})
+
+	t.Run("Fails when assignment for content does not exist", func(t *testing.T) {
+		msg := submission.SubmissionMessage{
+			Uuid:        uuid.New(),
+			ContentID:   999999,
+			UserID:      u.ID,
+			UserEmail:   u.Email,
+			PayloadType: submission.PayloadTypeURL,
+			PayloadURL:  "https://git.app.uib.no/student/missing.git",
+			SubmittedAt: time.Now(),
+		}
+
+		saved, err := svc.SaveFromMessage(msg)
+		assert.Error(t, err)
+		assert.Nil(t, saved)
+		assert.Contains(t, err.Error(), "not found")
 	})
 }

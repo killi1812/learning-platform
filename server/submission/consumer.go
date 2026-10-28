@@ -19,13 +19,13 @@ var (
 
 // SubmissionConsumer consumes submission events from RabbitMQ and inserts them into PostgreSQL.
 type SubmissionConsumer struct {
-	client  *rabbitmq.Client
+	client  rabbitmq.IClient
 	service ISubmissionService
 	logger  *zap.SugaredLogger
 }
 
 // NewSubmissionConsumer constructs a new SubmissionConsumer worker.
-func NewSubmissionConsumer(client *rabbitmq.Client, service ISubmissionService, logger *zap.SugaredLogger) app.Worker {
+func NewSubmissionConsumer(client rabbitmq.IClient, service ISubmissionService, logger *zap.SugaredLogger) app.Worker {
 	return &SubmissionConsumer{
 		client:  client,
 		service: service,

@@ -29,40 +29,139 @@ func QueueArgsWithDLQ(queueName string) amqp.Table {
 	}
 }
 
+// IClient defines operations for declaring queues, publishing, and consuming messages via RabbitMQ.
+type IClient interface {
+	DeclareQueue(name string) error
+	Publish(ctx context.Context, queue string, body []byte) error
+	Consume(ctx context.Context, queue string, prefetch int, handler func(d amqp.Delivery)) error
+	Close() error
+}
+
+type amqpConfirmation interface {
+	WaitContext(ctx context.Context) (bool, error)
+}
+
+type amqpChannel interface {
+	Confirm(noWait bool) error
+	QueueDeclare(name string, durable, autoDelete, exclusive, noWait bool, args amqp.Table) (amqp.Queue, error)
+	PublishWithDeferredConfirmWithContext(ctx context.Context, exchange, key string, mandatory, immediate bool, msg amqp.Publishing) (amqpConfirmation, error)
+	Qos(prefetchCount, prefetchSize int, global bool) error
+	ConsumeWithContext(ctx context.Context, queue, consumer string, autoAck, exclusive, noLocal, noWait bool, args amqp.Table) (<-chan amqp.Delivery, error)
+	Close() error
+}
+
+type amqpConnection interface {
+	Channel() (amqpChannel, error)
+	NotifyClose(receiver chan *amqp.Error) chan *amqp.Error
+	Close() error
+}
+
+type realChannel struct {
+	*amqp.Channel
+}
+
+func (ch *realChannel) PublishWithDeferredConfirmWithContext(ctx context.Context, exchange, key string, mandatory, immediate bool, msg amqp.Publishing) (amqpConfirmation, error) {
+	return ch.Channel.PublishWithDeferredConfirmWithContext(ctx, exchange, key, mandatory, immediate, msg)
+}
+
+type realConnection struct {
+	*amqp.Connection
+}
+
+func (c *realConnection) Channel() (amqpChannel, error) {
+	ch, err := c.Connection.Channel()
+	if err != nil {
+		return nil, err
+	}
+	return &realChannel{Channel: ch}, nil
+}
+
+func defaultDial(url string) (amqpConnection, error) {
+	conn, err := amqp.Dial(url)
+	if err != nil {
+		return nil, err
+	}
+	return &realConnection{Connection: conn}, nil
+}
+
+// ClientOption configures a Client.
+type ClientOption func(*clientConfig)
+
+type clientConfig struct {
+	maxAttempts    int
+	initialBackoff time.Duration
+	retryDelay     time.Duration
+	dial           func(string) (amqpConnection, error)
+}
+
+// WithRetry configures the connection retry attempts and initial backoff duration.
+func WithRetry(maxAttempts int, initialBackoff time.Duration) ClientOption {
+	return func(cfg *clientConfig) {
+		if maxAttempts > 0 {
+			cfg.maxAttempts = maxAttempts
+		}
+		if initialBackoff >= 0 {
+			cfg.initialBackoff = initialBackoff
+		}
+	}
+}
+
+// WithRetryDelay configures the delay between reconnection and consumer channel retry attempts.
+func WithRetryDelay(delay time.Duration) ClientOption {
+	return func(cfg *clientConfig) {
+		if delay >= 0 {
+			cfg.retryDelay = delay
+		}
+	}
+}
+
 // Client wraps an AMQP connection, publisher channel with confirms, and consumer utilities.
 type Client struct {
-	url       string
-	conn      *amqp.Connection
-	pubCh     *amqp.Channel
-	pubMu     sync.Mutex
-	isClosed  bool
-	closeMu   sync.RWMutex
-	logger    *zap.SugaredLogger
-	reconnect chan struct{}
+	url        string
+	conn       amqpConnection
+	pubCh      amqpChannel
+	pubMu      sync.Mutex
+	isClosed   bool
+	closeMu    sync.RWMutex
+	logger     *zap.SugaredLogger
+	reconnect  chan struct{}
+	retryDelay time.Duration
+	dial       func(string) (amqpConnection, error)
 }
 
 // NewClient dials RabbitMQ with bounded backoff retries and initializes the publisher in confirm mode.
-func NewClient(url string) (*Client, error) {
+func NewClient(url string, opts ...ClientOption) (*Client, error) {
 	logger := zap.S().Named("rabbitmq")
 
-	var conn *amqp.Connection
+	cfg := clientConfig{
+		maxAttempts:    5,
+		initialBackoff: 500 * time.Millisecond,
+		retryDelay:     2 * time.Second,
+		dial:           defaultDial,
+	}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	var conn amqpConnection
 	var err error
 
-	maxAttempts := 5
-	backoff := 500 * time.Millisecond
+	backoff := cfg.initialBackoff
 
-	for i := 1; i <= maxAttempts; i++ {
-		conn, err = amqp.Dial(url)
+	for i := 1; i <= cfg.maxAttempts; i++ {
+		conn, err = cfg.dial(url)
 		if err == nil {
 			break
 		}
-		logger.Warnf("RabbitMQ dial attempt %d/%d failed: %v. Retrying in %v...", i, maxAttempts, err, backoff)
-		time.Sleep(backoff)
-		backoff *= 2
+		logger.Warnf("RabbitMQ dial attempt %d/%d failed: %v. Retrying in %v...", i, cfg.maxAttempts, err, backoff)
+		if i < cfg.maxAttempts {
+			time.Sleep(backoff)
+			backoff *= 2
+		}
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to rabbitmq at %s after %d attempts: %w", url, maxAttempts, err)
+		return nil, fmt.Errorf("failed to connect to rabbitmq at %s after %d attempts: %w", url, cfg.maxAttempts, err)
 	}
 
 	pubCh, err := conn.Channel()
@@ -78,11 +177,13 @@ func NewClient(url string) (*Client, error) {
 	}
 
 	client := &Client{
-		url:       url,
-		conn:      conn,
-		pubCh:     pubCh,
-		logger:    logger,
-		reconnect: make(chan struct{}, 1),
+		url:        url,
+		conn:       conn,
+		pubCh:      pubCh,
+		logger:     logger,
+		reconnect:  make(chan struct{}, 1),
+		retryDelay: cfg.retryDelay,
+		dial:       cfg.dial,
 	}
 
 	go client.monitorConnection()
@@ -91,9 +192,28 @@ func NewClient(url string) (*Client, error) {
 	return client, nil
 }
 
+func (c *Client) getConnection() (amqpConnection, bool) {
+	c.closeMu.RLock()
+	if c.isClosed {
+		c.closeMu.RUnlock()
+		return nil, true
+	}
+	c.closeMu.RUnlock()
+
+	c.pubMu.Lock()
+	conn := c.conn
+	c.pubMu.Unlock()
+	return conn, false
+}
+
 func (c *Client) monitorConnection() {
+	conn, closed := c.getConnection()
+	if closed || conn == nil {
+		return
+	}
+
 	closeErr := make(chan *amqp.Error, 1)
-	c.conn.NotifyClose(closeErr)
+	conn.NotifyClose(closeErr)
 
 	err, ok := <-closeErr
 	if !ok {
@@ -101,10 +221,10 @@ func (c *Client) monitorConnection() {
 	}
 
 	c.closeMu.RLock()
-	closed := c.isClosed
+	isClosed := c.isClosed
 	c.closeMu.RUnlock()
 
-	if closed {
+	if isClosed {
 		return
 	}
 
@@ -118,14 +238,14 @@ func (c *Client) monitorConnection() {
 		}
 		c.closeMu.RUnlock()
 
-		conn, dialErr := amqp.Dial(c.url)
+		newConn, dialErr := c.dial(c.url)
 		if dialErr == nil {
-			pubCh, chErr := conn.Channel()
+			pubCh, chErr := newConn.Channel()
 			if chErr == nil && pubCh.Confirm(false) == nil {
 				c.pubMu.Lock()
 				_ = c.pubCh.Close()
 				_ = c.conn.Close()
-				c.conn = conn
+				c.conn = newConn
 				c.pubCh = pubCh
 				c.pubMu.Unlock()
 
@@ -141,10 +261,10 @@ func (c *Client) monitorConnection() {
 			if pubCh != nil {
 				_ = pubCh.Close()
 			}
-			_ = conn.Close()
+			_ = newConn.Close()
 		}
 
-		time.Sleep(2 * time.Second)
+		time.Sleep(c.retryDelay)
 	}
 }
 
@@ -242,32 +362,29 @@ func (c *Client) Consume(ctx context.Context, queue string, prefetch int, handle
 		default:
 		}
 
-		c.closeMu.RLock()
-		if c.isClosed {
-			c.closeMu.RUnlock()
+		conn, closed := c.getConnection()
+		if closed {
 			return ErrClientClosed
 		}
-		conn := c.conn
-		c.closeMu.RUnlock()
 
 		ch, err := conn.Channel()
 		if err != nil {
-			c.logger.Errorf("Failed to open consumer channel for %s: %v. Retrying in 2s...", queue, err)
+			c.logger.Errorf("Failed to open consumer channel for %s: %v. Retrying in %v...", queue, err, c.retryDelay)
 			select {
 			case <-ctx.Done():
 				return nil
-			case <-time.After(2 * time.Second):
+			case <-time.After(c.retryDelay):
 				continue
 			}
 		}
 
 		if err := ch.Qos(prefetch, 0, false); err != nil {
 			_ = ch.Close()
-			c.logger.Errorf("Failed to set QoS on consumer channel: %v. Retrying in 2s...", err)
+			c.logger.Errorf("Failed to set QoS on consumer channel: %v. Retrying in %v...", err, c.retryDelay)
 			select {
 			case <-ctx.Done():
 				return nil
-			case <-time.After(2 * time.Second):
+			case <-time.After(c.retryDelay):
 				continue
 			}
 		}
@@ -284,11 +401,11 @@ func (c *Client) Consume(ctx context.Context, queue string, prefetch int, handle
 		)
 		if err != nil {
 			_ = ch.Close()
-			c.logger.Errorf("Failed to start consumer on queue %s: %v. Retrying in 2s...", queue, err)
+			c.logger.Errorf("Failed to start consumer on queue %s: %v. Retrying in %v...", queue, err, c.retryDelay)
 			select {
 			case <-ctx.Done():
 				return nil
-			case <-time.After(2 * time.Second):
+			case <-time.After(c.retryDelay):
 				continue
 			}
 		}
@@ -307,7 +424,7 @@ func (c *Client) Consume(ctx context.Context, queue string, prefetch int, handle
 			return nil
 		case <-c.reconnect:
 			c.logger.Infof("Consumer detected reconnect, recreating consumer channel for %s...", queue)
-		case <-time.After(1 * time.Second):
+		case <-time.After(c.retryDelay):
 		}
 	}
 }

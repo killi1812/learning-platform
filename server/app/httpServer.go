@@ -65,7 +65,7 @@ func Start() {
 
 	Invoke(func(p struct {
 		dig.In
-		Rmq *rabbitmq.Client `optional:"true"`
+		Rmq rabbitmq.IClient `optional:"true"`
 	}) {
 		if p.Rmq != nil {
 			_ = p.Rmq.Close()

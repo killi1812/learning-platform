@@ -371,8 +371,6 @@ definitions:
         maxLength: 100
         minLength: 2
         type: string
-      uuid:
-        type: string
     required:
     - password
     - role

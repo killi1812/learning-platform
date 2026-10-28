@@ -3207,9 +3207,6 @@ const docTemplate = `{
                     "type": "string",
                     "maxLength": 100,
                     "minLength": 2
-                },
-                "uuid": {
-                    "type": "string"
                 }
             }
         },

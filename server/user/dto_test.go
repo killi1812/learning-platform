@@ -34,7 +34,7 @@ func TestNewUserDto_ToModel(t *testing.T) {
 			wantErr: nil,
 		},
 		{
-			name: "Valid DTO to Model - With UUID in DTO",
+			name: "Valid DTO to Model - Admin Role",
 			dto: user.NewUserDto{
 				Username: "anotheruser",
 				Email:    "another.user@example.com",
