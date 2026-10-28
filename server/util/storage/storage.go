@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -35,8 +38,23 @@ func NewSeaweedStorageService(endpoint string) IStorageService {
 	}
 }
 
+func (s *SeaweedStorageService) buildURL(key string) (string, error) {
+	parts := strings.Split(key, "/")
+	cleanParts := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p != "" {
+			cleanParts = append(cleanParts, filepath.Base(filepath.Clean(p)))
+		}
+	}
+	return url.JoinPath(s.endpoint, cleanParts...)
+}
+
 func (s *SeaweedStorageService) Upload(key string, reader io.Reader, contentType string) error {
-	req, err := http.NewRequest(http.MethodPut, fmt.Sprintf("%s/%s", s.endpoint, key), reader)
+	reqURL, err := s.buildURL(key)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest(http.MethodPut, reqURL, reader)
 	if err != nil {
 		return err
 	}
@@ -55,7 +73,11 @@ func (s *SeaweedStorageService) Upload(key string, reader io.Reader, contentType
 }
 
 func (s *SeaweedStorageService) Get(key string) (io.ReadCloser, string, error) {
-	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/%s", s.endpoint, key), nil)
+	reqURL, err := s.buildURL(key)
+	if err != nil {
+		return nil, "", err
+	}
+	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, "", err
 	}
@@ -75,7 +97,11 @@ func (s *SeaweedStorageService) Get(key string) (io.ReadCloser, string, error) {
 }
 
 func (s *SeaweedStorageService) Delete(key string) error {
-	req, err := http.NewRequest(http.MethodDelete, fmt.Sprintf("%s/%s", s.endpoint, key), nil)
+	reqURL, err := s.buildURL(key)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest(http.MethodDelete, reqURL, nil)
 	if err != nil {
 		return err
 	}

@@ -103,6 +103,14 @@ func TestSeaweedStorageService(t *testing.T) {
 	err = svc.Delete("fail.pdf")
 	assert.Error(t, err)
 
+	// Safe URL building with query string or path traversal characters
+	err = svc.Upload("content/../secret.txt?recursive=true", bytes.NewReader([]byte("test")), "text/plain")
+	assert.NoError(t, err)
+	assert.NoError(t, err)
+
+	err = svc.Delete("fail.pdf")
+	assert.Error(t, err)
+
 	// Invalid URL error handling
 	badSvc := NewSeaweedStorageService("http://\x7f")
 	assert.Error(t, badSvc.Upload("file.pdf", bytes.NewReader([]byte("test")), "text/plain"))

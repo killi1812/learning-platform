@@ -4,8 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
+	"strings"
+	"time"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/course"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/storage"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -13,16 +17,18 @@ import (
 )
 
 var (
-	ErrContentNotFound = errors.New("content not found")
-	ErrModuleNotFound  = errors.New("module not found")
-	ErrCourseNotFound  = errors.New("course not found")
+	ErrContentNotFound     = errors.New("content not found")
+	ErrModuleNotFound      = errors.New("module not found")
+	ErrCourseNotFound      = errors.New("course not found")
+	ErrModuleLocked        = errors.New("prerequisite module is not completed")
+	ErrContentNotAvailable = errors.New("content is not currently visible")
 )
 
 type IContentService interface {
 	UploadStaticPage(courseUuid, moduleUuid uuid.UUID, title, fileName string, fileSize int64, contentType string, fileReader io.Reader, description string, sourceUrl string) (*StaticPage, error)
-	GetStaticPage(courseUuid, moduleUuid, contentUuid uuid.UUID) (*StaticPage, error)
-	ListStaticPages(courseUuid, moduleUuid uuid.UUID) ([]StaticPage, error)
-	GetFileStream(courseUuid, moduleUuid, contentUuid uuid.UUID) (io.ReadCloser, *StaticPage, error)
+	GetStaticPage(courseUuid, moduleUuid, contentUuid, userUuid uuid.UUID, isPrivileged bool) (*StaticPage, error)
+	ListStaticPages(courseUuid, moduleUuid, userUuid uuid.UUID, isPrivileged bool) ([]StaticPage, error)
+	GetFileStream(courseUuid, moduleUuid, contentUuid, userUuid uuid.UUID, isPrivileged bool) (io.ReadCloser, *StaticPage, error)
 	UpdateStaticPage(courseUuid, moduleUuid, contentUuid uuid.UUID, title, description string) (*StaticPage, error)
 	DeleteStaticPage(courseUuid, moduleUuid, contentUuid uuid.UUID) error
 }
@@ -99,6 +105,20 @@ func (s *ContentService) UploadStaticPage(
 		return nil, err
 	}
 
+	if fileName != "" {
+		cleanName := filepath.Base(filepath.Clean(fileName))
+		cleanName = strings.Map(func(r rune) rune {
+			if r == '?' || r == '#' || r == '/' || r == '\\' || r == 0 {
+				return '_'
+			}
+			return r
+		}, cleanName)
+		if len(cleanName) > 200 {
+			cleanName = cleanName[:200]
+		}
+		fileName = cleanName
+	}
+
 	if title == "" {
 		if fileName != "" {
 			title = fileName
@@ -118,15 +138,10 @@ func (s *ContentService) UploadStaticPage(
 		}
 	}
 
-	var maxPos int
-	row := s.db.Model(&Content{}).Where("module_id = ?", module.ID).Select("COALESCE(MAX(position), 0)").Row()
-	_ = row.Scan(&maxPos)
-
 	c := Content{
 		Uuid:     contentUuid,
 		ModuleID: module.ID,
 		Title:    title,
-		Position: maxPos + 1,
 		Type:     TypeStaticPage,
 	}
 
@@ -140,6 +155,13 @@ func (s *ContentService) UploadStaticPage(
 	}
 
 	txErr := s.db.Transaction(func(tx *gorm.DB) error {
+		var maxPos int
+		row := tx.Model(&Content{}).Where("module_id = ?", module.ID).Select("COALESCE(MAX(position), 0)").Row()
+		if err := row.Scan(&maxPos); err != nil {
+			return err
+		}
+		c.Position = maxPos + 1
+
 		if err := tx.Create(&c).Error; err != nil {
 			return err
 		}
@@ -162,24 +184,110 @@ func (s *ContentService) UploadStaticPage(
 	return &sp, nil
 }
 
-func (s *ContentService) GetStaticPage(courseUuid, moduleUuid, contentUuid uuid.UUID) (*StaticPage, error) {
+func (s *ContentService) checkPrerequisiteCompleted(depID uint, userUuid uuid.UUID) error {
+	var u user.User
+	if err := s.db.Where("uuid = ?", userUuid).First(&u).Error; err != nil {
+		return ErrModuleLocked
+	}
+
+	var totalContents int64
+	if err := s.db.Model(&Content{}).Where("module_id = ?", depID).Count(&totalContents).Error; err != nil {
+		return err
+	}
+	if totalContents == 0 {
+		return nil
+	}
+
+	var completedContents int64
+	err := s.db.Model(&StudentInteraction{}).
+		Joins("JOIN contents ON contents.id = student_interactions.content_id").
+		Where("contents.module_id = ? AND student_interactions.user_id = ? AND student_interactions.completed_at IS NOT NULL", depID, u.ID).
+		Count(&completedContents).Error
+	if err != nil {
+		return err
+	}
+
+	if completedContents < totalContents {
+		return ErrModuleLocked
+	}
+	return nil
+}
+
+func (s *ContentService) recordInteraction(userUuid uuid.UUID, contentID uint) {
+	var u user.User
+	if err := s.db.Where("uuid = ?", userUuid).First(&u).Error; err != nil {
+		return
+	}
+	now := time.Now()
+	var inter StudentInteraction
+	err := s.db.Where("user_id = ? AND content_id = ?", u.ID, contentID).First(&inter).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		inter = StudentInteraction{
+			UserID:      u.ID,
+			UserEmail:   u.Email,
+			ContentID:   contentID,
+			CompletedAt: &now,
+		}
+		_ = s.db.Create(&inter).Error
+	} else if err == nil && inter.CompletedAt == nil {
+		inter.CompletedAt = &now
+		_ = s.db.Save(&inter).Error
+	}
+}
+
+func (s *ContentService) GetStaticPage(courseUuid, moduleUuid, contentUuid, userUuid uuid.UUID, isPrivileged bool) (*StaticPage, error) {
 	_, module, err := s.findCourseAndModule(courseUuid, moduleUuid)
 	if err != nil {
 		return nil, err
 	}
 
-	return s.findStaticPage(module.ID, contentUuid)
+	if !isPrivileged && module.DependsOnID != nil {
+		if err := s.checkPrerequisiteCompleted(*module.DependsOnID, userUuid); err != nil {
+			return nil, err
+		}
+	}
+
+	sp, err := s.findStaticPage(module.ID, contentUuid)
+	if err != nil {
+		return nil, err
+	}
+
+	if !isPrivileged && sp.Content != nil {
+		now := time.Now()
+		if (sp.Content.VisibleFrom != nil && now.Before(*sp.Content.VisibleFrom)) ||
+			(sp.Content.VisibleUntil != nil && now.After(*sp.Content.VisibleUntil)) {
+			return nil, ErrContentNotAvailable
+		}
+	}
+
+	if !isPrivileged && userUuid != uuid.Nil && sp.Content != nil {
+		s.recordInteraction(userUuid, sp.Content.ID)
+	}
+
+	return sp, nil
 }
 
-func (s *ContentService) ListStaticPages(courseUuid, moduleUuid uuid.UUID) ([]StaticPage, error) {
+func (s *ContentService) ListStaticPages(courseUuid, moduleUuid, userUuid uuid.UUID, isPrivileged bool) ([]StaticPage, error) {
 	_, module, err := s.findCourseAndModule(courseUuid, moduleUuid)
 	if err != nil {
 		return nil, err
+	}
+
+	if !isPrivileged && module.DependsOnID != nil {
+		if err := s.checkPrerequisiteCompleted(*module.DependsOnID, userUuid); err != nil {
+			return nil, err
+		}
+	}
+
+	query := s.db.Where("module_id = ? AND type = ?", module.ID, TypeStaticPage)
+	if !isPrivileged {
+		now := time.Now()
+		query = query.Where("(visible_from IS NULL OR visible_from <= ?)", now).
+			Where("(visible_until IS NULL OR visible_until >= ?)", now)
 	}
 
 	var contents []Content
-	err = s.db.
-		Where("module_id = ? AND type = ?", module.ID, TypeStaticPage).
+	err = query.
 		Preload("StaticPage").
 		Preload("Module.Course").
 		Order("position ASC, id ASC").
@@ -198,8 +306,8 @@ func (s *ContentService) ListStaticPages(courseUuid, moduleUuid uuid.UUID) ([]St
 	return pages, nil
 }
 
-func (s *ContentService) GetFileStream(courseUuid, moduleUuid, contentUuid uuid.UUID) (io.ReadCloser, *StaticPage, error) {
-	sp, err := s.GetStaticPage(courseUuid, moduleUuid, contentUuid)
+func (s *ContentService) GetFileStream(courseUuid, moduleUuid, contentUuid, userUuid uuid.UUID, isPrivileged bool) (io.ReadCloser, *StaticPage, error) {
+	sp, err := s.GetStaticPage(courseUuid, moduleUuid, contentUuid, userUuid, isPrivileged)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -219,7 +327,7 @@ func (s *ContentService) UpdateStaticPage(
 	courseUuid, moduleUuid, contentUuid uuid.UUID,
 	title, description string,
 ) (*StaticPage, error) {
-	sp, err := s.GetStaticPage(courseUuid, moduleUuid, contentUuid)
+	sp, err := s.GetStaticPage(courseUuid, moduleUuid, contentUuid, uuid.Nil, true)
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +350,7 @@ func (s *ContentService) UpdateStaticPage(
 }
 
 func (s *ContentService) DeleteStaticPage(courseUuid, moduleUuid, contentUuid uuid.UUID) error {
-	sp, err := s.GetStaticPage(courseUuid, moduleUuid, contentUuid)
+	sp, err := s.GetStaticPage(courseUuid, moduleUuid, contentUuid, uuid.Nil, true)
 	if err != nil {
 		return err
 	}

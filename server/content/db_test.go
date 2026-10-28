@@ -6,10 +6,12 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/content"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/course"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/testutil"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/storage"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -48,10 +50,12 @@ func (f *failingStorageService) Delete(key string) error {
 
 func setupContentTest(t *testing.T) (*course.Course, *course.Module, content.IContentService, storage.IStorageService, *gorm.DB) {
 	db := testutil.NewSqliteTestDb(t,
+		&user.User{},
 		&course.Course{},
 		&course.Module{},
 		&content.Content{},
 		&content.StaticPage{},
+		&content.StudentInteraction{},
 	)
 
 	c := &course.Course{
@@ -168,7 +172,7 @@ func TestContentService_UploadStaticPage_Failures(t *testing.T) {
 		IStorageService: memStorage,
 		failUpload:      true,
 	}
-	failingDb := testutil.NewSqliteTestDb(t, &course.Course{}, &course.Module{}, &content.Content{}, &content.StaticPage{})
+	failingDb := testutil.NewSqliteTestDb(t, &user.User{}, &course.Course{}, &course.Module{}, &content.Content{}, &content.StaticPage{}, &content.StudentInteraction{})
 	require.NoError(t, failingDb.Create(c).Error)
 	require.NoError(t, failingDb.Create(m).Error)
 	failingSvc := content.NewContentService(failingDb, failingStorage, nil)
@@ -186,7 +190,7 @@ func TestContentService_GetAndListStaticPages(t *testing.T) {
 	c, m, svc, _, db := setupContentTest(t)
 
 	// Empty list
-	pages, err := svc.ListStaticPages(c.Uuid, m.Uuid)
+	pages, err := svc.ListStaticPages(c.Uuid, m.Uuid, uuid.Nil, true)
 	require.NoError(t, err)
 	assert.Empty(t, pages)
 
@@ -198,20 +202,20 @@ func TestContentService_GetAndListStaticPages(t *testing.T) {
 	require.NoError(t, err)
 
 	// List
-	list, err := svc.ListStaticPages(c.Uuid, m.Uuid)
+	list, err := svc.ListStaticPages(c.Uuid, m.Uuid, uuid.Nil, true)
 	require.NoError(t, err)
 	require.Len(t, list, 2)
 	assert.Equal(t, sp1.Content.Uuid, list[0].Content.Uuid)
 	assert.Equal(t, sp2.Content.Uuid, list[1].Content.Uuid)
 
 	// Get single
-	fetched, err := svc.GetStaticPage(c.Uuid, m.Uuid, sp1.Content.Uuid)
+	fetched, err := svc.GetStaticPage(c.Uuid, m.Uuid, sp1.Content.Uuid, uuid.Nil, true)
 	require.NoError(t, err)
 	assert.Equal(t, "Page 1", fetched.Content.Title)
 	assert.Equal(t, "desc 1", fetched.RichText)
 
 	// Not found checks
-	_, err = svc.GetStaticPage(c.Uuid, m.Uuid, uuid.New())
+	_, err = svc.GetStaticPage(c.Uuid, m.Uuid, uuid.New(), uuid.Nil, true)
 	assert.ErrorIs(t, err, content.ErrContentNotFound)
 
 	// Content exists but StaticPage extension row missing
@@ -222,19 +226,19 @@ func TestContentService_GetAndListStaticPages(t *testing.T) {
 		Type:     content.TypeStaticPage,
 	}
 	require.NoError(t, db.Create(orphanCnt).Error)
-	_, err = svc.GetStaticPage(c.Uuid, m.Uuid, orphanCnt.Uuid)
+	_, err = svc.GetStaticPage(c.Uuid, m.Uuid, orphanCnt.Uuid, uuid.Nil, true)
 	assert.ErrorIs(t, err, content.ErrContentNotFound)
 
-	_, err = svc.GetStaticPage(uuid.New(), m.Uuid, sp1.Content.Uuid)
+	_, err = svc.GetStaticPage(uuid.New(), m.Uuid, sp1.Content.Uuid, uuid.Nil, true)
 	assert.ErrorIs(t, err, content.ErrCourseNotFound)
 
-	_, err = svc.GetStaticPage(c.Uuid, uuid.New(), sp1.Content.Uuid)
+	_, err = svc.GetStaticPage(c.Uuid, uuid.New(), sp1.Content.Uuid, uuid.Nil, true)
 	assert.ErrorIs(t, err, content.ErrModuleNotFound)
 
-	_, err = svc.ListStaticPages(uuid.New(), m.Uuid)
+	_, err = svc.ListStaticPages(uuid.New(), m.Uuid, uuid.Nil, true)
 	assert.ErrorIs(t, err, content.ErrCourseNotFound)
 
-	_, err = svc.ListStaticPages(c.Uuid, uuid.New())
+	_, err = svc.ListStaticPages(c.Uuid, uuid.New(), uuid.Nil, true)
 	assert.ErrorIs(t, err, content.ErrModuleNotFound)
 }
 
@@ -245,7 +249,7 @@ func TestContentService_GetFileStream(t *testing.T) {
 	sp, err := svc.UploadStaticPage(c.Uuid, m.Uuid, "Stream Test", "stream.txt", int64(len(contentStr)), "text/plain", strings.NewReader(contentStr), "", "")
 	require.NoError(t, err)
 
-	rc, fetchedSp, err := svc.GetFileStream(c.Uuid, m.Uuid, sp.Content.Uuid)
+	rc, fetchedSp, err := svc.GetFileStream(c.Uuid, m.Uuid, sp.Content.Uuid, uuid.Nil, true)
 	require.NoError(t, err)
 	defer rc.Close()
 
@@ -257,7 +261,7 @@ func TestContentService_GetFileStream(t *testing.T) {
 	// Page without storage key
 	spNoFile, err := svc.UploadStaticPage(c.Uuid, m.Uuid, "No File", "", 0, "", nil, "", "http://example.com")
 	require.NoError(t, err)
-	_, _, err = svc.GetFileStream(c.Uuid, m.Uuid, spNoFile.Content.Uuid)
+	_, _, err = svc.GetFileStream(c.Uuid, m.Uuid, spNoFile.Content.Uuid, uuid.Nil, true)
 	assert.ErrorIs(t, err, storage.ErrObjectNotFound)
 
 	// Storage error on Get
@@ -265,14 +269,14 @@ func TestContentService_GetFileStream(t *testing.T) {
 		IStorageService: memStorage,
 		failGet:         true,
 	}
-	db := testutil.NewSqliteTestDb(t, &course.Course{}, &course.Module{}, &content.Content{}, &content.StaticPage{})
+	db := testutil.NewSqliteTestDb(t, &user.User{}, &course.Course{}, &course.Module{}, &content.Content{}, &content.StaticPage{}, &content.StudentInteraction{})
 	require.NoError(t, db.Create(c).Error)
 	require.NoError(t, db.Create(m).Error)
 	failingSvc := content.NewContentService(db, failingStorage, nil)
 	spFail, err := failingSvc.UploadStaticPage(c.Uuid, m.Uuid, "Will Fail", "fail.txt", 4, "text/plain", strings.NewReader("test"), "", "")
 	require.NoError(t, err)
 
-	_, _, err = failingSvc.GetFileStream(c.Uuid, m.Uuid, spFail.Content.Uuid)
+	_, _, err = failingSvc.GetFileStream(c.Uuid, m.Uuid, spFail.Content.Uuid, uuid.Nil, true)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "simulated get failure")
 }
@@ -312,7 +316,7 @@ func TestContentService_DeleteStaticPage(t *testing.T) {
 	assert.ErrorIs(t, err, storage.ErrObjectNotFound)
 
 	// Verify deleted from DB
-	_, err = svc.GetStaticPage(c.Uuid, m.Uuid, sp.Content.Uuid)
+	_, err = svc.GetStaticPage(c.Uuid, m.Uuid, sp.Content.Uuid, uuid.Nil, true)
 	assert.ErrorIs(t, err, content.ErrContentNotFound)
 
 	// Delete non-existent
@@ -324,7 +328,7 @@ func TestContentService_DeleteStaticPage(t *testing.T) {
 		IStorageService: memStorage,
 		failDelete:      true,
 	}
-	db := testutil.NewSqliteTestDb(t, &course.Course{}, &course.Module{}, &content.Content{}, &content.StaticPage{})
+	db := testutil.NewSqliteTestDb(t, &user.User{}, &course.Course{}, &course.Module{}, &content.Content{}, &content.StaticPage{}, &content.StudentInteraction{})
 	require.NoError(t, db.Create(c).Error)
 	require.NoError(t, db.Create(m).Error)
 	failingSvc := content.NewContentService(db, failingStorage, nil)
@@ -335,6 +339,95 @@ func TestContentService_DeleteStaticPage(t *testing.T) {
 	err = failingSvc.DeleteStaticPage(c.Uuid, m.Uuid, sp2.Content.Uuid)
 	assert.NoError(t, err)
 
-	_, err = failingSvc.GetStaticPage(c.Uuid, m.Uuid, sp2.Content.Uuid)
+	_, err = failingSvc.GetStaticPage(c.Uuid, m.Uuid, sp2.Content.Uuid, uuid.Nil, true)
 	assert.ErrorIs(t, err, content.ErrContentNotFound)
+}
+
+func TestContentService_StudentPrerequisitesAndVisibility(t *testing.T) {
+	c, m1, svc, _, db := setupContentTest(t)
+
+	// Create student user
+	student := &user.User{
+		Uuid:     uuid.New(),
+		Username: "alice",
+		Email:    "alice@hvl.no",
+	}
+	require.NoError(t, db.Create(student).Error)
+
+	// Module 1 content
+	page1, err := svc.UploadStaticPage(c.Uuid, m1.Uuid, "Page 1", "m1.pdf", 10, "application/pdf", strings.NewReader("data"), "", "")
+	require.NoError(t, err)
+
+	// Module 2 depending on Module 1
+	m2 := &course.Module{
+		Uuid:        uuid.New(),
+		CourseID:    c.ID,
+		Title:       "Module 2: Advanced",
+		Position:    2,
+		DependsOnID: &m1.ID,
+	}
+	require.NoError(t, db.Create(m2).Error)
+
+	// Module 2 content
+	page2, err := svc.UploadStaticPage(c.Uuid, m2.Uuid, "Page 2", "m2.pdf", 10, "application/pdf", strings.NewReader("data2"), "", "")
+	require.NoError(t, err)
+
+	// Student attempts to list or get Module 2 without completing Module 1 -> ErrModuleLocked
+	_, err = svc.ListStaticPages(c.Uuid, m2.Uuid, student.Uuid, false)
+	assert.ErrorIs(t, err, content.ErrModuleLocked)
+
+	_, err = svc.GetStaticPage(c.Uuid, m2.Uuid, page2.Content.Uuid, student.Uuid, false)
+	assert.ErrorIs(t, err, content.ErrModuleLocked)
+
+	// Privileged teacher can still access Module 2
+	pages, err := svc.ListStaticPages(c.Uuid, m2.Uuid, uuid.Nil, true)
+	require.NoError(t, err)
+	assert.Len(t, pages, 1)
+
+	// Student views Module 1 content (records interaction)
+	_, err = svc.GetStaticPage(c.Uuid, m1.Uuid, page1.Content.Uuid, student.Uuid, false)
+	require.NoError(t, err)
+
+	// Viewing a second time updates existing interaction
+	_, err = svc.GetStaticPage(c.Uuid, m1.Uuid, page1.Content.Uuid, student.Uuid, false)
+	require.NoError(t, err)
+
+	// Now Module 2 is unlocked for student!
+	pagesStudent, err := svc.ListStaticPages(c.Uuid, m2.Uuid, student.Uuid, false)
+	require.NoError(t, err)
+	assert.Len(t, pagesStudent, 1)
+
+	// Stream file from Module 2 succeeds
+	rc, _, err := svc.GetFileStream(c.Uuid, m2.Uuid, page2.Content.Uuid, student.Uuid, false)
+	require.NoError(t, err)
+	_ = rc.Close()
+
+	// Test Visibility Window
+	future := time.Now().Add(24 * time.Hour)
+	past := time.Now().Add(-24 * time.Hour)
+
+	// Content with future VisibleFrom
+	pageHidden, err := svc.UploadStaticPage(c.Uuid, m1.Uuid, "Hidden Page", "h.txt", 4, "text/plain", strings.NewReader("hide"), "", "")
+	require.NoError(t, err)
+	require.NoError(t, db.Model(&content.Content{}).Where("id = ?", pageHidden.ContentID).Update("visible_from", &future).Error)
+
+	// Content with past VisibleUntil
+	pageExpired, err := svc.UploadStaticPage(c.Uuid, m1.Uuid, "Expired Page", "e.txt", 4, "text/plain", strings.NewReader("exp"), "", "")
+	require.NoError(t, err)
+	require.NoError(t, db.Model(&content.Content{}).Where("id = ?", pageExpired.ContentID).Update("visible_until", &past).Error)
+
+	// Student cannot get hidden or expired content or stream it
+	_, err = svc.GetStaticPage(c.Uuid, m1.Uuid, pageHidden.Content.Uuid, student.Uuid, false)
+	assert.ErrorIs(t, err, content.ErrContentNotAvailable)
+
+	_, _, err = svc.GetFileStream(c.Uuid, m1.Uuid, pageHidden.Content.Uuid, student.Uuid, false)
+	assert.ErrorIs(t, err, content.ErrContentNotAvailable)
+
+	_, err = svc.GetStaticPage(c.Uuid, m1.Uuid, pageExpired.Content.Uuid, student.Uuid, false)
+	assert.ErrorIs(t, err, content.ErrContentNotAvailable)
+
+	// Privileged teacher can still get hidden content
+	gotHidden, err := svc.GetStaticPage(c.Uuid, m1.Uuid, pageHidden.Content.Uuid, uuid.Nil, true)
+	require.NoError(t, err)
+	assert.NotNil(t, gotHidden)
 }

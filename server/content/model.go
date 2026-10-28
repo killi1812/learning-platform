@@ -64,7 +64,7 @@ type StaticPage struct {
 	FileName    string   `json:"fileName,omitempty" gorm:"type:varchar(255)"`
 	FileSize    int64    `json:"fileSize,omitempty"`
 	ContentType string   `json:"contentType,omitempty" gorm:"type:varchar(100)"`
-	StorageKey  string   `json:"storageKey,omitempty" gorm:"type:varchar(255)"`
+	StorageKey  string   `json:"storageKey,omitempty" gorm:"type:varchar(512)"`
 	SourceURL   string   `json:"sourceUrl,omitempty" gorm:"type:text"`
 	RichText    string   `json:"richText,omitempty" gorm:"type:text"`
 }

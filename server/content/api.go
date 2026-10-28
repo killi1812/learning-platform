@@ -2,9 +2,12 @@ package content
 
 import (
 	"errors"
-	"fmt"
 	"io"
+	"mime"
 	"net/http"
+	"net/url"
+	"path/filepath"
+	"strings"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/course"
@@ -57,6 +60,10 @@ func (ctn *ContentCtn) handleError(c *gin.Context, err error) bool {
 		errors.Is(err, storage.ErrObjectNotFound):
 		ginutil.RespondWithError(c, http.StatusNotFound, err.Error())
 		return true
+	case errors.Is(err, ErrModuleLocked),
+		errors.Is(err, ErrContentNotAvailable):
+		ginutil.RespondWithError(c, http.StatusForbidden, err.Error())
+		return true
 	default:
 		ctn.logger.Errorf("Unexpected content error: %v", err)
 		ginutil.RespondWithError(c, http.StatusInternalServerError, "Internal server error")
@@ -67,7 +74,7 @@ func (ctn *ContentCtn) handleError(c *gin.Context, err error) bool {
 // UploadStaticPage godoc
 //
 //	@Summary		Upload or create static page material
-//	@Description	Uploads course material file (.pdf, .pptx, .md, .txt) to object storage or creates link (Teacher or Admin only)
+//	@Description	Uploads course material file (.pdf, .pptx, .docx, .md, .txt) to object storage or creates link (Teacher or Admin only)
 //	@Tags			content
 //	@Accept			multipart/form-data
 //	@Produce		json
@@ -99,9 +106,29 @@ func (ctn *ContentCtn) upload(c *gin.Context) {
 		return
 	}
 
+	const maxUploadSize = 50 * 1024 * 1024 // 50MB
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxUploadSize)
+
 	title := c.PostForm("title")
 	description := c.PostForm("description")
 	sourceUrl := c.PostForm("sourceUrl")
+
+	if len(title) > 255 {
+		ginutil.RespondWithError(c, http.StatusBadRequest, "Title exceeds maximum length of 255 characters")
+		return
+	}
+	if title != "" && len(title) < 2 {
+		ginutil.RespondWithError(c, http.StatusBadRequest, "Title must be at least 2 characters")
+		return
+	}
+
+	if sourceUrl != "" {
+		parsed, err := url.ParseRequestURI(sourceUrl)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			ginutil.RespondWithError(c, http.StatusBadRequest, "Source URL must use http or https scheme")
+			return
+		}
+	}
 
 	var fileName string
 	var fileSize int64
@@ -110,6 +137,38 @@ func (ctn *ContentCtn) upload(c *gin.Context) {
 
 	fileHeader, err := c.FormFile("file")
 	if err == nil && fileHeader != nil {
+		if fileHeader.Size > maxUploadSize {
+			ginutil.RespondWithError(c, http.StatusBadRequest, "File size exceeds 50MB limit")
+			return
+		}
+
+		ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
+		switch ext {
+		case ".html", ".htm", ".svg", ".xhtml", ".xml", ".js", ".mjs", ".exe", ".sh", ".bat", ".php", ".py", ".rb", ".cgi":
+			ginutil.RespondWithError(c, http.StatusBadRequest, "File type not permitted for course materials")
+			return
+		}
+
+		allowedExts := map[string]string{
+			".pdf":  "application/pdf",
+			".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+			".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+			".txt":  "text/plain",
+			".md":   "text/plain",
+			".png":  "image/png",
+			".jpg":  "image/jpeg",
+			".jpeg": "image/jpeg",
+			".gif":  "image/gif",
+			".webp": "image/webp",
+			".json": "application/json",
+		}
+
+		expectedType, allowed := allowedExts[ext]
+		if !allowed {
+			ginutil.RespondWithError(c, http.StatusBadRequest, "Unsupported file extension")
+			return
+		}
+
 		file, openErr := fileHeader.Open()
 		if openErr != nil {
 			ginutil.RespondWithError(c, http.StatusBadRequest, "Failed to read uploaded file: "+openErr.Error())
@@ -117,12 +176,21 @@ func (ctn *ContentCtn) upload(c *gin.Context) {
 		}
 		defer file.Close()
 
+		buffer := make([]byte, 512)
+		n, _ := file.Read(buffer)
+		sniffedType := http.DetectContentType(buffer[:n])
+		if seeker, ok := file.(io.ReadSeeker); ok {
+			_, _ = seeker.Seek(0, io.SeekStart)
+		}
+
+		if ext == ".pdf" && !strings.HasPrefix(sniffedType, "application/pdf") {
+			ginutil.RespondWithError(c, http.StatusBadRequest, "File content does not match PDF format")
+			return
+		}
+
 		fileName = fileHeader.Filename
 		fileSize = fileHeader.Size
-		contentType = fileHeader.Header.Get("Content-Type")
-		if contentType == "" {
-			contentType = "application/octet-stream"
-		}
+		contentType = expectedType
 		fileReader = file
 	} else if title == "" && sourceUrl == "" {
 		ginutil.RespondWithError(c, http.StatusBadRequest, "File or title/sourceUrl is required")
@@ -166,11 +234,15 @@ func (ctn *ContentCtn) list(c *gin.Context) {
 		return
 	}
 
-	if !authutils.CheckCourseAccess(c, courseUuid, ctn.courseService.IsEnrolledOrAdmin, course.ErrCourseNotFound) {
-		return
+	userUuid, _ := authutils.GetUserUUID(c)
+	isPrivileged, _ := ctn.courseService.IsTeacherOrAdmin(courseUuid, userUuid, authutils.IsAdmin(c))
+	if !isPrivileged {
+		if !authutils.CheckCourseAccess(c, courseUuid, ctn.courseService.IsEnrolledOrAdmin, course.ErrCourseNotFound) {
+			return
+		}
 	}
 
-	pages, err := ctn.contentService.ListStaticPages(courseUuid, moduleUuid)
+	pages, err := ctn.contentService.ListStaticPages(courseUuid, moduleUuid, userUuid, isPrivileged)
 	if ctn.handleError(c, err) {
 		return
 	}
@@ -196,6 +268,7 @@ func (ctn *ContentCtn) list(c *gin.Context) {
 //	@Success		200			{object}	StaticPageDto
 //	@Failure		400			{object}	ginutil.ErrorResponse
 //	@Failure		401			{object}	ginutil.ErrorResponse
+//	@Failure		403			{object}	ginutil.ErrorResponse
 //	@Failure		404			{object}	ginutil.ErrorResponse
 //	@Failure		500			{object}	ginutil.ErrorResponse
 //	@Router			/course/{uuid}/module/{moduleUuid}/static-page/{pageUuid} [get]
@@ -213,11 +286,15 @@ func (ctn *ContentCtn) get(c *gin.Context) {
 		return
 	}
 
-	if !authutils.CheckCourseAccess(c, courseUuid, ctn.courseService.IsEnrolledOrAdmin, course.ErrCourseNotFound) {
-		return
+	userUuid, _ := authutils.GetUserUUID(c)
+	isPrivileged, _ := ctn.courseService.IsTeacherOrAdmin(courseUuid, userUuid, authutils.IsAdmin(c))
+	if !isPrivileged {
+		if !authutils.CheckCourseAccess(c, courseUuid, ctn.courseService.IsEnrolledOrAdmin, course.ErrCourseNotFound) {
+			return
+		}
 	}
 
-	sp, err := ctn.contentService.GetStaticPage(courseUuid, moduleUuid, pageUuid)
+	sp, err := ctn.contentService.GetStaticPage(courseUuid, moduleUuid, pageUuid, userUuid, isPrivileged)
 	if ctn.handleError(c, err) {
 		return
 	}
@@ -237,6 +314,7 @@ func (ctn *ContentCtn) get(c *gin.Context) {
 //	@Success		200
 //	@Failure		400	{object}	ginutil.ErrorResponse
 //	@Failure		401	{object}	ginutil.ErrorResponse
+//	@Failure		403	{object}	ginutil.ErrorResponse
 //	@Failure		404	{object}	ginutil.ErrorResponse
 //	@Failure		500	{object}	ginutil.ErrorResponse
 //	@Router			/course/{uuid}/module/{moduleUuid}/static-page/{pageUuid}/preview [get]
@@ -254,17 +332,30 @@ func (ctn *ContentCtn) preview(c *gin.Context) {
 		return
 	}
 
-	if !authutils.CheckCourseAccess(c, courseUuid, ctn.courseService.IsEnrolledOrAdmin, course.ErrCourseNotFound) {
-		return
+	userUuid, _ := authutils.GetUserUUID(c)
+	isPrivileged, _ := ctn.courseService.IsTeacherOrAdmin(courseUuid, userUuid, authutils.IsAdmin(c))
+	if !isPrivileged {
+		if !authutils.CheckCourseAccess(c, courseUuid, ctn.courseService.IsEnrolledOrAdmin, course.ErrCourseNotFound) {
+			return
+		}
 	}
 
-	reader, sp, err := ctn.contentService.GetFileStream(courseUuid, moduleUuid, pageUuid)
+	reader, sp, err := ctn.contentService.GetFileStream(courseUuid, moduleUuid, pageUuid, userUuid, isPrivileged)
 	if ctn.handleError(c, err) {
 		return
 	}
 	defer reader.Close()
 
-	c.Header("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", sp.FileName))
+	cleanFileName := filepath.Base(sp.FileName)
+	cleanFileName = strings.ReplaceAll(cleanFileName, "\r", "")
+	cleanFileName = strings.ReplaceAll(cleanFileName, "\n", "")
+	cleanFileName = strings.ReplaceAll(cleanFileName, "\"", "")
+	disposition := mime.FormatMediaType("inline", map[string]string{"filename": cleanFileName})
+
+	c.Header("Content-Disposition", disposition)
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+
 	contentType := sp.ContentType
 	if contentType == "" {
 		contentType = "application/octet-stream"
