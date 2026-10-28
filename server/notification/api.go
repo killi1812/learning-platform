@@ -37,16 +37,15 @@ func NewNotificationCtn(service INotificationService, hub *Hub, logger *zap.Suga
 }
 
 func (ctn *NotificationCtn) RegisterEndpoints(api *gin.RouterGroup) {
-	notifications := api.Group("/notification")
+	notifications := api.Group("/notification", authutils.Protect())
 
-	notifications.GET("", authutils.Protect(), ctn.list)
-	notifications.GET("/unread-count", authutils.Protect(), ctn.unreadCount)
-	notifications.GET("/stream", authutils.Protect(), ctn.stream)
-	notifications.POST("/seen-all", authutils.Protect(), ctn.markAllSeen)
-	notifications.POST("/:uuid/seen", authutils.Protect(), ctn.markSeen)
-	notifications.DELETE("/:uuid", authutils.Protect(), ctn.delete)
-
-	notifications.POST("/send", authutils.Protect(), ctn.send)
+	notifications.GET("", ctn.list)
+	notifications.GET("/unread-count", ctn.unreadCount)
+	notifications.GET("/stream", ctn.stream)
+	notifications.POST("/seen-all", ctn.markAllSeen)
+	notifications.POST("/:uuid/seen", ctn.markSeen)
+	notifications.DELETE("/:uuid", ctn.delete)
+	notifications.POST("/send", ctn.send)
 }
 
 func (ctn *NotificationCtn) handleError(c *gin.Context, err error, fallbackMsg string) bool {

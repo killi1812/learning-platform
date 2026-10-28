@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/notification"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/testutil"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 	authUtil "git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
@@ -52,9 +53,13 @@ func TestAuthService_Unit(t *testing.T) {
 	app.AccessKey = "test-auth-access-key-12345"
 	app.RefreshKey = "test-auth-refresh-key-12345"
 
-	gormDb := testutil.NewSqliteTestDb(t, &user.User{})
+	gormDb := testutil.NewSqliteTestDb(t, &user.User{}, &notification.Notification{})
 	logger := zap.NewNop().Sugar()
-	svc := &AuthService{db: gormDb, logger: logger}
+	svc := &AuthService{
+		db:            gormDb,
+		logger:        logger,
+		notifications: notification.NewNotificationService(gormDb, notification.NewHub(), logger),
+	}
 
 	// Insert test user
 	userUuid := uuid.New()
@@ -187,9 +192,14 @@ func TestAuthService_Integration(t *testing.T) {
 	app.RefreshKey = "test-auth-refresh-key-12345"
 
 	mongoDb := getTestMongoDb(t)
-	gormDb := testutil.NewSqliteTestDb(t, &user.User{})
+	gormDb := testutil.NewSqliteTestDb(t, &user.User{}, &notification.Notification{})
 	logger := zap.NewNop().Sugar()
-	svc := &AuthService{db: gormDb, mongoDb: mongoDb, logger: logger}
+	svc := &AuthService{
+		db:            gormDb,
+		mongoDb:       mongoDb,
+		logger:        logger,
+		notifications: notification.NewNotificationService(gormDb, notification.NewHub(), logger),
+	}
 
 	// Insert test user
 	userUuid := uuid.New()

@@ -21,6 +21,7 @@ const sendBatchSize = 100
 
 type INotificationService interface {
 	SendToUsers(senderUuid uuid.UUID, recipientUuids []uuid.UUID, title string, body string, url string) ([]Notification, error)
+	NotifySystem(recipientUuid uuid.UUID, title string, body string, url string) (*Notification, error)
 	List(userUuid uuid.UUID, limit int, before *time.Time) ([]Notification, error)
 	CountUnseen(userUuid uuid.UUID) (int64, error)
 	MarkSeen(userUuid uuid.UUID, notificationUuid uuid.UUID) (*Notification, error)
@@ -51,6 +52,30 @@ func (s *NotificationService) userID(userUuid uuid.UUID) (uint, error) {
 		return 0, err
 	}
 	return u.ID, nil
+}
+
+// NotifySystem writes one row with no sender for a single recipient, for example a welcome message.
+// The row is pushed to the recipient's open streams, like SendToUsers.
+func (s *NotificationService) NotifySystem(recipientUuid uuid.UUID, title string, body string, url string) (*Notification, error) {
+	userID, err := s.userID(recipientUuid)
+	if err != nil {
+		return nil, err
+	}
+
+	n := Notification{
+		UserID:    userID,
+		Title:     title,
+		Body:      body,
+		URL:       url,
+		CreatedAt: time.Now(),
+	}
+	if err := s.db.Create(&n).Error; err != nil {
+		s.logger.Errorf("Failed to create system notification: %v", err)
+		return nil, err
+	}
+
+	s.hub.Publish(recipientUuid, NotificationDto{}.FromModel(&n))
+	return &n, nil
 }
 
 // SendToUsers writes one private row per recipient and pushes each row to that user's open streams.
