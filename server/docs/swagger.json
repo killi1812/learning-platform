@@ -292,6 +292,11 @@
         },
         "/course": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns all courses with optional filtering by term and year",
                 "produces": [
                     "application/json"
@@ -322,6 +327,12 @@
                             "items": {
                                 "$ref": "#/definitions/course.CourseDto"
                             }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
                         }
                     },
                     "500": {
@@ -430,6 +441,11 @@
         },
         "/course/{uuid}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns a single course with details",
                 "produces": [
                     "application/json"
@@ -456,6 +472,12 @@
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/ginutil.ErrorResponse"
                         }
@@ -942,6 +964,11 @@
         },
         "/course/{uuid}/module": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns all modules of a course ordered by position",
                 "produces": [
                     "application/json"
@@ -971,6 +998,12 @@
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/ginutil.ErrorResponse"
                         }
@@ -1422,7 +1455,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Uploads course material file (.pdf, .pptx, .md, .txt) to object storage or creates link (Teacher or Admin only)",
+                "description": "Uploads course material file (.pdf, .pptx, .docx, .md, .txt) to object storage or creates link (Teacher or Admin only)",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -1566,6 +1599,12 @@
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
                         "schema": {
                             "$ref": "#/definitions/ginutil.ErrorResponse"
                         }
@@ -1793,6 +1832,12 @@
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
                         "schema": {
                             "$ref": "#/definitions/ginutil.ErrorResponse"
                         }

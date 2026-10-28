@@ -154,17 +154,25 @@ func TestModuleDtos(t *testing.T) {
 			Position:      &pos,
 			DependsOnUuid: &depUuidStr,
 		}
-		model := dto.ToModel(10)
+		model, err := dto.ToModel(10)
+		assert.NoError(t, err)
 		assert.Equal(t, uint(10), model.CourseID)
 		assert.Equal(t, "Week 2: Advanced Topics", model.Title)
 		assert.Equal(t, 3, model.Position)
 		assert.NotNil(t, model.DependsOn)
 		assert.Equal(t, depUuid, model.DependsOn.Uuid)
 
-		// nil position defaults to 0
+		// nil position defaults to -1 (unspecified)
 		dto2 := CreateModuleDto{Title: "Week 1"}
-		model2 := dto2.ToModel(10)
-		assert.Equal(t, 0, model2.Position)
+		model2, err := dto2.ToModel(10)
+		assert.NoError(t, err)
+		assert.Equal(t, -1, model2.Position)
+
+		// invalid dependsOnUuid returns error
+		badDep := "not-a-uuid"
+		dtoBad := CreateModuleDto{Title: "Week 1", DependsOnUuid: &badDep}
+		_, err = dtoBad.ToModel(10)
+		assert.Error(t, err)
 	})
 
 	t.Run("UpdateModuleDto to model", func(t *testing.T) {
@@ -176,17 +184,25 @@ func TestModuleDtos(t *testing.T) {
 			Position:      &pos,
 			DependsOnUuid: &depUuidStr,
 		}
-		model := dto.ToModel(10)
+		model, err := dto.ToModel(10)
+		assert.NoError(t, err)
 		assert.Equal(t, uint(10), model.CourseID)
 		assert.Equal(t, "Week 2 Updated", model.Title)
 		assert.Equal(t, 5, model.Position)
 		assert.NotNil(t, model.DependsOn)
 		assert.Equal(t, depUuid, model.DependsOn.Uuid)
 
-		// nil position defaults to 0
+		// nil position defaults to -1
 		dto2 := UpdateModuleDto{Title: "Week 1 Updated"}
-		model2 := dto2.ToModel(10)
-		assert.Equal(t, 0, model2.Position)
+		model2, err := dto2.ToModel(10)
+		assert.NoError(t, err)
+		assert.Equal(t, -1, model2.Position)
+
+		// invalid dependsOnUuid returns error
+		badDep := "not-a-uuid"
+		dtoBad := UpdateModuleDto{Title: "Week 1 Updated", DependsOnUuid: &badDep}
+		_, err = dtoBad.ToModel(10)
+		assert.Error(t, err)
 	})
 
 	t.Run("ModuleDto FromModel with nil model", func(t *testing.T) {

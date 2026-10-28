@@ -139,8 +139,16 @@ type CreateModuleDto struct {
 	DependsOnUuid *string `json:"dependsOnUuid,omitempty"`
 }
 
-func (d CreateModuleDto) ToModel(courseIDs ...uint) *Module {
-	pos := 0
+func (d CreateModuleDto) ToModel(courseIDs ...uint) (*Module, error) {
+	var dep *Module
+	if d.DependsOnUuid != nil && *d.DependsOnUuid != "" {
+		depUuid, err := uuid.Parse(*d.DependsOnUuid)
+		if err != nil {
+			return nil, errors.New("invalid prerequisite module UUID")
+		}
+		dep = &Module{Uuid: depUuid}
+	}
+	pos := -1
 	if d.Position != nil {
 		pos = *d.Position
 	}
@@ -148,17 +156,12 @@ func (d CreateModuleDto) ToModel(courseIDs ...uint) *Module {
 	if len(courseIDs) > 0 {
 		courseID = courseIDs[0]
 	}
-	m := &Module{
-		CourseID: courseID,
-		Title:    d.Title,
-		Position: pos,
-	}
-	if d.DependsOnUuid != nil && *d.DependsOnUuid != "" {
-		if depUuid, err := uuid.Parse(*d.DependsOnUuid); err == nil {
-			m.DependsOn = &Module{Uuid: depUuid}
-		}
-	}
-	return m
+	return &Module{
+		CourseID:  courseID,
+		Title:     d.Title,
+		Position:  pos,
+		DependsOn: dep,
+	}, nil
 }
 
 type UpdateModuleDto struct {
@@ -167,8 +170,16 @@ type UpdateModuleDto struct {
 	DependsOnUuid *string `json:"dependsOnUuid,omitempty"`
 }
 
-func (d UpdateModuleDto) ToModel(courseIDs ...uint) *Module {
-	pos := 0
+func (d UpdateModuleDto) ToModel(courseIDs ...uint) (*Module, error) {
+	var dep *Module
+	if d.DependsOnUuid != nil && *d.DependsOnUuid != "" {
+		depUuid, err := uuid.Parse(*d.DependsOnUuid)
+		if err != nil {
+			return nil, errors.New("invalid prerequisite module UUID")
+		}
+		dep = &Module{Uuid: depUuid}
+	}
+	pos := -1
 	if d.Position != nil {
 		pos = *d.Position
 	}
@@ -176,17 +187,12 @@ func (d UpdateModuleDto) ToModel(courseIDs ...uint) *Module {
 	if len(courseIDs) > 0 {
 		courseID = courseIDs[0]
 	}
-	m := &Module{
-		CourseID: courseID,
-		Title:    d.Title,
-		Position: pos,
-	}
-	if d.DependsOnUuid != nil && *d.DependsOnUuid != "" {
-		if depUuid, err := uuid.Parse(*d.DependsOnUuid); err == nil {
-			m.DependsOn = &Module{Uuid: depUuid}
-		}
-	}
-	return m
+	return &Module{
+		CourseID:  courseID,
+		Title:     d.Title,
+		Position:  pos,
+		DependsOn: dep,
+	}, nil
 }
 
 type ModuleDto struct {

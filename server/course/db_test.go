@@ -6,6 +6,7 @@ import (
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/testutil"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/storage"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
@@ -14,7 +15,8 @@ import (
 func setupTestDB(t *testing.T) (*CourseService, *user.User, *user.User) {
 	db := testutil.NewSqliteTestDb(t, &user.User{}, &Course{}, &Enrollment{}, &Group{}, &Module{})
 	logger := zap.NewNop().Sugar()
-	svc := &CourseService{db: db, logger: logger}
+	memStorage := storage.NewMemoryStorageService()
+	svc := &CourseService{db: db, storage: memStorage, logger: logger}
 
 	teacher := &user.User{
 		Uuid:         uuid.New(),
@@ -257,7 +259,7 @@ func TestCourseService_CRUDAndEnrollment(t *testing.T) {
 	})
 
 	t.Run("NewCourseService constructor", func(t *testing.T) {
-		constructorSvc := NewCourseService(svc.db, svc.logger)
+		constructorSvc := NewCourseService(svc.db, svc.storage, svc.logger)
 		assert.NotNil(t, constructorSvc)
 	})
 
@@ -434,15 +436,40 @@ func TestCourseService_Modules(t *testing.T) {
 	t.Run("UpdateModule with self as prerequisite returns ErrSelfPrerequisite", func(t *testing.T) {
 		_, err := svc.UpdateModule(course.Uuid, mod1.Uuid, &Module{
 			Title:       "Week 1",
+			Position:    -1,
 			DependsOnID: &mod1.ID,
 		})
 		assert.ErrorIs(t, err, ErrSelfPrerequisite)
+	})
+
+	t.Run("UpdateModule circular prerequisite returns ErrCircularPrerequisite", func(t *testing.T) {
+		// mod2 depends on mod1. Now attempt to make mod1 depend on mod2.
+		_, err := svc.UpdateModule(course.Uuid, mod1.Uuid, &Module{
+			Title:       "Week 1",
+			Position:    -1,
+			DependsOnID: &mod2.ID,
+		})
+		assert.ErrorIs(t, err, ErrCircularPrerequisite)
+	})
+
+	t.Run("UpdateModule with position -1 preserves existing position", func(t *testing.T) {
+		current, err := svc.GetModule(course.Uuid, mod1.Uuid)
+		assert.NoError(t, err)
+		origPos := current.Position
+
+		updated, err := svc.UpdateModule(course.Uuid, mod1.Uuid, &Module{
+			Title:    "Week 1 Renamed",
+			Position: -1,
+		})
+		assert.NoError(t, err)
+		assert.Equal(t, origPos, updated.Position)
 	})
 
 	t.Run("UpdateModule with non-existent prerequisite returns ErrModuleNotFound", func(t *testing.T) {
 		ghostID := uint(9999)
 		_, err := svc.UpdateModule(course.Uuid, mod1.Uuid, &Module{
 			Title:       "Week 1",
+			Position:    -1,
 			DependsOnID: &ghostID,
 		})
 		assert.ErrorIs(t, err, ErrModuleNotFound)
@@ -455,16 +482,17 @@ func TestCourseService_Modules(t *testing.T) {
 
 		_, err = svc.UpdateModule(course.Uuid, mod1.Uuid, &Module{
 			Title:       "Week 1",
+			Position:    -1,
 			DependsOnID: &otherModules[0].ID,
 		})
 		assert.ErrorIs(t, err, ErrCrossCoursePrerequisite)
 	})
 
 	t.Run("UpdateModule non-existent returns error", func(t *testing.T) {
-		_, err := svc.UpdateModule(course.Uuid, uuid.New(), &Module{Title: "Ghost"})
+		_, err := svc.UpdateModule(course.Uuid, uuid.New(), &Module{Title: "Ghost", Position: -1})
 		assert.ErrorIs(t, err, ErrModuleNotFound)
 
-		_, err = svc.UpdateModule(uuid.New(), mod1.Uuid, &Module{Title: "Ghost"})
+		_, err = svc.UpdateModule(uuid.New(), mod1.Uuid, &Module{Title: "Ghost", Position: -1})
 		assert.ErrorIs(t, err, ErrCourseNotFound)
 	})
 
@@ -486,9 +514,13 @@ func TestCourseService_Modules(t *testing.T) {
 		assert.ErrorIs(t, err, ErrCourseNotFound)
 	})
 
-	t.Run("ReorderModules non-existent module returns ErrModuleNotFound", func(t *testing.T) {
+	t.Run("ReorderModules non-existent module or incomplete list returns ErrInvalidReorderList", func(t *testing.T) {
 		err := svc.ReorderModules(course.Uuid, []uuid.UUID{uuid.New()})
-		assert.ErrorIs(t, err, ErrModuleNotFound)
+		assert.ErrorIs(t, err, ErrInvalidReorderList)
+
+		// duplicate module UUID
+		err = svc.ReorderModules(course.Uuid, []uuid.UUID{mod1.Uuid, mod1.Uuid})
+		assert.ErrorIs(t, err, ErrInvalidReorderList)
 	})
 
 	t.Run("DeleteModule deletes module and cascades SET NULL on dependent", func(t *testing.T) {

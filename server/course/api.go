@@ -69,7 +69,9 @@ func (ctn *CourseCtn) handleError(c *gin.Context, err error, fallbackMsg string)
 		ginutil.RespondWithError(c, http.StatusConflict, err.Error())
 	case errors.Is(err, ErrCannotRemoveTeacher),
 		errors.Is(err, ErrSelfPrerequisite),
-		errors.Is(err, ErrCrossCoursePrerequisite):
+		errors.Is(err, ErrCrossCoursePrerequisite),
+		errors.Is(err, ErrCircularPrerequisite),
+		errors.Is(err, ErrInvalidReorderList):
 		ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
 	default:
 		ctn.logger.Errorf("%s: %v", fallbackMsg, err)
@@ -84,9 +86,11 @@ func (ctn *CourseCtn) handleError(c *gin.Context, err error, fallbackMsg string)
 //	@Description	Returns all courses with optional filtering by term and year
 //	@Tags			course
 //	@Produce		json
+//	@Security		BearerAuth
 //	@Param			term	query		string	false	"Term (SPRING or AUTUMN)"
 //	@Param			year	query		int		false	"Academic Year (e.g. 2026)"
 //	@Success		200		{array}		CourseDto
+//	@Failure		401		{object}	ginutil.ErrorResponse
 //	@Failure		500		{object}	ginutil.ErrorResponse
 //	@Router			/course [get]
 func (ctn *CourseCtn) list(c *gin.Context) {
@@ -125,9 +129,11 @@ func (ctn *CourseCtn) list(c *gin.Context) {
 //	@Description	Returns a single course with details
 //	@Tags			course
 //	@Produce		json
+//	@Security		BearerAuth
 //	@Param			uuid	path		string	true	"Course UUID"
 //	@Success		200		{object}	CourseDto
 //	@Failure		400		{object}	ginutil.ErrorResponse
+//	@Failure		401		{object}	ginutil.ErrorResponse
 //	@Failure		404		{object}	ginutil.ErrorResponse
 //	@Failure		500		{object}	ginutil.ErrorResponse
 //	@Router			/course/{uuid} [get]
@@ -502,9 +508,11 @@ func (ctn *CourseCtn) removeEnrollment(c *gin.Context) {
 //	@Description	Returns all modules of a course ordered by position
 //	@Tags			module
 //	@Produce		json
+//	@Security		BearerAuth
 //	@Param			uuid	path		string	true	"Course UUID"
 //	@Success		200		{array}		ModuleDto
 //	@Failure		400		{object}	ginutil.ErrorResponse
+//	@Failure		401		{object}	ginutil.ErrorResponse
 //	@Failure		404		{object}	ginutil.ErrorResponse
 //	@Failure		500		{object}	ginutil.ErrorResponse
 //	@Router			/course/{uuid}/module [get]
@@ -602,7 +610,13 @@ func (ctn *CourseCtn) createModule(c *gin.Context) {
 		return
 	}
 
-	created, err := ctn.CourseService.CreateModule(courseUuid, input.ToModel())
+	inputModel, err := input.ToModel()
+	if err != nil {
+		ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	created, err := ctn.CourseService.CreateModule(courseUuid, inputModel)
 	if ctn.handleError(c, err, "Failed to create module") {
 		return
 	}
@@ -649,7 +663,13 @@ func (ctn *CourseCtn) updateModule(c *gin.Context) {
 		return
 	}
 
-	updated, err := ctn.CourseService.UpdateModule(courseUuid, moduleUuid, input.ToModel())
+	inputModel, err := input.ToModel()
+	if err != nil {
+		ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	updated, err := ctn.CourseService.UpdateModule(courseUuid, moduleUuid, inputModel)
 	if ctn.handleError(c, err, "Failed to update module") {
 		return
 	}

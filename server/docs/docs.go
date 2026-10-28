@@ -303,6 +303,11 @@ const docTemplate = `{
         },
         "/course": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns all courses with optional filtering by term and year",
                 "produces": [
                     "application/json"
@@ -333,6 +338,12 @@ const docTemplate = `{
                             "items": {
                                 "$ref": "#/definitions/course.CourseDto"
                             }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
                         }
                     },
                     "500": {
@@ -441,6 +452,11 @@ const docTemplate = `{
         },
         "/course/{uuid}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns a single course with details",
                 "produces": [
                     "application/json"
@@ -467,6 +483,12 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/ginutil.ErrorResponse"
                         }
@@ -953,6 +975,11 @@ const docTemplate = `{
         },
         "/course/{uuid}/module": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns all modules of a course ordered by position",
                 "produces": [
                     "application/json"
@@ -982,6 +1009,12 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/ginutil.ErrorResponse"
                         }
@@ -1433,7 +1466,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Uploads course material file (.pdf, .pptx, .md, .txt) to object storage or creates link (Teacher or Admin only)",
+                "description": "Uploads course material file (.pdf, .pptx, .docx, .md, .txt) to object storage or creates link (Teacher or Admin only)",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -1577,6 +1610,12 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
                         "schema": {
                             "$ref": "#/definitions/ginutil.ErrorResponse"
                         }
@@ -1804,6 +1843,12 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
                         "schema": {
                             "$ref": "#/definitions/ginutil.ErrorResponse"
                         }
