@@ -232,11 +232,6 @@
                     title="Quiz"
                     @click="handleComingSoon('Quiz')"
                   />
-                  <v-list-item
-                    prepend-icon="mdi-dots-horizontal"
-                    title="etc"
-                    @click="handleComingSoon('etc')"
-                  />
                 </v-list>
               </v-menu>
             </div>
@@ -278,6 +273,15 @@
                   >
                     Preview
                   </v-btn>
+                  <v-btn
+                    v-if="isTeacher"
+                    size="small"
+                    color="primary"
+                    icon="mdi-pencil-outline"
+                    variant="text"
+                    title="Edit Material"
+                    @click="openEditMaterialDialog(mod.uuid, page)"
+                  />
                   <v-btn
                     v-if="isTeacher"
                     size="small"
@@ -360,7 +364,7 @@
           <v-icon class="mb-3 text-medium-emphasis" icon="mdi-clipboard-text-outline" size="48" />
           <h2 class="text-h5 font-weight-bold text-high-emphasis mb-2">Assignments</h2>
           <p class="text-body-1 text-medium-emphasis mb-0">
-            TODO: Set when assignments are implemented
+            Assignments will be available here once published.
           </p>
         </v-card>
       </div>
@@ -370,7 +374,9 @@
         <v-card class="pa-6 bg-surface mb-6 text-center" elevation="1" rounded="lg">
           <v-icon class="mb-3 text-medium-emphasis" icon="mdi-account-multiple" size="48" />
           <h2 class="text-h5 font-weight-bold text-high-emphasis mb-2">Groups</h2>
-          <p class="text-body-1 text-medium-emphasis mb-0">TODO: Set when groups are implemented</p>
+          <p class="text-body-1 text-medium-emphasis mb-0">
+            Course groups will be available here once configured.
+          </p>
         </v-card>
       </div>
 
@@ -549,6 +555,23 @@
         </v-card-subtitle>
 
         <v-card-text class="px-4 pt-4">
+          <v-text-field
+            v-model="uploadTitle"
+            class="mb-3"
+            label="Title (Optional for files, required for URLs)"
+            placeholder="e.g. Lecture 1 Slides"
+            variant="outlined"
+          />
+
+          <v-textarea
+            v-model="uploadDescription"
+            class="mb-3"
+            label="Description / Notes (Optional)"
+            placeholder="Additional context or notes"
+            rows="2"
+            variant="outlined"
+          />
+
           <v-file-input
             v-model="uploadFile"
             class="mb-3"
@@ -576,12 +599,60 @@
           </v-btn>
           <v-btn
             color="primary"
-            :disabled="!uploadFile && !uploadSourceUrl.trim()"
+            :disabled="
+              (!uploadFile && !uploadSourceUrl.trim()) || (!uploadFile && !uploadTitle.trim())
+            "
             :loading="uploading"
             variant="elevated"
             @click="handleUploadMaterial"
           >
             Upload
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- Edit Material Dialog -->
+    <v-dialog v-model="editMaterialDialogOpen" max-width="540" persistent>
+      <v-card class="bg-surface pa-2" rounded="lg">
+        <v-card-title class="text-h5 font-weight-bold pt-4 px-4 text-high-emphasis">
+          Edit Material Details
+        </v-card-title>
+        <v-card-subtitle class="px-4 text-medium-emphasis">
+          Update the title and description for this course material.
+        </v-card-subtitle>
+
+        <v-card-text class="px-4 pt-4">
+          <v-text-field
+            v-model="editMaterialTitle"
+            class="mb-3"
+            label="Title"
+            required
+            variant="outlined"
+          />
+
+          <v-textarea
+            v-model="editMaterialDescription"
+            class="mb-3"
+            label="Description / Notes (Optional)"
+            rows="3"
+            variant="outlined"
+          />
+        </v-card-text>
+
+        <v-card-actions class="pa-4 bg-surface-variant">
+          <v-spacer />
+          <v-btn color="medium-emphasis" variant="text" @click="editMaterialDialogOpen = false">
+            Cancel
+          </v-btn>
+          <v-btn
+            color="primary"
+            :disabled="!editMaterialTitle.trim()"
+            :loading="savingMaterial"
+            variant="elevated"
+            @click="handleSaveMaterial"
+          >
+            Save Changes
           </v-btn>
         </v-card-actions>
       </v-card>
@@ -609,7 +680,12 @@ import {
   updateCourse,
   deleteCourse,
 } from '@/api/course'
-import { listStaticPages, uploadStaticPage, deleteStaticPage } from '@/api/content'
+import {
+  listStaticPages,
+  uploadStaticPage,
+  updateStaticPage,
+  deleteStaticPage,
+} from '@/api/content'
 import type { Course, Module, Enrollment, UpdateCoursePayload } from '@/types/course'
 import type { StaticPage } from '@/types/content'
 
@@ -618,7 +694,6 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'back'): void
   (e: 'course-deleted'): void
 }>()
 
@@ -649,11 +724,6 @@ watch(activeTab, newTab => {
   }
 })
 
-function goBack() {
-  emit('back')
-  router.push('/courses')
-}
-
 // Settings edit form
 const editCourseData = ref<UpdateCoursePayload>({
   title: '',
@@ -668,8 +738,9 @@ const deletingCourse = ref(false)
 const moduleDialogOpen = ref(false)
 const isEditingModule = ref(false)
 const editingModuleUuid = ref<string | undefined>(undefined)
-const moduleForm = ref<{ title: string; dependsOnUuid?: string }>({
+const moduleForm = ref<{ title: string; position?: number; dependsOnUuid?: string }>({
   title: '',
+  position: undefined,
   dependsOnUuid: undefined,
 })
 const savingModule = ref(false)
@@ -685,39 +756,104 @@ const deletingEnrollmentUserUuid = ref<string | undefined>(undefined)
 const modulePages = ref<Record<string, StaticPage[]>>({})
 const uploadDialogOpen = ref(false)
 const targetModuleUuid = ref<string>('')
-const uploadFile = ref<File | File[] | null>(null)
+const uploadFile = ref<File | File[] | undefined>(undefined)
+const uploadTitle = ref('')
+const uploadDescription = ref('')
 const uploadSourceUrl = ref('')
 const uploading = ref(false)
 
+// Edit material state
+const editMaterialDialogOpen = ref(false)
+const editMaterialTargetModUuid = ref('')
+const editMaterialTargetPageUuid = ref('')
+const editMaterialTitle = ref('')
+const editMaterialDescription = ref('')
+const savingMaterial = ref(false)
+
 const availablePrerequisites = computed(() => {
-  return modules.value.filter(m => {
-    if (isEditingModule.value && m.uuid === editingModuleUuid.value) {
-      return false
+  const disallowed = new Set<string>()
+  if (isEditingModule.value && editingModuleUuid.value) {
+    disallowed.add(editingModuleUuid.value)
+    let added = true
+    while (added) {
+      added = false
+      for (const m of modules.value) {
+        if (m.dependsOnUuid && disallowed.has(m.dependsOnUuid) && !disallowed.has(m.uuid)) {
+          disallowed.add(m.uuid)
+          added = true
+        }
+      }
     }
-    return true
-  })
+  }
+  return modules.value.filter(m => !disallowed.has(m.uuid))
 })
 
 async function loadAllModulePages() {
-  if (!resolvedCourseUuid.value) return
+  if (!resolvedCourseUuid.value || modules.value.length === 0) return
   const pagesMap: Record<string, StaticPage[]> = {}
+  let hasError = false
   await Promise.all(
     modules.value.map(async mod => {
       try {
         pagesMap[mod.uuid] = await listStaticPages(resolvedCourseUuid.value, mod.uuid)
       } catch {
         pagesMap[mod.uuid] = []
+        hasError = true
       }
     }),
   )
   modulePages.value = pagesMap
+  if (hasError) {
+    toast.error('Failed to load materials for one or more modules.')
+  }
 }
 
 function openUploadDialog(modUuid: string) {
   targetModuleUuid.value = modUuid
-  uploadFile.value = null
+  uploadFile.value = undefined
+  uploadTitle.value = ''
+  uploadDescription.value = ''
   uploadSourceUrl.value = ''
   uploadDialogOpen.value = true
+}
+
+function openEditMaterialDialog(modUuid: string, page: StaticPage) {
+  editMaterialTargetModUuid.value = modUuid
+  editMaterialTargetPageUuid.value = page.uuid
+  editMaterialTitle.value = page.title
+  editMaterialDescription.value = page.description || ''
+  editMaterialDialogOpen.value = true
+}
+
+async function handleSaveMaterial() {
+  if (
+    !editMaterialTitle.value.trim() ||
+    !editMaterialTargetPageUuid.value ||
+    !resolvedCourseUuid.value
+  )
+    return
+  savingMaterial.value = true
+  try {
+    await updateStaticPage(
+      resolvedCourseUuid.value,
+      editMaterialTargetModUuid.value,
+      editMaterialTargetPageUuid.value,
+      {
+        title: editMaterialTitle.value.trim(),
+        description: editMaterialDescription.value.trim() || undefined,
+      },
+    )
+    toast.success('Course material updated successfully.')
+    editMaterialDialogOpen.value = false
+    modulePages.value[editMaterialTargetModUuid.value] = await listStaticPages(
+      resolvedCourseUuid.value,
+      editMaterialTargetModUuid.value,
+    )
+  } catch (err: unknown) {
+    toast.error(err instanceof Error ? err.message : 'Failed to update course material.')
+  } finally {
+    savingMaterial.value = false
+  }
 }
 
 async function handleUploadMaterial() {
@@ -728,11 +864,17 @@ async function handleUploadMaterial() {
     toast.error('Please select a file or provide a URL.')
     return
   }
+  if (!rawFile && !uploadTitle.value.trim()) {
+    toast.error('Title is required when adding an external link.')
+    return
+  }
 
   uploading.value = true
   try {
     await uploadStaticPage(resolvedCourseUuid.value, targetModuleUuid.value, {
       file: rawFile || undefined,
+      title: uploadTitle.value.trim() || undefined,
+      description: uploadDescription.value.trim() || undefined,
       sourceUrl: uploadSourceUrl.value.trim() || undefined,
     })
     toast.success('Course material uploaded successfully.')
@@ -890,14 +1032,14 @@ async function handleSelfEnroll() {
 function openCreateModuleDialog() {
   isEditingModule.value = false
   editingModuleUuid.value = undefined
-  moduleForm.value = { title: '', dependsOnUuid: undefined }
+  moduleForm.value = { title: '', position: undefined, dependsOnUuid: undefined }
   moduleDialogOpen.value = true
 }
 
 function openEditModuleDialog(mod: Module) {
   isEditingModule.value = true
   editingModuleUuid.value = mod.uuid
-  moduleForm.value = { title: mod.title, dependsOnUuid: mod.dependsOnUuid }
+  moduleForm.value = { title: mod.title, position: mod.position, dependsOnUuid: mod.dependsOnUuid }
   moduleDialogOpen.value = true
 }
 
@@ -908,6 +1050,7 @@ async function handleSaveModule() {
     if (isEditingModule.value && editingModuleUuid.value) {
       await updateModule(resolvedCourseUuid.value, editingModuleUuid.value, {
         title: moduleForm.value.title,
+        position: moduleForm.value.position,
         dependsOnUuid: moduleForm.value.dependsOnUuid,
       })
       toast.success('Module updated successfully.')

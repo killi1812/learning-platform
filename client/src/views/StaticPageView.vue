@@ -47,12 +47,15 @@
       <!-- Embedded Preview Section -->
       <v-card class="bg-surface overflow-hidden" elevation="2" rounded="lg">
         <!-- 1. PDF Preview -->
-        <div v-if="isPdf && previewBlobUrl" class="preview-container">
+        <div v-if="isPdf && previewBlobUrl && !previewFailed" class="preview-container">
           <iframe class="embedded-frame" :src="previewBlobUrl" title="PDF Document Preview" />
         </div>
 
         <!-- 2. Word (.docx) Document Preview -->
-        <div v-else-if="isDocx && (previewData || previewBlobUrl)" class="preview-container">
+        <div
+          v-else-if="isDocx && (previewData || previewBlobUrl) && !previewFailed"
+          class="preview-container"
+        >
           <vue-office-docx
             v-if="previewData"
             class="office-frame"
@@ -62,7 +65,10 @@
         </div>
 
         <!-- 3. PPTX Presentation Preview -->
-        <div v-else-if="isPptx && (previewData || previewBlobUrl)" class="preview-container">
+        <div
+          v-else-if="isPptx && (previewData || previewBlobUrl) && !previewFailed"
+          class="preview-container"
+        >
           <vue-office-pptx
             v-if="previewData"
             class="office-frame"
@@ -73,24 +79,24 @@
 
         <!-- 4. Image Preview -->
         <div
-          v-else-if="isImage && previewBlobUrl"
+          v-else-if="isImage && previewBlobUrl && !previewFailed"
           class="d-flex justify-center align-center pa-6 bg-surface-variant preview-container"
         >
           <img :alt="page.title" class="img-preview rounded-lg" :src="previewBlobUrl" />
         </div>
 
         <!-- 5. Markdown / Plain Text Preview -->
-        <div v-else-if="isText" class="pa-6">
+        <div v-else-if="isText && !previewFailed" class="pa-6">
           <v-card class="pa-4 bg-surface-variant font-monospace" elevation="0" rounded="lg">
             <pre class="text-body-2 text-high-emphasis text-preview">{{ textContent }}</pre>
           </v-card>
         </div>
 
         <!-- 6. External URL / Iframe Preview -->
-        <div v-else-if="page.sourceUrl" class="preview-container">
+        <div v-else-if="page.sourceUrl && !previewFailed" class="preview-container">
           <iframe
             class="embedded-frame"
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+            sandbox="allow-scripts allow-forms allow-popups"
             :src="page.sourceUrl"
             title="External Resource"
           />
@@ -122,6 +128,7 @@
 </template>
 
 <script setup lang="ts">
+import '@vue-office/docx/lib/index.css'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useToast } from '@/composables/useToast'
@@ -139,11 +146,14 @@ const props = defineProps<{
 const router = useRouter()
 const toast = useToast()
 
+let isMounted = false
+
 const loading = ref(true)
-const error = ref<string | null>(null)
-const page = ref<StaticPage | null>(null)
-const previewBlobUrl = ref<string | null>(null)
-const previewData = ref<Blob | ArrayBuffer | null>(null)
+const error = ref<string | undefined>(undefined)
+const page = ref<StaticPage | undefined>(undefined)
+const previewBlobUrl = ref<string | undefined>(undefined)
+const previewData = ref<Blob | ArrayBuffer | undefined>(undefined)
+const previewFailed = ref(false)
 const textContent = ref<string>('')
 
 const fileNameLower = computed(() => page.value?.fileName?.toLowerCase() || '')
@@ -154,28 +164,21 @@ const isPdf = computed(() => {
 })
 
 const isDocx = computed(() => {
-  return (
-    page.value?.contentType?.includes('word') ||
-    fileNameLower.value.endsWith('.docx') ||
-    fileNameLower.value.endsWith('.doc')
-  )
+  return page.value?.contentType?.includes('word') || fileNameLower.value.endsWith('.docx')
 })
 
 const isPptx = computed(() => {
   return (
     page.value?.contentType?.includes('presentation') ||
     page.value?.contentType?.includes('powerpoint') ||
-    fileNameLower.value.endsWith('.pptx') ||
-    fileNameLower.value.endsWith('.ppt')
+    fileNameLower.value.endsWith('.pptx')
   )
 })
 
 const isImage = computed(() => {
   return (
     page.value?.contentType?.startsWith('image/') ||
-    ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp'].some(ext =>
-      fileNameLower.value.endsWith(ext),
-    )
+    ['.png', '.jpg', '.jpeg', '.gif', '.webp'].some(ext => fileNameLower.value.endsWith(ext))
   )
 })
 
@@ -207,26 +210,38 @@ function goBack() {
 
 function openExternal() {
   if (previewBlobUrl.value) {
-    window.open(previewBlobUrl.value, '_blank')
+    const a = document.createElement('a')
+    a.href = previewBlobUrl.value
+    a.download = page.value?.fileName || 'download'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
   } else if (page.value?.sourceUrl) {
-    window.open(page.value.sourceUrl, '_blank')
+    const url = page.value.sourceUrl
+    if (url.startsWith('https://') || url.startsWith('http://')) {
+      window.open(url, '_blank', 'noopener,noreferrer')
+    }
   }
 }
 
 function onDocxError(err: unknown) {
-  console.warn('DOCX preview rendered with fallback:', err)
+  console.warn('DOCX preview failed, switching to fallback:', err)
+  previewFailed.value = true
 }
 
 function onPptxError(err: unknown) {
-  console.warn('PPTX preview rendered with fallback:', err)
+  console.warn('PPTX preview failed, switching to fallback:', err)
+  previewFailed.value = true
 }
 
 async function loadPage() {
   loading.value = true
-  error.value = null
+  error.value = undefined
+  previewFailed.value = false
 
   try {
     const fetchedPage = await getStaticPage(props.courseUuid, props.moduleUuid, props.pageUuid)
+    if (!isMounted) return
     page.value = fetchedPage
 
     if (fetchedPage.fileName) {
@@ -235,6 +250,7 @@ async function loadPage() {
         props.moduleUuid,
         props.pageUuid,
       )
+      if (!isMounted) return
       previewData.value = blob
       previewBlobUrl.value = URL.createObjectURL(blob)
 
@@ -243,29 +259,35 @@ async function loadPage() {
       }
     }
   } catch (err: unknown) {
+    if (!isMounted) return
     const errorMsg = err instanceof Error ? err.message : 'Failed to load static page material'
     error.value = errorMsg
     if (
       errorMsg.includes('Forbidden') ||
       errorMsg.includes('insufficient permissions') ||
-      errorMsg.includes('403')
+      errorMsg.includes('403') ||
+      errorMsg.includes('prerequisite')
     ) {
-      toast.error('You must be enrolled in this course to access this material.')
+      toast.error('You must be enrolled and satisfy module prerequisites to access this material.')
       router.push(`/courses/${props.courseUuid}`)
     }
   } finally {
-    loading.value = false
+    if (isMounted) {
+      loading.value = false
+    }
   }
 }
 
 onMounted(() => {
+  isMounted = true
   loadPage()
 })
 
 onUnmounted(() => {
+  isMounted = false
   if (previewBlobUrl.value) {
     URL.revokeObjectURL(previewBlobUrl.value)
-    previewBlobUrl.value = null
+    previewBlobUrl.value = undefined
   }
 })
 </script>

@@ -1,3 +1,4 @@
+import axios from 'axios'
 import { authApi, getApiErrorMessage } from './client'
 import type { StaticPage, UploadStaticPagePayload, UpdateStaticPagePayload } from '@/types/content'
 
@@ -61,6 +62,19 @@ export async function getStaticPagePreviewBlob(
     )
     return response.data
   } catch (err: unknown) {
+    if (axios.isAxiosError(err) && err.response?.data instanceof Blob) {
+      try {
+        const text = await err.response.data.text()
+        const parsed = JSON.parse(text)
+        if (parsed && typeof parsed.error === 'string') {
+          throw new Error(parsed.error)
+        }
+      } catch (parseErr: unknown) {
+        if (parseErr instanceof Error && parseErr.message && !parseErr.message.includes('JSON')) {
+          throw parseErr
+        }
+      }
+    }
     throw new Error(getApiErrorMessage(err))
   }
 }
