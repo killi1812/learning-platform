@@ -15,11 +15,11 @@ type ISubmissionPublisher interface {
 
 // SubmissionPublisher publishes submission messages to RabbitMQ with publisher confirms.
 type SubmissionPublisher struct {
-	client *rabbitmq.Client
+	client rabbitmq.IClient
 }
 
 // NewSubmissionPublisher initializes queues and returns a new SubmissionPublisher.
-func NewSubmissionPublisher(client *rabbitmq.Client) (ISubmissionPublisher, error) {
+func NewSubmissionPublisher(client rabbitmq.IClient) (ISubmissionPublisher, error) {
 	if err := client.DeclareQueue(SubmissionQueue); err != nil {
 		return nil, fmt.Errorf("failed to declare submission queue %s: %w", SubmissionQueue, err)
 	}

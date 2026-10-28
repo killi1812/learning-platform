@@ -19,7 +19,7 @@ func NewMongoDb() (*mongo.Database, error) {
 }
 
 // NewRabbitMq initializes and returns the RabbitMQ client.
-func NewRabbitMq() (*rabbitmq.Client, error) {
+func NewRabbitMq() (rabbitmq.IClient, error) {
 	return rabbitmq.NewClient(RabbitMqConn)
 }
 

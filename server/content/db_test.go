@@ -82,4 +82,42 @@ func TestContentService_CreateAssignmentAndGet(t *testing.T) {
 		_, err := svc.GetAssignmentByModule(uuid.New())
 		assert.ErrorIs(t, err, content.ErrContentNotFound)
 	})
+
+	t.Run("CreateAssignment fails when assignment creation fails inside transaction", func(t *testing.T) {
+		cnt := &content.Content{
+			Title:    "Exercise Duplicate",
+			Position: 2,
+		}
+		asgn := &content.Assignment{
+			Type: content.AssignmentHandIn,
+		}
+		created, err := svc.CreateAssignment(m.Uuid, cnt, asgn)
+		assert.NoError(t, err)
+
+		// Drop assignments table to force tx.Create(asgn) failure
+		assert.NoError(t, db.Migrator().DropTable(&content.Assignment{}))
+
+		cnt2 := &content.Content{
+			Title:    "Exercise Broken",
+			Position: 3,
+		}
+		_, err = svc.CreateAssignment(m.Uuid, cnt2, &content.Assignment{Type: content.AssignmentHandIn})
+		assert.Error(t, err)
+
+		// Recreate table and test closed DB error paths
+		assert.NoError(t, db.AutoMigrate(&content.Assignment{}))
+
+		sqlDB, err := db.DB()
+		assert.NoError(t, err)
+		_ = sqlDB.Close()
+
+		_, err = svc.CreateAssignment(m.Uuid, &content.Content{Title: "Closed"}, &content.Assignment{})
+		assert.Error(t, err)
+
+		_, err = svc.GetContent(created.Uuid)
+		assert.Error(t, err)
+
+		_, err = svc.GetAssignmentByModule(m.Uuid)
+		assert.Error(t, err)
+	})
 }

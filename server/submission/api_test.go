@@ -140,6 +140,10 @@ func TestSubmissionCtn_Submit(t *testing.T) {
 
 	t.Run("400 Bad Request on invalid UUID route param", func(t *testing.T) {
 		r := setupTestRouter(&mockSubmissionService{}, &mockPublisher{})
+		badCoursePath := fmt.Sprintf("/api/course/not-a-uuid/content/%s/submission", contentUuid)
+		recCourse := doReq(r, http.MethodPost, badCoursePath, auth, validPayload)
+		assert.Equal(t, http.StatusBadRequest, recCourse.Code)
+
 		badPath := fmt.Sprintf("/api/course/%s/content/not-a-uuid/submission", courseUuid)
 		rec := doReq(r, http.MethodPost, badPath, auth, validPayload)
 		assert.Equal(t, http.StatusBadRequest, rec.Code)
@@ -217,6 +221,17 @@ func TestSubmissionCtn_Submit(t *testing.T) {
 		r := setupTestRouter(mockSvc, &mockPublisher{})
 		rec := doReq(r, http.MethodPost, path, auth, validPayload)
 		assert.Equal(t, http.StatusForbidden, rec.Code)
+	})
+
+	t.Run("500 Internal Server Error on unexpected service error", func(t *testing.T) {
+		mockSvc := &mockSubmissionService{
+			resolveTargetFunc: func(courseUuid, contentUuid, userUuid uuid.UUID, submittedAt time.Time) (*submission.SubmissionTarget, error) {
+				return nil, errors.New("unexpected db error")
+			},
+		}
+		r := setupTestRouter(mockSvc, &mockPublisher{})
+		rec := doReq(r, http.MethodPost, path, auth, validPayload)
+		assert.Equal(t, http.StatusInternalServerError, rec.Code)
 	})
 
 	t.Run("503 Service Unavailable when publisher fails", func(t *testing.T) {
