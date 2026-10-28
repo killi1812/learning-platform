@@ -10,6 +10,7 @@ import UnauthorizedView from '@/views/UnauthorizedView.vue'
 import CoursesView from '@/views/CoursesView.vue'
 import SettingsView from '@/views/SettingsView.vue'
 import GenericView from '@/views/GenericView.vue'
+import NotificationSendView from '@/views/NotificationSendView.vue'
 
 export const routes: RouteRecordRaw[] = [
   {
@@ -143,6 +144,15 @@ export const routes: RouteRecordRaw[] = [
       requiresAuth: true,
       roles: ['admin', 'superadmin'],
       title: 'Admin',
+    },
+  },
+  {
+    path: '/notification/send',
+    name: 'NotificationSend',
+    component: NotificationSendView,
+    meta: {
+      requiresAuth: true,
+      title: 'Send notification',
     },
   },
   // Fallback catch-all route
