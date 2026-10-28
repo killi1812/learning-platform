@@ -33,9 +33,9 @@ func TestRegister_SendsWelcomeNotification(t *testing.T) {
 	var rows []notification.Notification
 	require.NoError(t, gormDb.Where("user_id = ?", usr.ID).Find(&rows).Error)
 	require.Len(t, rows, 1)
-	assert.Equal(t, welcomeTitle, rows[0].Title)
-	assert.Equal(t, welcomeBody, rows[0].Body)
-	assert.Equal(t, welcomeURL, rows[0].URL)
+	assert.Equal(t, welcomeContent.Title, rows[0].Title)
+	assert.Equal(t, welcomeContent.Body, rows[0].Body)
+	assert.Equal(t, welcomeContent.URL, rows[0].URL)
 	assert.Nil(t, rows[0].SenderID, "welcome message has no sender")
 	assert.Nil(t, rows[0].SeenAt)
 }

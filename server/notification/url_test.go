@@ -12,7 +12,7 @@ import (
 
 func TestSendToUsers_StoresURL(t *testing.T) {
 	f := newNotificationFixture(t)
-	_, err := f.svc.SendToUsers(f.teacher, []uuid.UUID{f.alice}, "Course", "New module", "/courses/abc")
+	_, err := f.svc.SendToUsers(f.teacher, []uuid.UUID{f.alice}, NotificationContent{Title: "Course", Body: "New module", URL: "/courses/abc"})
 	require.NoError(t, err)
 
 	items, err := f.svc.List(f.alice, 20, nil)

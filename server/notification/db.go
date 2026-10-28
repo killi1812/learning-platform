@@ -20,8 +20,8 @@ var (
 const sendBatchSize = 100
 
 type INotificationService interface {
-	SendToUsers(senderUuid uuid.UUID, recipientUuids []uuid.UUID, title string, body string, url string) ([]Notification, error)
-	NotifySystem(recipientUuid uuid.UUID, title string, body string, url string) (*Notification, error)
+	SendToUsers(senderUuid uuid.UUID, recipientUuids []uuid.UUID, content NotificationContent) ([]Notification, error)
+	NotifySystem(recipientUuid uuid.UUID, content NotificationContent) (*Notification, error)
 	List(userUuid uuid.UUID, limit int, before *time.Time) ([]Notification, error)
 	CountUnseen(userUuid uuid.UUID) (int64, error)
 	MarkSeen(userUuid uuid.UUID, notificationUuid uuid.UUID) (*Notification, error)
@@ -56,7 +56,7 @@ func (s *NotificationService) userID(userUuid uuid.UUID) (uint, error) {
 
 // NotifySystem writes one row with no sender for a single recipient, for example a welcome message.
 // The row is pushed to the recipient's open streams, like SendToUsers.
-func (s *NotificationService) NotifySystem(recipientUuid uuid.UUID, title string, body string, url string) (*Notification, error) {
+func (s *NotificationService) NotifySystem(recipientUuid uuid.UUID, content NotificationContent) (*Notification, error) {
 	userID, err := s.userID(recipientUuid)
 	if err != nil {
 		return nil, err
@@ -64,9 +64,9 @@ func (s *NotificationService) NotifySystem(recipientUuid uuid.UUID, title string
 
 	n := Notification{
 		UserID:    userID,
-		Title:     title,
-		Body:      body,
-		URL:       url,
+		Title:     content.Title,
+		Body:      content.Body,
+		URL:       content.URL,
 		CreatedAt: time.Now(),
 	}
 	if err := s.db.Create(&n).Error; err != nil {
@@ -80,7 +80,7 @@ func (s *NotificationService) NotifySystem(recipientUuid uuid.UUID, title string
 
 // SendToUsers writes one private row per recipient and pushes each row to that user's open streams.
 // Rows are written in one transaction, so either every recipient gets the notification or none do.
-func (s *NotificationService) SendToUsers(senderUuid uuid.UUID, recipientUuids []uuid.UUID, title string, body string, url string) ([]Notification, error) {
+func (s *NotificationService) SendToUsers(senderUuid uuid.UUID, recipientUuids []uuid.UUID, content NotificationContent) ([]Notification, error) {
 	senderID, err := s.userID(senderUuid)
 	if err != nil {
 		return nil, err
@@ -111,9 +111,9 @@ func (s *NotificationService) SendToUsers(senderUuid uuid.UUID, recipientUuids [
 		rows = append(rows, Notification{
 			UserID:    r.ID,
 			SenderID:  &senderID,
-			Title:     title,
-			Body:      body,
-			URL:       url,
+			Title:     content.Title,
+			Body:      content.Body,
+			URL:       content.URL,
 			CreatedAt: now,
 		})
 	}

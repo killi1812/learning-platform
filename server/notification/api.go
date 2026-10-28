@@ -308,7 +308,8 @@ func (ctn *NotificationCtn) send(c *gin.Context) {
 		return
 	}
 
-	sent, err := ctn.service.SendToUsers(senderUuid, input.UserUuids, input.Title, input.Body, input.URL)
+	content := NotificationContent{Title: input.Title, Body: input.Body, URL: input.URL}
+	sent, err := ctn.service.SendToUsers(senderUuid, input.UserUuids, content)
 	if ctn.handleError(c, err, "Failed to send notifications") {
 		return
 	}

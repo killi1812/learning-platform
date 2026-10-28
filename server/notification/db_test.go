@@ -49,7 +49,7 @@ func newNotificationFixture(t *testing.T) *notificationFixture {
 func TestSendToUsers_FansOutOnePrivateRowPerRecipient(t *testing.T) {
 	f := newNotificationFixture(t)
 
-	sent, err := f.svc.SendToUsers(f.teacher, []uuid.UUID{f.alice, f.bob}, "Welcome", "Course starts Monday", "")
+	sent, err := f.svc.SendToUsers(f.teacher, []uuid.UUID{f.alice, f.bob}, NotificationContent{Title: "Welcome", Body: "Course starts Monday"})
 	require.NoError(t, err)
 	assert.Len(t, sent, 2)
 
@@ -68,7 +68,7 @@ func TestSendToUsers_FansOutOnePrivateRowPerRecipient(t *testing.T) {
 func TestSendToUsers_DeduplicatesRecipients(t *testing.T) {
 	f := newNotificationFixture(t)
 
-	sent, err := f.svc.SendToUsers(f.teacher, []uuid.UUID{f.alice, f.alice}, "Hi", "Once", "")
+	sent, err := f.svc.SendToUsers(f.teacher, []uuid.UUID{f.alice, f.alice}, NotificationContent{Title: "Hi", Body: "Once"})
 	require.NoError(t, err)
 	assert.Len(t, sent, 1)
 }
@@ -76,7 +76,7 @@ func TestSendToUsers_DeduplicatesRecipients(t *testing.T) {
 func TestSendToUsers_UnknownRecipientWritesNothing(t *testing.T) {
 	f := newNotificationFixture(t)
 
-	_, err := f.svc.SendToUsers(f.teacher, []uuid.UUID{f.alice, uuid.New()}, "Hi", "Partial", "")
+	_, err := f.svc.SendToUsers(f.teacher, []uuid.UUID{f.alice, uuid.New()}, NotificationContent{Title: "Hi", Body: "Partial"})
 	assert.ErrorIs(t, err, ErrRecipientNotFound)
 
 	count, err := f.svc.CountUnseen(f.alice)
@@ -86,7 +86,7 @@ func TestSendToUsers_UnknownRecipientWritesNothing(t *testing.T) {
 
 func TestList_OnlyReturnsOwnNotifications(t *testing.T) {
 	f := newNotificationFixture(t)
-	_, err := f.svc.SendToUsers(f.teacher, []uuid.UUID{f.bob}, "For bob", "Secret", "")
+	_, err := f.svc.SendToUsers(f.teacher, []uuid.UUID{f.bob}, NotificationContent{Title: "For bob", Body: "Secret"})
 	require.NoError(t, err)
 
 	items, err := f.svc.List(f.alice, 20, nil)
@@ -97,7 +97,7 @@ func TestList_OnlyReturnsOwnNotifications(t *testing.T) {
 func TestList_CursorAndCount(t *testing.T) {
 	f := newNotificationFixture(t)
 	for _, title := range []string{"one", "two", "three"} {
-		_, err := f.svc.SendToUsers(f.teacher, []uuid.UUID{f.alice}, title, "body", "")
+		_, err := f.svc.SendToUsers(f.teacher, []uuid.UUID{f.alice}, NotificationContent{Title: title, Body: "body"})
 		require.NoError(t, err)
 		time.Sleep(2 * time.Millisecond) // distinct created_at for stable ordering
 	}
@@ -123,7 +123,7 @@ func TestList_CursorAndCount(t *testing.T) {
 
 func TestMarkSeen_IsIdempotentAndScoped(t *testing.T) {
 	f := newNotificationFixture(t)
-	_, err := f.svc.SendToUsers(f.teacher, []uuid.UUID{f.alice}, "Hi", "body", "")
+	_, err := f.svc.SendToUsers(f.teacher, []uuid.UUID{f.alice}, NotificationContent{Title: "Hi", Body: "body"})
 	require.NoError(t, err)
 	items, err := f.svc.List(f.alice, 20, nil)
 	require.NoError(t, err)
@@ -145,7 +145,7 @@ func TestMarkSeen_IsIdempotentAndScoped(t *testing.T) {
 func TestMarkAllSeen_CountsOnlyUnseen(t *testing.T) {
 	f := newNotificationFixture(t)
 	for i := 0; i < 3; i++ {
-		_, err := f.svc.SendToUsers(f.teacher, []uuid.UUID{f.alice}, "t", "b", "")
+		_, err := f.svc.SendToUsers(f.teacher, []uuid.UUID{f.alice}, NotificationContent{Title: "t", Body: "b"})
 		require.NoError(t, err)
 	}
 
@@ -160,7 +160,7 @@ func TestMarkAllSeen_CountsOnlyUnseen(t *testing.T) {
 
 func TestDelete_OnlyOwnRow(t *testing.T) {
 	f := newNotificationFixture(t)
-	_, err := f.svc.SendToUsers(f.teacher, []uuid.UUID{f.alice, f.bob}, "t", "b", "")
+	_, err := f.svc.SendToUsers(f.teacher, []uuid.UUID{f.alice, f.bob}, NotificationContent{Title: "t", Body: "b"})
 	require.NoError(t, err)
 	aliceItems, err := f.svc.List(f.alice, 20, nil)
 	require.NoError(t, err)
@@ -188,7 +188,7 @@ func TestSendToUsers_PublishesToOpenStreams(t *testing.T) {
 	events, cancel := f.hub.Subscribe(f.alice)
 	defer cancel()
 
-	_, err := f.svc.SendToUsers(f.teacher, []uuid.UUID{f.alice}, "live", "now", "")
+	_, err := f.svc.SendToUsers(f.teacher, []uuid.UUID{f.alice}, NotificationContent{Title: "live", Body: "now"})
 	require.NoError(t, err)
 
 	select {

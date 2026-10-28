@@ -90,7 +90,7 @@ func TestNotificationApi_SendThenListAndSeen(t *testing.T) {
 
 func TestNotificationApi_DeleteForeignIsNotFound(t *testing.T) {
 	r, f := setupNotificationRouter(t)
-	_, err := f.svc.SendToUsers(f.teacher, []uuid.UUID{f.alice}, "t", "b", "")
+	_, err := f.svc.SendToUsers(f.teacher, []uuid.UUID{f.alice}, NotificationContent{Title: "t", Body: "b"})
 	require.NoError(t, err)
 	items, err := f.svc.List(f.alice, 20, nil)
 	require.NoError(t, err)
@@ -127,7 +127,7 @@ func TestNotificationApi_StreamDeliversPublishedEvent(t *testing.T) {
 		return len(f.hub.subs[f.alice]) == 1
 	}, time.Second, 5*time.Millisecond)
 
-	_, err = f.svc.SendToUsers(f.teacher, []uuid.UUID{f.alice}, "live", "event", "")
+	_, err = f.svc.SendToUsers(f.teacher, []uuid.UUID{f.alice}, NotificationContent{Title: "live", Body: "event"})
 	require.NoError(t, err)
 
 	lines := make(chan string)

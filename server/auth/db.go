@@ -205,11 +205,11 @@ func (s *AuthService) Login(email, password, userAgent, ip, requestedSessionId s
 }
 
 // Welcome message sent to every new user on signup.
-const (
-	welcomeTitle = "Welcome to the Learning Platform"
-	welcomeBody  = "Thanks for signing up. Browse the course catalog to enroll in courses."
-	welcomeURL   = "/catalog"
-)
+var welcomeContent = notification.NotificationContent{
+	Title: "Welcome to the Learning Platform",
+	Body:  "Thanks for signing up. Browse the course catalog to enroll in courses.",
+	URL:   "/catalog",
+}
 
 func (s *AuthService) Register(username, email, password, userAgent, ip string) (*AuthResult, error) {
 	normUsername := strings.ToLower(strings.TrimSpace(username))
@@ -247,7 +247,7 @@ func (s *AuthService) Register(username, email, password, userAgent, ip string) 
 	}
 
 	// Best effort: a failed welcome message must not block signup.
-	if _, err := s.notifications.NotifySystem(usr.Uuid, welcomeTitle, welcomeBody, welcomeURL); err != nil {
+	if _, err := s.notifications.NotifySystem(usr.Uuid, welcomeContent); err != nil {
 		s.logger.Errorf("Failed to send welcome notification, err = %+v", err)
 	}
 

@@ -22,6 +22,13 @@ type Notification struct {
 	SeenAt    *time.Time `gorm:"index"`
 }
 
+// NotificationContent is the message part of a notification, shared by all recipients of one send.
+type NotificationContent struct {
+	Title string
+	Body  string
+	URL   string
+}
+
 func (n *Notification) BeforeCreate(tx *gorm.DB) error {
 	if n.Uuid == uuid.Nil {
 		n.Uuid = uuid.New()
