@@ -31,6 +31,18 @@ services:
         aliases:
           - mongo
 
+  seaweedfs:
+    image: chrislusf/seaweedfs:3.80
+    container_name: prod-seaweedfs
+    restart: always
+    command: "server -filer"
+    volumes:
+      - prod_seaweedfs_data:/data
+    networks:
+      default:
+        aliases:
+          - seaweedfs
+
   app:
     image: ${APP_IMAGE:-dat250-project-app:latest}
     build:
@@ -44,6 +56,7 @@ services:
       PORT: 8080
       DATABASE_CONN: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-learning_platform}?sslmode=disable
       MONGO_CONN: mongodb://mongo:27017
+      SEAWEEDFS_ENDPOINT: http://seaweedfs:8888
       ACCESS_KEY: ${ACCESS_KEY}
       REFRESH_KEY: ${REFRESH_KEY}
       SUPERADMIN_PASSWORD: ${SUPERADMIN_PASSWORD}
@@ -51,6 +64,8 @@ services:
       db:
         condition: service_healthy
       mongo:
+        condition: service_started
+      seaweedfs:
         condition: service_started
 
   caddy:
@@ -70,5 +85,6 @@ services:
 volumes:
   prod_postgres_data:
   prod_mongo_data:
+  prod_seaweedfs_data:
   prod_caddy_data:
   prod_caddy_config:

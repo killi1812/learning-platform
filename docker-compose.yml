@@ -31,20 +31,18 @@ services:
           - mongo
 
   seaweedfs:
-    image: chrislusf/seaweedfs:latest
+    image: chrislusf/seaweedfs:3.80
     container_name: dev-seaweedfs
     restart: unless-stopped
     ports:
-      - "${SEAWEEDFS_PORT:-8333}:8333"
       - "${SEAWEEDFS_FILER_PORT:-8888}:8888"
-    command: "server -s3"
+    command: "server -filer"
     volumes:
       - dev_seaweedfs_data:/data
     networks:
       default:
         aliases:
           - seaweedfs
-          - s3
 
 volumes:
   dev_postgres_data:
