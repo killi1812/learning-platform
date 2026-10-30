@@ -5,6 +5,7 @@ import (
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/course"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -12,7 +13,7 @@ import (
 type ContentType string
 
 const (
-	TypeStaticPage     ContentType = "STATIC_PAGE"
+	TypeFile           ContentType = "FILE"
 	TypeQuiz           ContentType = "QUIZ"
 	TypeAssignment     ContentType = "ASSIGNMENT"
 	TypeCodingExercise ContentType = "CODING_EXERCISE"
@@ -31,6 +32,7 @@ const (
 // Content is the base entity for all instructional content items within a module (Class Table Inheritance).
 type Content struct {
 	gorm.Model
+	Uuid         uuid.UUID      `json:"uuid" gorm:"type:uuid;uniqueIndex"`
 	ModuleID     uint           `json:"moduleId" gorm:"not null;index"`
 	Module       *course.Module `json:"module,omitempty" gorm:"foreignKey:ModuleID;constraint:OnDelete:CASCADE;"`
 	Title        string         `json:"title" gorm:"type:varchar(255);not null"`
@@ -40,7 +42,7 @@ type Content struct {
 	VisibleUntil *time.Time     `json:"visibleUntil,omitempty"`
 
 	// 1-to-1 extension relations for Class Table Inheritance
-	StaticPage     *StaticPage     `json:"staticPage,omitempty" gorm:"foreignKey:ContentID;constraint:OnDelete:CASCADE;"`
+	File           *File           `json:"file,omitempty" gorm:"foreignKey:ContentID;constraint:OnDelete:CASCADE;"`
 	Quiz           *Quiz           `json:"quiz,omitempty" gorm:"foreignKey:ContentID;constraint:OnDelete:CASCADE;"`
 	Assignment     *Assignment     `json:"assignment,omitempty" gorm:"foreignKey:ContentID;constraint:OnDelete:CASCADE;"`
 	CodingExercise *CodingExercise `json:"codingExercise,omitempty" gorm:"foreignKey:ContentID;constraint:OnDelete:CASCADE;"`
@@ -48,12 +50,23 @@ type Content struct {
 	Interactions []StudentInteraction `json:"interactions,omitempty" gorm:"foreignKey:ContentID;constraint:OnDelete:CASCADE;"`
 }
 
-// StaticPage represents course material embedded via iframe URL and/or formatted rich text.
-type StaticPage struct {
-	ContentID uint     `json:"contentId" gorm:"primaryKey;autoIncrement:false"`
-	Content   *Content `json:"content,omitempty" gorm:"foreignKey:ContentID;constraint:OnDelete:CASCADE;"`
-	SourceURL string   `json:"sourceUrl" gorm:"type:text;not null"` // Target URL rendered directly in client iframe
-	RichText  string   `json:"richText,omitempty" gorm:"type:text"` // Optional text / description / markdown fallback
+func (c *Content) BeforeCreate(tx *gorm.DB) error {
+	if c.Uuid == uuid.Nil {
+		c.Uuid = uuid.New()
+	}
+	return nil
+}
+
+// File represents course material (e.g. .pdf, .pptx, .md, .txt) stored in object storage or linked.
+type File struct {
+	ContentID   uint     `json:"contentId" gorm:"primaryKey;autoIncrement:false"`
+	Content     *Content `json:"content,omitempty" gorm:"foreignKey:ContentID;constraint:OnDelete:CASCADE;"`
+	FileName    string   `json:"fileName,omitempty" gorm:"type:varchar(255)"`
+	FileSize    int64    `json:"fileSize,omitempty"`
+	ContentType string   `json:"contentType,omitempty" gorm:"type:varchar(100)"`
+	StorageKey  string   `json:"storageKey,omitempty" gorm:"type:varchar(512)"`
+	SourceURL   string   `json:"sourceUrl,omitempty" gorm:"type:text"`
+	RichText    string   `json:"richText,omitempty" gorm:"type:text"`
 }
 
 // Quiz represents an interactive knowledge check with configurable attempts, deadline, and questions.

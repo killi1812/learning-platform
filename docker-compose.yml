@@ -30,6 +30,21 @@ services:
         aliases:
           - mongo
 
+  seaweedfs:
+    image: chrislusf/seaweedfs:3.80
+    container_name: dev-seaweedfs
+    restart: unless-stopped
+    ports:
+      - "${SEAWEEDFS_FILER_PORT:-8888}:8888"
+    command: "server -filer"
+    volumes:
+      - dev_seaweedfs_data:/data
+    networks:
+      default:
+        aliases:
+          - seaweedfs
+
 volumes:
   dev_postgres_data:
   dev_mongo_data:
+  dev_seaweedfs_data:

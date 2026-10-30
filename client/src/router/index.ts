@@ -85,6 +85,20 @@ export const routes: RouteRecordRaw[] = [
     },
   },
   {
+    path: '/courses/:uuid/modules/:moduleUuid/files/:fileUuid',
+    name: 'FileView',
+    component: () => import('@/views/FileView.vue'),
+    props: route => ({
+      courseUuid: String(route.params.uuid),
+      moduleUuid: String(route.params.moduleUuid),
+      fileUuid: String(route.params.fileUuid),
+    }),
+    meta: {
+      requiresAuth: true,
+      title: 'Course Material',
+    },
+  },
+  {
     path: '/groups',
     name: 'Groups',
     component: GenericView,

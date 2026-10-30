@@ -78,7 +78,7 @@ type Group struct {
 // Modules support prerequisite dependencies via DependsOnID.
 type Module struct {
 	gorm.Model
-	Uuid        uuid.UUID `json:"uuid" gorm:"type:uuid;uniqueIndex;not null"`
+	Uuid        uuid.UUID `json:"uuid" gorm:"type:uuid;uniqueIndex"`
 	CourseID    uint      `json:"courseId" gorm:"not null;index"`
 	Course      *Course   `json:"course,omitempty" gorm:"foreignKey:CourseID;constraint:OnDelete:CASCADE;"`
 	Title       string    `json:"title" gorm:"type:varchar(255);not null"`

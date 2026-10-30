@@ -116,6 +116,12 @@ func GetUserRole(c *gin.Context) (Role, error) {
 	return claims.Role, nil
 }
 
+// IsAdmin returns true if the authenticated user has ROLE_ADMIN.
+func IsAdmin(c *gin.Context) bool {
+	claims, ok := GetClaims(c)
+	return ok && claims != nil && claims.Role == ROLE_ADMIN
+}
+
 // CheckCourseAccess verifies the authenticated user's access to a course using the provided checker.
 // Aborts with 401/403/404/500 and returns false if access is denied or an error occurs.
 func CheckCourseAccess(c *gin.Context, courseUuid uuid.UUID, checker CourseAccessChecker, notFoundErr error) bool {

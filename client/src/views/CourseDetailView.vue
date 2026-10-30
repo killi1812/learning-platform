@@ -1,58 +1,23 @@
 <template>
-  <v-container class="py-6" max-width="1200">
-    <!-- Back Navigation & Actions -->
-    <div class="d-flex align-center justify-space-between mb-4">
-      <v-btn color="medium-emphasis" prepend-icon="mdi-arrow-left" variant="text" @click="goBack">
-        Back to Courses
-      </v-btn>
-
-      <v-chip
-        v-if="userRole"
-        :color="userRole === 'TEACHER' ? 'primary' : 'secondary'"
-        size="default"
-        variant="flat"
-      >
-        {{ userRole }}
-      </v-chip>
-    </div>
-
+  <v-container class="pt-2 pb-6" max-width="1200">
     <!-- Loading State -->
     <div v-if="loading" class="d-flex justify-center py-12">
       <v-progress-circular color="primary" indeterminate size="64" />
     </div>
 
     <div v-else-if="course">
-      <!-- Course Hero Card -->
-      <v-card class="mb-6 pa-6 bg-surface" elevation="2" rounded="lg">
-        <div class="d-flex flex-wrap align-center justify-space-between ga-2 mb-2">
-          <v-chip color="secondary" size="small" variant="tonal">
-            {{ course.term }} {{ course.year }}
-          </v-chip>
-        </div>
-
-        <h1 class="text-h4 font-weight-bold text-high-emphasis mb-2">
-          {{ course.title }}
-        </h1>
-
-        <div
-          v-if="course.teachers && course.teachers.length > 0"
-          class="d-flex align-center ga-2 mb-3 text-body-2 text-medium-emphasis"
-        >
-          <v-icon icon="mdi-account-tie-outline" size="small" />
-          <span>
-            {{ course.teachers.length === 1 ? 'Professor' : 'Professors' }}:
-            <strong class="text-high-emphasis">{{ course.teachers.join(', ') }}</strong>
-          </span>
-        </div>
-
-        <p class="text-body-1 text-medium-emphasis mb-0">
-          {{ course.description || 'No course description provided.' }}
-        </p>
-      </v-card>
+      <!-- Course Title -->
+      <h1 class="text-h4 font-weight-bold text-high-emphasis mt-0 mb-4">
+        {{ course.title }}
+      </h1>
 
       <!-- Tabs Navigation -->
       <v-tabs v-model="activeTab" class="mb-6" color="primary">
-        <v-tab value="modules">
+        <v-tab value="overview">
+          <v-icon start icon="mdi-information-outline" />
+          Overview
+        </v-tab>
+        <v-tab v-if="isEnrolled" value="modules">
           <v-icon start icon="mdi-view-module" />
           Course Modules ({{ modules.length }})
         </v-tab>
@@ -60,14 +25,88 @@
           <v-icon start icon="mdi-account-group" />
           Participants ({{ enrollments.length }})
         </v-tab>
+        <v-tab v-if="isEnrolled" value="assignments">
+          <v-icon start icon="mdi-clipboard-text-outline" />
+          Assignments
+        </v-tab>
+        <v-tab v-if="isEnrolled" value="groups">
+          <v-icon start icon="mdi-account-multiple" />
+          Groups
+        </v-tab>
         <v-tab v-if="isTeacher" value="settings">
           <v-icon start icon="mdi-cog" />
           Course Settings
         </v-tab>
       </v-tabs>
 
-      <!-- TAB 1: MODULES -->
-      <div v-if="activeTab === 'modules'">
+      <!-- TAB: OVERVIEW -->
+      <div v-if="activeTab === 'overview'">
+        <!-- Enrollment Protection Alert -->
+        <v-alert
+          v-if="!isEnrolled"
+          class="mb-6"
+          color="info"
+          icon="mdi-shield-lock-outline"
+          variant="tonal"
+        >
+          <div class="d-flex flex-wrap align-center justify-space-between ga-3">
+            <div>
+              <div class="text-subtitle-1 font-weight-bold">
+                You are not enrolled in this course
+              </div>
+              <div class="text-body-2 text-medium-emphasis">
+                Enroll as a participant to access modules, materials, assignments, and groups.
+              </div>
+            </div>
+            <v-btn
+              color="primary"
+              :loading="enrolling"
+              prepend-icon="mdi-account-plus"
+              variant="elevated"
+              @click="handleSelfEnroll"
+            >
+              Enroll in Course
+            </v-btn>
+          </div>
+        </v-alert>
+
+        <v-card class="pa-6 bg-surface mb-6" elevation="1" rounded="lg">
+          <div class="d-flex flex-wrap align-center ga-3 mb-4">
+            <v-chip
+              v-if="userRole"
+              :color="userRole === 'TEACHER' ? 'primary' : 'secondary'"
+              size="default"
+              variant="flat"
+            >
+              {{ userRole }}
+            </v-chip>
+            <v-chip color="secondary" size="default" variant="tonal">
+              {{ course.term }} {{ course.year }}
+            </v-chip>
+          </div>
+
+          <div
+            v-if="course.teachers && course.teachers.length > 0"
+            class="d-flex align-center ga-2 mb-4 text-body-1 text-medium-emphasis"
+          >
+            <v-icon icon="mdi-account-tie-outline" size="small" />
+            <span>
+              {{ course.teachers.length === 1 ? 'Professor' : 'Professors' }}:
+              <strong class="text-high-emphasis">{{ course.teachers.join(', ') }}</strong>
+            </span>
+          </div>
+
+          <v-divider class="mb-4" />
+
+          <h2 class="text-h6 font-weight-bold text-high-emphasis mb-2">Description</h2>
+          <p class="text-body-1 text-medium-emphasis mb-0" style="white-space: pre-line">
+            {{ course.description || 'No course description provided.' }}
+          </p>
+        </v-card>
+      </div>
+
+      <!-- TAB: MODULES -->
+      <div v-if="activeTab === 'modules' && isEnrolled">
         <div class="d-flex align-center justify-space-between mb-4">
           <h2 class="text-h5 font-weight-bold text-high-emphasis my-0">Course Modules</h2>
           <v-btn
@@ -162,6 +201,102 @@
                 />
               </div>
             </div>
+
+            <!-- Course Materials Section -->
+            <v-divider class="my-3" />
+            <div class="d-flex align-center justify-space-between mb-2">
+              <span class="text-caption font-weight-bold text-medium-emphasis">
+                Materials ({{ (modulePages[mod.uuid] || []).length }})
+              </span>
+              <v-menu v-if="isTeacher">
+                <template #activator="{ props: menuProps }">
+                  <v-btn
+                    v-bind="menuProps"
+                    size="small"
+                    color="primary"
+                    variant="text"
+                    prepend-icon="mdi-plus"
+                    append-icon="mdi-chevron-down"
+                  >
+                    Add
+                  </v-btn>
+                </template>
+                <v-list density="compact" elevation="2" rounded="md">
+                  <v-list-item
+                    prepend-icon="mdi-file-document-outline"
+                    title="Material"
+                    @click="openUploadDialog(mod.uuid)"
+                  />
+                  <v-list-item
+                    prepend-icon="mdi-help-circle-outline"
+                    title="Quiz"
+                    @click="handleComingSoon('Quiz')"
+                  />
+                </v-list>
+              </v-menu>
+            </div>
+
+            <!-- Material Items -->
+            <div v-if="(modulePages[mod.uuid] || []).length > 0" class="d-flex flex-column ga-2">
+              <v-card
+                v-for="page in modulePages[mod.uuid]"
+                :key="page.uuid"
+                class="pa-3 bg-surface-variant d-flex align-center justify-space-between"
+                elevation="0"
+                rounded="md"
+              >
+                <div
+                  class="d-flex align-center ga-3 overflow-hidden cursor-pointer flex-grow-1"
+                  @click="viewMaterial(mod.uuid, page.uuid)"
+                >
+                  <v-avatar size="32" :color="getPageFormatColor(page)" variant="tonal">
+                    <v-icon :icon="getPageFormatIcon(page)" size="small" />
+                  </v-avatar>
+                  <div class="d-flex flex-column overflow-hidden">
+                    <span class="text-body-2 font-weight-bold text-high-emphasis text-truncate">
+                      {{ page.title }}
+                    </span>
+                    <span class="text-caption text-medium-emphasis text-truncate">
+                      <template v-if="page.fileSize">{{ formatBytes(page.fileSize) }} • </template>
+                      <template v-if="page.createdAt">{{ formatDate(page.createdAt) }}</template>
+                    </span>
+                  </div>
+                </div>
+
+                <div class="d-flex align-center ga-1 ml-2">
+                  <v-btn
+                    size="small"
+                    color="primary"
+                    variant="tonal"
+                    prepend-icon="mdi-eye-outline"
+                    @click="viewMaterial(mod.uuid, page.uuid)"
+                  >
+                    Preview
+                  </v-btn>
+                  <v-btn
+                    v-if="isTeacher"
+                    size="small"
+                    color="primary"
+                    icon="mdi-pencil-outline"
+                    variant="text"
+                    title="Edit Material"
+                    @click="openEditMaterialDialog(mod.uuid, page)"
+                  />
+                  <v-btn
+                    v-if="isTeacher"
+                    size="small"
+                    color="error"
+                    icon="mdi-delete-outline"
+                    variant="text"
+                    title="Delete Material"
+                    @click="handleDeleteMaterial(mod.uuid, page.uuid)"
+                  />
+                </div>
+              </v-card>
+            </div>
+            <div v-else class="text-caption text-medium-emphasis py-1 font-italic">
+              No materials uploaded for this module yet.
+            </div>
           </v-card>
         </div>
       </div>
@@ -187,6 +322,7 @@
                 <th class="text-left font-weight-bold">User Email</th>
                 <th class="text-left font-weight-bold">Course Role</th>
                 <th class="text-left font-weight-bold">Enrolled At</th>
+                <th class="text-right font-weight-bold">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -204,9 +340,43 @@
                 <td class="text-medium-emphasis">
                   {{ new Date(e.enrolledAt).toLocaleDateString() }}
                 </td>
+                <td class="text-right">
+                  <v-btn
+                    v-if="e.role === 'STUDENT'"
+                    color="error"
+                    :disabled="!e.userUuid"
+                    icon="mdi-delete-outline"
+                    :loading="deletingEnrollmentUserUuid === e.userUuid"
+                    size="small"
+                    variant="text"
+                    @click="handleRemoveEnrollment(e)"
+                  />
+                </td>
               </tr>
             </tbody>
           </v-table>
+        </v-card>
+      </div>
+
+      <!-- TAB: ASSIGNMENTS -->
+      <div v-if="activeTab === 'assignments' && isEnrolled">
+        <v-card class="pa-6 bg-surface mb-6 text-center" elevation="1" rounded="lg">
+          <v-icon class="mb-3 text-medium-emphasis" icon="mdi-clipboard-text-outline" size="48" />
+          <h2 class="text-h5 font-weight-bold text-high-emphasis mb-2">Assignments</h2>
+          <p class="text-body-1 text-medium-emphasis mb-0">
+            Assignments will be available here once published.
+          </p>
+        </v-card>
+      </div>
+
+      <!-- TAB: GROUPS -->
+      <div v-if="activeTab === 'groups' && isEnrolled">
+        <v-card class="pa-6 bg-surface mb-6 text-center" elevation="1" rounded="lg">
+          <v-icon class="mb-3 text-medium-emphasis" icon="mdi-account-multiple" size="48" />
+          <h2 class="text-h5 font-weight-bold text-high-emphasis mb-2">Groups</h2>
+          <p class="text-body-1 text-medium-emphasis mb-0">
+            Course groups will be available here once configured.
+          </p>
         </v-card>
       </div>
 
@@ -373,17 +543,133 @@
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <!-- Upload Material Dialog -->
+    <v-dialog v-model="uploadDialogOpen" max-width="540" persistent>
+      <v-card class="bg-surface pa-2" rounded="lg">
+        <v-card-title class="text-h5 font-weight-bold pt-4 px-4 text-high-emphasis">
+          Upload Course Material
+        </v-card-title>
+        <v-card-subtitle class="px-4 text-medium-emphasis">
+          Upload a file (.pdf, .pptx, .md, .txt) or enter an external URL for embedded view.
+        </v-card-subtitle>
+
+        <v-card-text class="px-4 pt-4">
+          <v-text-field
+            v-model="uploadTitle"
+            class="mb-3"
+            label="Title (Optional for files, required for URLs)"
+            placeholder="e.g. Lecture 1 Slides"
+            variant="outlined"
+          />
+
+          <v-textarea
+            v-model="uploadDescription"
+            class="mb-3"
+            label="Description / Notes (Optional)"
+            placeholder="Additional context or notes"
+            rows="2"
+            variant="outlined"
+          />
+
+          <v-file-input
+            v-model="uploadFileInput"
+            class="mb-3"
+            clearable
+            label="Select File"
+            placeholder="Choose .pdf, .docx, .pptx, image, .md, .txt"
+            prepend-icon="mdi-paperclip"
+            show-size
+            variant="outlined"
+          />
+
+          <v-text-field
+            v-model="uploadSourceUrl"
+            class="mb-3"
+            label="External / Iframe URL (Optional if file uploaded)"
+            placeholder="https://example.com/embed"
+            variant="outlined"
+          />
+        </v-card-text>
+
+        <v-card-actions class="pa-4 bg-surface-variant">
+          <v-spacer />
+          <v-btn color="medium-emphasis" variant="text" @click="uploadDialogOpen = false">
+            Cancel
+          </v-btn>
+          <v-btn
+            color="primary"
+            :disabled="
+              (!uploadFileInput && !uploadSourceUrl.trim()) ||
+              (!uploadFileInput && !uploadTitle.trim())
+            "
+            :loading="uploading"
+            variant="elevated"
+            @click="handleUploadMaterial"
+          >
+            Upload
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- Edit Material Dialog -->
+    <v-dialog v-model="editMaterialDialogOpen" max-width="540" persistent>
+      <v-card class="bg-surface pa-2" rounded="lg">
+        <v-card-title class="text-h5 font-weight-bold pt-4 px-4 text-high-emphasis">
+          Edit Material Details
+        </v-card-title>
+        <v-card-subtitle class="px-4 text-medium-emphasis">
+          Update the title and description for this course material.
+        </v-card-subtitle>
+
+        <v-card-text class="px-4 pt-4">
+          <v-text-field
+            v-model="editMaterialTitle"
+            class="mb-3"
+            label="Title"
+            required
+            variant="outlined"
+          />
+
+          <v-textarea
+            v-model="editMaterialDescription"
+            class="mb-3"
+            label="Description / Notes (Optional)"
+            rows="3"
+            variant="outlined"
+          />
+        </v-card-text>
+
+        <v-card-actions class="pa-4 bg-surface-variant">
+          <v-spacer />
+          <v-btn color="medium-emphasis" variant="text" @click="editMaterialDialogOpen = false">
+            Cancel
+          </v-btn>
+          <v-btn
+            color="primary"
+            :disabled="!editMaterialTitle.trim()"
+            :loading="savingMaterial"
+            variant="elevated"
+            @click="handleSaveMaterial"
+          >
+            Save Changes
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </v-container>
 </template>
 
 <script lang="ts" setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useToast } from '@/composables/useToast'
 import {
   getCourse,
   getMyCourses,
+  selfEnroll,
   listModules,
   getCourseEnrollments,
   updateModule,
@@ -391,17 +677,19 @@ import {
   reorderModules,
   deleteModule,
   addEnrollment,
+  removeEnrollment,
   updateCourse,
   deleteCourse,
 } from '@/api/course'
+import { listFiles, uploadFile, updateFile, deleteFile } from '@/api/content'
 import type { Course, Module, Enrollment, UpdateCoursePayload } from '@/types/course'
+import type { FileUpload } from '@/types/content'
 
 const props = defineProps<{
   courseUuid?: string
 }>()
 
 const emit = defineEmits<{
-  (e: 'back'): void
   (e: 'course-deleted'): void
 }>()
 
@@ -422,11 +710,15 @@ const userRole = ref<'STUDENT' | 'TEACHER' | undefined>(undefined)
 const isTeacher = computed(
   () => userRole.value === 'TEACHER' || hasRole('admin') || hasRole('superadmin'),
 )
+const isEnrolled = computed(() => !!userRole.value || hasRole('admin') || hasRole('superadmin'))
+const enrolling = ref(false)
 
-function goBack() {
-  emit('back')
-  router.push('/courses')
-}
+watch(activeTab, newTab => {
+  if (newTab !== 'overview' && !isEnrolled.value) {
+    activeTab.value = 'overview'
+    toast.info('You must be enrolled in this course to access course content.')
+  }
+})
 
 // Settings edit form
 const editCourseData = ref<UpdateCoursePayload>({
@@ -442,8 +734,9 @@ const deletingCourse = ref(false)
 const moduleDialogOpen = ref(false)
 const isEditingModule = ref(false)
 const editingModuleUuid = ref<string | undefined>(undefined)
-const moduleForm = ref<{ title: string; dependsOnUuid?: string }>({
+const moduleForm = ref<{ title: string; position?: number; dependsOnUuid?: string }>({
   title: '',
+  position: undefined,
   dependsOnUuid: undefined,
 })
 const savingModule = ref(false)
@@ -453,15 +746,235 @@ const addEnrollmentDialogOpen = ref(false)
 const newEnrollmentEmail = ref('')
 const newEnrollmentRole = ref<'STUDENT' | 'TEACHER'>('STUDENT')
 const addingEnrollment = ref(false)
+const deletingEnrollmentUserUuid = ref<string | undefined>(undefined)
+
+// Course materials state
+const modulePages = ref<Record<string, FileUpload[]>>({})
+const uploadDialogOpen = ref(false)
+const targetModuleUuid = ref<string>('')
+const uploadFileInput = ref<File | File[] | undefined>(undefined)
+const uploadTitle = ref('')
+const uploadDescription = ref('')
+const uploadSourceUrl = ref('')
+const uploading = ref(false)
+
+// Edit material state
+const editMaterialDialogOpen = ref(false)
+const editMaterialTargetModUuid = ref('')
+const editMaterialTargetPageUuid = ref('')
+const editMaterialTitle = ref('')
+const editMaterialDescription = ref('')
+const savingMaterial = ref(false)
 
 const availablePrerequisites = computed(() => {
-  return modules.value.filter(m => {
-    if (isEditingModule.value && m.uuid === editingModuleUuid.value) {
-      return false
+  const disallowed = new Set<string>()
+  if (isEditingModule.value && editingModuleUuid.value) {
+    disallowed.add(editingModuleUuid.value)
+    let added = true
+    while (added) {
+      added = false
+      for (const m of modules.value) {
+        if (m.dependsOnUuid && disallowed.has(m.dependsOnUuid) && !disallowed.has(m.uuid)) {
+          disallowed.add(m.uuid)
+          added = true
+        }
+      }
     }
-    return true
-  })
+  }
+  return modules.value.filter(m => !disallowed.has(m.uuid))
 })
+
+async function loadAllModulePages() {
+  if (!resolvedCourseUuid.value || modules.value.length === 0) return
+  const pagesMap: Record<string, FileUpload[]> = {}
+  let hasError = false
+  await Promise.all(
+    modules.value.map(async mod => {
+      try {
+        pagesMap[mod.uuid] = await listFiles(resolvedCourseUuid.value, mod.uuid)
+      } catch {
+        pagesMap[mod.uuid] = []
+        hasError = true
+      }
+    }),
+  )
+  modulePages.value = pagesMap
+  if (hasError) {
+    toast.error('Failed to load materials for one or more modules.')
+  }
+}
+
+function openUploadDialog(modUuid: string) {
+  targetModuleUuid.value = modUuid
+  uploadFileInput.value = undefined
+  uploadTitle.value = ''
+  uploadDescription.value = ''
+  uploadSourceUrl.value = ''
+  uploadDialogOpen.value = true
+}
+
+function openEditMaterialDialog(modUuid: string, page: FileUpload) {
+  editMaterialTargetModUuid.value = modUuid
+  editMaterialTargetPageUuid.value = page.uuid
+  editMaterialTitle.value = page.title
+  editMaterialDescription.value = page.description || ''
+  editMaterialDialogOpen.value = true
+}
+
+async function handleSaveMaterial() {
+  if (
+    !editMaterialTitle.value.trim() ||
+    !editMaterialTargetPageUuid.value ||
+    !resolvedCourseUuid.value
+  )
+    return
+  savingMaterial.value = true
+  try {
+    await updateFile(
+      resolvedCourseUuid.value,
+      editMaterialTargetModUuid.value,
+      editMaterialTargetPageUuid.value,
+      {
+        title: editMaterialTitle.value.trim(),
+        description: editMaterialDescription.value.trim() || undefined,
+      },
+    )
+    toast.success('Course material updated successfully.')
+    editMaterialDialogOpen.value = false
+    modulePages.value[editMaterialTargetModUuid.value] = await listFiles(
+      resolvedCourseUuid.value,
+      editMaterialTargetModUuid.value,
+    )
+  } catch (err: unknown) {
+    toast.error(err instanceof Error ? err.message : 'Failed to update course material.')
+  } finally {
+    savingMaterial.value = false
+  }
+}
+
+async function handleUploadMaterial() {
+  if (!targetModuleUuid.value || !resolvedCourseUuid.value) return
+  const rawFile = Array.isArray(uploadFileInput.value)
+    ? uploadFileInput.value[0]
+    : uploadFileInput.value
+
+  if (!rawFile && !uploadSourceUrl.value.trim()) {
+    toast.error('Please select a file or provide a URL.')
+    return
+  }
+  if (!rawFile && !uploadTitle.value.trim()) {
+    toast.error('Title is required when adding an external link.')
+    return
+  }
+
+  uploading.value = true
+  try {
+    await uploadFile(resolvedCourseUuid.value, targetModuleUuid.value, {
+      file: rawFile || undefined,
+      title: uploadTitle.value.trim() || undefined,
+      description: uploadDescription.value.trim() || undefined,
+      sourceUrl: uploadSourceUrl.value.trim() || undefined,
+    })
+    toast.success('Course material uploaded successfully.')
+    uploadDialogOpen.value = false
+    modulePages.value[targetModuleUuid.value] = await listFiles(
+      resolvedCourseUuid.value,
+      targetModuleUuid.value,
+    )
+  } catch (err: unknown) {
+    toast.error(err instanceof Error ? err.message : 'Failed to upload course material.')
+  } finally {
+    uploading.value = false
+  }
+}
+
+async function handleDeleteMaterial(moduleUuid: string, pageUuid: string) {
+  if (!confirm('Are you sure you want to delete this course material?')) return
+  try {
+    await deleteFile(resolvedCourseUuid.value, moduleUuid, pageUuid)
+    toast.success('Course material deleted.')
+    modulePages.value[moduleUuid] = await listFiles(resolvedCourseUuid.value, moduleUuid)
+  } catch (err: unknown) {
+    toast.error(err instanceof Error ? err.message : 'Failed to delete course material.')
+  }
+}
+
+function viewMaterial(moduleUuid: string, pageUuid: string) {
+  router.push(`/courses/${resolvedCourseUuid.value}/modules/${moduleUuid}/files/${pageUuid}`)
+}
+
+function handleComingSoon(item: string) {
+  toast.info(`${item} feature coming soon`)
+}
+
+function getPageFormatIcon(page: FileUpload): string {
+  const name = page.fileName?.toLowerCase() || ''
+  if (page.contentType?.includes('pdf') || name.endsWith('.pdf')) return 'mdi-file-pdf-box'
+  if (page.contentType?.includes('word') || name.endsWith('.docx') || name.endsWith('.doc')) {
+    return 'mdi-file-word-box'
+  }
+  if (
+    page.contentType?.includes('presentation') ||
+    page.contentType?.includes('powerpoint') ||
+    name.endsWith('.pptx') ||
+    name.endsWith('.ppt')
+  ) {
+    return 'mdi-file-powerpoint-box'
+  }
+  if (
+    page.contentType?.startsWith('image/') ||
+    ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp'].some(ext => name.endsWith(ext))
+  ) {
+    return 'mdi-file-image'
+  }
+  if (name.endsWith('.md')) return 'mdi-language-markdown'
+  if (page.contentType?.includes('text') || name.endsWith('.txt'))
+    return 'mdi-file-document-outline'
+  if (page.sourceUrl) return 'mdi-link-variant'
+  return 'mdi-file-outline'
+}
+
+function getPageFormatColor(page: FileUpload): string {
+  const name = page.fileName?.toLowerCase() || ''
+  if (page.contentType?.includes('pdf') || name.endsWith('.pdf')) return 'error'
+  if (page.contentType?.includes('word') || name.endsWith('.docx') || name.endsWith('.doc')) {
+    return 'primary'
+  }
+  if (
+    page.contentType?.includes('presentation') ||
+    page.contentType?.includes('powerpoint') ||
+    name.endsWith('.pptx') ||
+    name.endsWith('.ppt')
+  ) {
+    return 'warning'
+  }
+  if (
+    page.contentType?.startsWith('image/') ||
+    ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp'].some(ext => name.endsWith(ext))
+  ) {
+    return 'info'
+  }
+  if (name.endsWith('.md') || page.contentType?.includes('text') || name.endsWith('.txt'))
+    return 'primary'
+  if (page.sourceUrl) return 'info'
+  return 'secondary'
+}
+
+function formatBytes(bytes?: number): string {
+  if (!bytes) return ''
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function formatDate(isoDate?: string): string {
+  if (!isoDate) return ''
+  return new Date(isoDate).toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
+}
 
 async function fetchCourseDetails() {
   if (!resolvedCourseUuid.value) return
@@ -480,12 +993,18 @@ async function fetchCourseDetails() {
     const mine = myCourses.find(mc => mc.course.uuid === resolvedCourseUuid.value)
     userRole.value = mine ? mine.role : undefined
 
-    // Load modules
-    modules.value = await listModules(resolvedCourseUuid.value)
+    if (isEnrolled.value) {
+      // Load modules
+      modules.value = await listModules(resolvedCourseUuid.value)
+      await loadAllModulePages()
 
-    // Load enrollments if teacher
-    if (isTeacher.value) {
-      enrollments.value = await getCourseEnrollments(resolvedCourseUuid.value).catch(() => [])
+      // Load enrollments if teacher
+      if (isTeacher.value) {
+        enrollments.value = await getCourseEnrollments(resolvedCourseUuid.value).catch(() => [])
+      }
+    } else {
+      activeTab.value = 'overview'
+      modules.value = []
     }
   } catch (err: unknown) {
     toast.error(err instanceof Error ? err.message : 'Failed to load course details.')
@@ -494,17 +1013,31 @@ async function fetchCourseDetails() {
   }
 }
 
+async function handleSelfEnroll() {
+  enrolling.value = true
+  try {
+    await selfEnroll(resolvedCourseUuid.value)
+    toast.success('Successfully enrolled in the course!')
+    await fetchCourseDetails()
+    activeTab.value = 'modules'
+  } catch (err: unknown) {
+    toast.error(err instanceof Error ? err.message : 'Failed to enroll in course.')
+  } finally {
+    enrolling.value = false
+  }
+}
+
 function openCreateModuleDialog() {
   isEditingModule.value = false
   editingModuleUuid.value = undefined
-  moduleForm.value = { title: '', dependsOnUuid: undefined }
+  moduleForm.value = { title: '', position: undefined, dependsOnUuid: undefined }
   moduleDialogOpen.value = true
 }
 
 function openEditModuleDialog(mod: Module) {
   isEditingModule.value = true
   editingModuleUuid.value = mod.uuid
-  moduleForm.value = { title: mod.title, dependsOnUuid: mod.dependsOnUuid }
+  moduleForm.value = { title: mod.title, position: mod.position, dependsOnUuid: mod.dependsOnUuid }
   moduleDialogOpen.value = true
 }
 
@@ -515,6 +1048,7 @@ async function handleSaveModule() {
     if (isEditingModule.value && editingModuleUuid.value) {
       await updateModule(resolvedCourseUuid.value, editingModuleUuid.value, {
         title: moduleForm.value.title,
+        position: moduleForm.value.position,
         dependsOnUuid: moduleForm.value.dependsOnUuid,
       })
       toast.success('Module updated successfully.')
@@ -527,6 +1061,7 @@ async function handleSaveModule() {
     }
     moduleDialogOpen.value = false
     modules.value = await listModules(resolvedCourseUuid.value)
+    await loadAllModulePages()
   } catch (err: unknown) {
     toast.error(err instanceof Error ? err.message : 'Failed to save module.')
   } finally {
@@ -561,6 +1096,7 @@ async function handleDeleteModule(moduleUuid: string) {
     await deleteModule(resolvedCourseUuid.value, moduleUuid)
     toast.success('Module deleted.')
     modules.value = await listModules(resolvedCourseUuid.value)
+    await loadAllModulePages()
   } catch (err: unknown) {
     toast.error(err instanceof Error ? err.message : 'Failed to delete module.')
   }
@@ -583,6 +1119,22 @@ async function handleAddEnrollment() {
     toast.error(err instanceof Error ? err.message : 'Failed to add participant.')
   } finally {
     addingEnrollment.value = false
+  }
+}
+
+async function handleRemoveEnrollment(enrollment: Enrollment) {
+  if (!enrollment.userUuid || enrollment.role !== 'STUDENT') return
+  if (!confirm(`Are you sure you want to remove ${enrollment.userEmail} from this course?`)) return
+  deletingEnrollmentUserUuid.value = enrollment.userUuid
+  try {
+    await removeEnrollment(resolvedCourseUuid.value, enrollment.userUuid)
+    toast.success(`Removed ${enrollment.userEmail} from course.`)
+    enrollments.value = await getCourseEnrollments(resolvedCourseUuid.value)
+    course.value = await getCourse(resolvedCourseUuid.value)
+  } catch (err: unknown) {
+    toast.error(err instanceof Error ? err.message : 'Failed to remove participant.')
+  } finally {
+    deletingEnrollmentUserUuid.value = undefined
   }
 }
 

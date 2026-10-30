@@ -36,6 +36,7 @@ func LoadConfig() {
 
 	MongoConn = loadString("MONGO_CONN")
 	DatabaseConn = loadString("DATABASE_CONN")
+	SeaweedFSEndpoint = loadString("SEAWEEDFS_ENDPOINT")
 
 	zap.S().Debugf("Finished loading env variables")
 }

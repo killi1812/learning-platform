@@ -66,6 +66,10 @@ export async function addEnrollment(
   return wrapRequest(authApi.post<Enrollment>(`/course/${courseUuid}/enrollments`, data))
 }
 
+export async function removeEnrollment(courseUuid: string, userUuid: string): Promise<void> {
+  await wrapRequest(authApi.delete<void>(`/course/${courseUuid}/enrollments/${userUuid}`))
+}
+
 export async function listModules(courseUuid: string): Promise<Module[]> {
   return wrapRequest(authApi.get<Module[]>(`/course/${courseUuid}/module`))
 }

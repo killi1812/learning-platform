@@ -4,9 +4,6 @@
     <div class="d-flex flex-wrap align-center justify-space-between mb-6 ga-4">
       <div>
         <h1 class="text-h4 font-weight-bold text-high-emphasis">Course Catalog</h1>
-        <p class="text-subtitle-1 text-medium-emphasis mb-0">
-          Browse available courses, filter by semester, and enroll directly.
-        </p>
       </div>
 
       <v-btn
@@ -122,16 +119,6 @@
               >
                 {{ isAuthenticated ? 'Enroll' : 'Login to Enroll' }}
               </v-btn>
-              <v-btn
-                v-else-if="enrolledMap[course.uuid] === 'STUDENT'"
-                color="error"
-                :loading="enrollingUuid === course.uuid"
-                size="small"
-                variant="text"
-                @click.stop="handleWithdraw(course.uuid)"
-              >
-                Withdraw
-              </v-btn>
             </div>
           </template>
         </CourseCard>
@@ -212,7 +199,7 @@ import { useRouter } from 'vue-router'
 import CourseCard from '@/components/CourseCard.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useToast } from '@/composables/useToast'
-import { listCourses, getMyCourses, selfEnroll, withdraw, createCourse } from '@/api/course'
+import { listCourses, getMyCourses, selfEnroll, createCourse } from '@/api/course'
 import type { Course, CourseRole, CreateCoursePayload } from '@/types/course'
 
 const emit = defineEmits<{
@@ -297,19 +284,6 @@ async function handleEnroll(courseUuid: string) {
     toast.success('Successfully enrolled as STUDENT in the course!')
   } catch (err: unknown) {
     toast.error(err instanceof Error ? err.message : 'Enrollment failed.')
-  } finally {
-    enrollingUuid.value = undefined
-  }
-}
-
-async function handleWithdraw(courseUuid: string) {
-  enrollingUuid.value = courseUuid
-  try {
-    await withdraw(courseUuid)
-    delete enrolledMap.value[courseUuid]
-    toast.success('Successfully withdrew from course.')
-  } catch (err: unknown) {
-    toast.error(err instanceof Error ? err.message : 'Failed to withdraw.')
   } finally {
     enrollingUuid.value = undefined
   }

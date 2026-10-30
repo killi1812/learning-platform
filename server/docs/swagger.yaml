@@ -48,6 +48,42 @@ definitions:
       accessToken:
         type: string
     type: object
+  content.FileDto:
+    properties:
+      contentType:
+        type: string
+      createdAt:
+        type: string
+      description:
+        type: string
+      fileName:
+        type: string
+      fileSize:
+        type: integer
+      moduleUuid:
+        type: string
+      position:
+        type: integer
+      sourceUrl:
+        type: string
+      title:
+        type: string
+      updatedAt:
+        type: string
+      uuid:
+        type: string
+    type: object
+  content.UpdateFileDto:
+    properties:
+      description:
+        type: string
+      title:
+        maxLength: 255
+        minLength: 2
+        type: string
+    required:
+    - title
+    type: object
   course.AddEnrollmentDto:
     properties:
       email:
@@ -520,10 +556,16 @@ paths:
             items:
               $ref: '#/definitions/course.CourseDto'
             type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
             $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: List courses
       tags:
       - course
@@ -621,6 +663,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
         "404":
           description: Not Found
           schema:
@@ -629,6 +675,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Get course by UUID
       tags:
       - course
@@ -851,6 +899,50 @@ paths:
       summary: Add user to course by email
       tags:
       - course
+  /course/{uuid}/enrollments/{userUuid}:
+    delete:
+      description: Removes a user's enrollment from the course (Teacher or Admin only)
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: User UUID
+        in: path
+        name: userUuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Remove user from course
+      tags:
+      - course
   /course/{uuid}/module:
     get:
       description: Returns all modules of a course ordered by position
@@ -873,6 +965,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
         "404":
           description: Not Found
           schema:
@@ -881,6 +977,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: List modules in course
       tags:
       - module
@@ -1071,6 +1169,321 @@ paths:
       summary: Update module
       tags:
       - module
+  /course/{uuid}/module/{moduleUuid}/file:
+    get:
+      description: Returns all file materials for a given course module
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Module UUID
+        in: path
+        name: moduleUuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/content.FileDto'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List files / materials in module
+      tags:
+      - content
+    post:
+      consumes:
+      - multipart/form-data
+      description: Uploads course material file (.pdf, .pptx, .docx, .md, .txt) to
+        object storage or creates link (Teacher or Admin only)
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Module UUID
+        in: path
+        name: moduleUuid
+        required: true
+        type: string
+      - description: Course material file
+        in: formData
+        name: file
+        type: file
+      - description: Title of material
+        in: formData
+        name: title
+        type: string
+      - description: Optional description
+        in: formData
+        name: description
+        type: string
+      - description: Optional iframe or external URL
+        in: formData
+        name: sourceUrl
+        type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/content.FileDto'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Upload or create file material
+      tags:
+      - content
+  /course/{uuid}/module/{moduleUuid}/file/{fileUuid}:
+    delete:
+      description: Deletes file material from object storage and database (Teacher
+        or Admin only)
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Module UUID
+        in: path
+        name: moduleUuid
+        required: true
+        type: string
+      - description: File content UUID
+        in: path
+        name: fileUuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete file material
+      tags:
+      - content
+    get:
+      description: Returns metadata for a specific file material
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Module UUID
+        in: path
+        name: moduleUuid
+        required: true
+        type: string
+      - description: File content UUID
+        in: path
+        name: fileUuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/content.FileDto'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get file material details
+      tags:
+      - content
+    put:
+      consumes:
+      - application/json
+      description: Updates title and description for course material (Teacher or Admin
+        only)
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Module UUID
+        in: path
+        name: moduleUuid
+        required: true
+        type: string
+      - description: File content UUID
+        in: path
+        name: fileUuid
+        required: true
+        type: string
+      - description: Updated file metadata
+        in: body
+        name: file
+        required: true
+        schema:
+          $ref: '#/definitions/content.UpdateFileDto'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/content.FileDto'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update file metadata
+      tags:
+      - content
+  /course/{uuid}/module/{moduleUuid}/file/{fileUuid}/preview:
+    get:
+      description: Streams file content with inline Content-Disposition for browser
+        embedded preview
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Module UUID
+        in: path
+        name: moduleUuid
+        required: true
+        type: string
+      - description: File content UUID
+        in: path
+        name: fileUuid
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Preview or stream file material
+      tags:
+      - content
   /course/{uuid}/module/reorder:
     put:
       consumes:

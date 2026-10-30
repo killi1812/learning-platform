@@ -292,6 +292,11 @@
         },
         "/course": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns all courses with optional filtering by term and year",
                 "produces": [
                     "application/json"
@@ -322,6 +327,12 @@
                             "items": {
                                 "$ref": "#/definitions/course.CourseDto"
                             }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
                         }
                     },
                     "500": {
@@ -430,6 +441,11 @@
         },
         "/course/{uuid}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns a single course with details",
                 "produces": [
                     "application/json"
@@ -456,6 +472,12 @@
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/ginutil.ErrorResponse"
                         }
@@ -872,8 +894,81 @@
                 }
             }
         },
+        "/course/{uuid}/enrollments/{userUuid}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Removes a user's enrollment from the course (Teacher or Admin only)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "course"
+                ],
+                "summary": "Remove user from course",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Course UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "User UUID",
+                        "name": "userUuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/course/{uuid}/module": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns all modules of a course ordered by position",
                 "produces": [
                     "application/json"
@@ -903,6 +998,12 @@
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/ginutil.ErrorResponse"
                         }
@@ -1247,6 +1348,481 @@
                 "responses": {
                     "204": {
                         "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/course/{uuid}/module/{moduleUuid}/file": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all file materials for a given course module",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "content"
+                ],
+                "summary": "List files / materials in module",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Course UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Module UUID",
+                        "name": "moduleUuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/content.FileDto"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Uploads course material file (.pdf, .pptx, .docx, .md, .txt) to object storage or creates link (Teacher or Admin only)",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "content"
+                ],
+                "summary": "Upload or create file material",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Course UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Module UUID",
+                        "name": "moduleUuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "file",
+                        "description": "Course material file",
+                        "name": "file",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Title of material",
+                        "name": "title",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Optional description",
+                        "name": "description",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Optional iframe or external URL",
+                        "name": "sourceUrl",
+                        "in": "formData"
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/content.FileDto"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/course/{uuid}/module/{moduleUuid}/file/{fileUuid}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns metadata for a specific file material",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "content"
+                ],
+                "summary": "Get file material details",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Course UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Module UUID",
+                        "name": "moduleUuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "File content UUID",
+                        "name": "fileUuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/content.FileDto"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates title and description for course material (Teacher or Admin only)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "content"
+                ],
+                "summary": "Update file metadata",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Course UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Module UUID",
+                        "name": "moduleUuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "File content UUID",
+                        "name": "fileUuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Updated file metadata",
+                        "name": "file",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/content.UpdateFileDto"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/content.FileDto"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Deletes file material from object storage and database (Teacher or Admin only)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "content"
+                ],
+                "summary": "Delete file material",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Course UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Module UUID",
+                        "name": "moduleUuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "File content UUID",
+                        "name": "fileUuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/course/{uuid}/module/{moduleUuid}/file/{fileUuid}/preview": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Streams file content with inline Content-Disposition for browser embedded preview",
+                "tags": [
+                    "content"
+                ],
+                "summary": "Preview or stream file material",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Course UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Module UUID",
+                        "name": "moduleUuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "File content UUID",
+                        "name": "fileUuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
                     },
                     "400": {
                         "description": "Bad Request",
@@ -2051,6 +2627,60 @@
             "properties": {
                 "accessToken": {
                     "type": "string"
+                }
+            }
+        },
+        "content.FileDto": {
+            "type": "object",
+            "properties": {
+                "contentType": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "fileName": {
+                    "type": "string"
+                },
+                "fileSize": {
+                    "type": "integer"
+                },
+                "moduleUuid": {
+                    "type": "string"
+                },
+                "position": {
+                    "type": "integer"
+                },
+                "sourceUrl": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "uuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "content.UpdateFileDto": {
+            "type": "object",
+            "required": [
+                "title"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "minLength": 2
                 }
             }
         },
