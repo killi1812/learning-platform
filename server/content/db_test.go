@@ -54,7 +54,7 @@ func setupContentTest(t *testing.T) (*course.Course, *course.Module, content.ICo
 		&course.Course{},
 		&course.Module{},
 		&content.Content{},
-		&content.StaticPage{},
+		&content.File{},
 		&content.StudentInteraction{},
 	)
 
@@ -81,13 +81,13 @@ func setupContentTest(t *testing.T) (*course.Course, *course.Module, content.ICo
 	return c, m, svc, memStorage, db
 }
 
-func TestContentService_UploadStaticPage_WithFile(t *testing.T) {
+func TestContentService_UploadFile_WithFile(t *testing.T) {
 	c, m, svc, memStorage, _ := setupContentTest(t)
 
 	fileContent := []byte("%PDF-1.4 test pdf content")
 	reader := bytes.NewReader(fileContent)
 
-	sp, err := svc.UploadStaticPage(
+	sp, err := svc.UploadFile(
 		c.Uuid, m.Uuid,
 		"Lecture 1 Slides", "lecture1.pdf",
 		int64(len(fileContent)), "application/pdf",
@@ -113,7 +113,7 @@ func TestContentService_UploadStaticPage_WithFile(t *testing.T) {
 	assert.Equal(t, "application/pdf", ct)
 
 	// Upload second file - verify position increments
-	sp2, err := svc.UploadStaticPage(
+	sp2, err := svc.UploadFile(
 		c.Uuid, m.Uuid,
 		"", "reading.md",
 		10, "text/markdown",
@@ -124,10 +124,10 @@ func TestContentService_UploadStaticPage_WithFile(t *testing.T) {
 	assert.Equal(t, 2, sp2.Content.Position)
 }
 
-func TestContentService_UploadStaticPage_DefaultUntitled(t *testing.T) {
+func TestContentService_UploadFile_DefaultUntitled(t *testing.T) {
 	c, m, svc, _, _ := setupContentTest(t)
 
-	sp, err := svc.UploadStaticPage(
+	sp, err := svc.UploadFile(
 		c.Uuid, m.Uuid,
 		"", "", 0, "",
 		nil, "No title and no file", "http://example.com/link",
@@ -136,23 +136,23 @@ func TestContentService_UploadStaticPage_DefaultUntitled(t *testing.T) {
 	assert.Equal(t, "Untitled Material", sp.Content.Title)
 }
 
-func TestContentService_UpdateStaticPage_EmptyTitle(t *testing.T) {
+func TestContentService_UpdateFile_EmptyTitle(t *testing.T) {
 	c, m, svc, _, _ := setupContentTest(t)
 
-	sp, err := svc.UploadStaticPage(c.Uuid, m.Uuid, "Initial Title", "file.txt", 4, "text/plain", strings.NewReader("test"), "Initial Desc", "")
+	sp, err := svc.UploadFile(c.Uuid, m.Uuid, "Initial Title", "file.txt", 4, "text/plain", strings.NewReader("test"), "Initial Desc", "")
 	require.NoError(t, err)
 
-	updated, err := svc.UpdateStaticPage(c.Uuid, m.Uuid, sp.Content.Uuid, "", "Only Desc Updated")
+	updated, err := svc.UpdateFile(c.Uuid, m.Uuid, sp.Content.Uuid, "", "Only Desc Updated")
 	require.NoError(t, err)
 	assert.Equal(t, "Initial Title", updated.Content.Title)
 	assert.Equal(t, "Only Desc Updated", updated.RichText)
 }
 
-func TestContentService_UploadStaticPage_Failures(t *testing.T) {
+func TestContentService_UploadFile_Failures(t *testing.T) {
 	c, m, svc, memStorage, _ := setupContentTest(t)
 
 	// Invalid course
-	_, err := svc.UploadStaticPage(
+	_, err := svc.UploadFile(
 		uuid.New(), m.Uuid,
 		"Title", "file.pdf", 10, "application/pdf",
 		strings.NewReader("data"), "", "",
@@ -160,7 +160,7 @@ func TestContentService_UploadStaticPage_Failures(t *testing.T) {
 	assert.ErrorIs(t, err, content.ErrCourseNotFound)
 
 	// Invalid module
-	_, err = svc.UploadStaticPage(
+	_, err = svc.UploadFile(
 		c.Uuid, uuid.New(),
 		"Title", "file.pdf", 10, "application/pdf",
 		strings.NewReader("data"), "", "",
@@ -172,12 +172,12 @@ func TestContentService_UploadStaticPage_Failures(t *testing.T) {
 		IStorageService: memStorage,
 		failUpload:      true,
 	}
-	failingDb := testutil.NewSqliteTestDb(t, &user.User{}, &course.Course{}, &course.Module{}, &content.Content{}, &content.StaticPage{}, &content.StudentInteraction{})
+	failingDb := testutil.NewSqliteTestDb(t, &user.User{}, &course.Course{}, &course.Module{}, &content.Content{}, &content.File{}, &content.StudentInteraction{})
 	require.NoError(t, failingDb.Create(c).Error)
 	require.NoError(t, failingDb.Create(m).Error)
 	failingSvc := content.NewContentService(failingDb, failingStorage, nil)
 
-	_, err = failingSvc.UploadStaticPage(
+	_, err = failingSvc.UploadFile(
 		c.Uuid, m.Uuid,
 		"Title", "fail.pdf", 10, "application/pdf",
 		strings.NewReader("fail"), "", "",
@@ -186,59 +186,59 @@ func TestContentService_UploadStaticPage_Failures(t *testing.T) {
 	assert.Contains(t, err.Error(), "simulated upload failure")
 }
 
-func TestContentService_GetAndListStaticPages(t *testing.T) {
+func TestContentService_GetAndListFiles(t *testing.T) {
 	c, m, svc, _, db := setupContentTest(t)
 
 	// Empty list
-	pages, err := svc.ListStaticPages(c.Uuid, m.Uuid, uuid.Nil, true)
+	pages, err := svc.ListFiles(c.Uuid, m.Uuid, uuid.Nil, true)
 	require.NoError(t, err)
 	assert.Empty(t, pages)
 
 	// Upload two pages
-	sp1, err := svc.UploadStaticPage(c.Uuid, m.Uuid, "Page 1", "file1.txt", 5, "text/plain", strings.NewReader("hello"), "desc 1", "")
+	sp1, err := svc.UploadFile(c.Uuid, m.Uuid, "Page 1", "file1.txt", 5, "text/plain", strings.NewReader("hello"), "desc 1", "")
 	require.NoError(t, err)
 
-	sp2, err := svc.UploadStaticPage(c.Uuid, m.Uuid, "Page 2", "file2.txt", 5, "text/plain", strings.NewReader("world"), "desc 2", "")
+	sp2, err := svc.UploadFile(c.Uuid, m.Uuid, "Page 2", "file2.txt", 5, "text/plain", strings.NewReader("world"), "desc 2", "")
 	require.NoError(t, err)
 
 	// List
-	list, err := svc.ListStaticPages(c.Uuid, m.Uuid, uuid.Nil, true)
+	list, err := svc.ListFiles(c.Uuid, m.Uuid, uuid.Nil, true)
 	require.NoError(t, err)
 	require.Len(t, list, 2)
 	assert.Equal(t, sp1.Content.Uuid, list[0].Content.Uuid)
 	assert.Equal(t, sp2.Content.Uuid, list[1].Content.Uuid)
 
 	// Get single
-	fetched, err := svc.GetStaticPage(c.Uuid, m.Uuid, sp1.Content.Uuid, uuid.Nil, true)
+	fetched, err := svc.GetFile(c.Uuid, m.Uuid, sp1.Content.Uuid, uuid.Nil, true)
 	require.NoError(t, err)
 	assert.Equal(t, "Page 1", fetched.Content.Title)
 	assert.Equal(t, "desc 1", fetched.RichText)
 
 	// Not found checks
-	_, err = svc.GetStaticPage(c.Uuid, m.Uuid, uuid.New(), uuid.Nil, true)
+	_, err = svc.GetFile(c.Uuid, m.Uuid, uuid.New(), uuid.Nil, true)
 	assert.ErrorIs(t, err, content.ErrContentNotFound)
 
-	// Content exists but StaticPage extension row missing
+	// Content exists but File extension row missing
 	orphanCnt := &content.Content{
 		Uuid:     uuid.New(),
 		ModuleID: m.ID,
 		Title:    "Orphan Content",
-		Type:     content.TypeStaticPage,
+		Type:     content.TypeFile,
 	}
 	require.NoError(t, db.Create(orphanCnt).Error)
-	_, err = svc.GetStaticPage(c.Uuid, m.Uuid, orphanCnt.Uuid, uuid.Nil, true)
+	_, err = svc.GetFile(c.Uuid, m.Uuid, orphanCnt.Uuid, uuid.Nil, true)
 	assert.ErrorIs(t, err, content.ErrContentNotFound)
 
-	_, err = svc.GetStaticPage(uuid.New(), m.Uuid, sp1.Content.Uuid, uuid.Nil, true)
+	_, err = svc.GetFile(uuid.New(), m.Uuid, sp1.Content.Uuid, uuid.Nil, true)
 	assert.ErrorIs(t, err, content.ErrCourseNotFound)
 
-	_, err = svc.GetStaticPage(c.Uuid, uuid.New(), sp1.Content.Uuid, uuid.Nil, true)
+	_, err = svc.GetFile(c.Uuid, uuid.New(), sp1.Content.Uuid, uuid.Nil, true)
 	assert.ErrorIs(t, err, content.ErrModuleNotFound)
 
-	_, err = svc.ListStaticPages(uuid.New(), m.Uuid, uuid.Nil, true)
+	_, err = svc.ListFiles(uuid.New(), m.Uuid, uuid.Nil, true)
 	assert.ErrorIs(t, err, content.ErrCourseNotFound)
 
-	_, err = svc.ListStaticPages(c.Uuid, uuid.New(), uuid.Nil, true)
+	_, err = svc.ListFiles(c.Uuid, uuid.New(), uuid.Nil, true)
 	assert.ErrorIs(t, err, content.ErrModuleNotFound)
 }
 
@@ -246,7 +246,7 @@ func TestContentService_GetFileStream(t *testing.T) {
 	c, m, svc, memStorage, _ := setupContentTest(t)
 
 	contentStr := "test stream content"
-	sp, err := svc.UploadStaticPage(c.Uuid, m.Uuid, "Stream Test", "stream.txt", int64(len(contentStr)), "text/plain", strings.NewReader(contentStr), "", "")
+	sp, err := svc.UploadFile(c.Uuid, m.Uuid, "Stream Test", "stream.txt", int64(len(contentStr)), "text/plain", strings.NewReader(contentStr), "", "")
 	require.NoError(t, err)
 
 	rc, fetchedSp, err := svc.GetFileStream(c.Uuid, m.Uuid, sp.Content.Uuid, uuid.Nil, true)
@@ -259,7 +259,7 @@ func TestContentService_GetFileStream(t *testing.T) {
 	assert.Equal(t, contentStr, string(data))
 
 	// Page without storage key
-	spNoFile, err := svc.UploadStaticPage(c.Uuid, m.Uuid, "No File", "", 0, "", nil, "", "http://example.com")
+	spNoFile, err := svc.UploadFile(c.Uuid, m.Uuid, "No File", "", 0, "", nil, "", "http://example.com")
 	require.NoError(t, err)
 	_, _, err = svc.GetFileStream(c.Uuid, m.Uuid, spNoFile.Content.Uuid, uuid.Nil, true)
 	assert.ErrorIs(t, err, storage.ErrObjectNotFound)
@@ -269,11 +269,11 @@ func TestContentService_GetFileStream(t *testing.T) {
 		IStorageService: memStorage,
 		failGet:         true,
 	}
-	db := testutil.NewSqliteTestDb(t, &user.User{}, &course.Course{}, &course.Module{}, &content.Content{}, &content.StaticPage{}, &content.StudentInteraction{})
+	db := testutil.NewSqliteTestDb(t, &user.User{}, &course.Course{}, &course.Module{}, &content.Content{}, &content.File{}, &content.StudentInteraction{})
 	require.NoError(t, db.Create(c).Error)
 	require.NoError(t, db.Create(m).Error)
 	failingSvc := content.NewContentService(db, failingStorage, nil)
-	spFail, err := failingSvc.UploadStaticPage(c.Uuid, m.Uuid, "Will Fail", "fail.txt", 4, "text/plain", strings.NewReader("test"), "", "")
+	spFail, err := failingSvc.UploadFile(c.Uuid, m.Uuid, "Will Fail", "fail.txt", 4, "text/plain", strings.NewReader("test"), "", "")
 	require.NoError(t, err)
 
 	_, _, err = failingSvc.GetFileStream(c.Uuid, m.Uuid, spFail.Content.Uuid, uuid.Nil, true)
@@ -281,26 +281,26 @@ func TestContentService_GetFileStream(t *testing.T) {
 	assert.Contains(t, err.Error(), "simulated get failure")
 }
 
-func TestContentService_UpdateStaticPage(t *testing.T) {
+func TestContentService_UpdateFile(t *testing.T) {
 	c, m, svc, _, _ := setupContentTest(t)
 
-	sp, err := svc.UploadStaticPage(c.Uuid, m.Uuid, "Initial Title", "file.txt", 4, "text/plain", strings.NewReader("test"), "Initial Desc", "")
+	sp, err := svc.UploadFile(c.Uuid, m.Uuid, "Initial Title", "file.txt", 4, "text/plain", strings.NewReader("test"), "Initial Desc", "")
 	require.NoError(t, err)
 
-	updated, err := svc.UpdateStaticPage(c.Uuid, m.Uuid, sp.Content.Uuid, "Updated Title", "Updated Desc")
+	updated, err := svc.UpdateFile(c.Uuid, m.Uuid, sp.Content.Uuid, "Updated Title", "Updated Desc")
 	require.NoError(t, err)
 	assert.Equal(t, "Updated Title", updated.Content.Title)
 	assert.Equal(t, "Updated Desc", updated.RichText)
 
 	// Not found
-	_, err = svc.UpdateStaticPage(c.Uuid, m.Uuid, uuid.New(), "New Title", "New Desc")
+	_, err = svc.UpdateFile(c.Uuid, m.Uuid, uuid.New(), "New Title", "New Desc")
 	assert.ErrorIs(t, err, content.ErrContentNotFound)
 }
 
-func TestContentService_DeleteStaticPage(t *testing.T) {
+func TestContentService_DeleteFile(t *testing.T) {
 	c, m, svc, memStorage, _ := setupContentTest(t)
 
-	sp, err := svc.UploadStaticPage(c.Uuid, m.Uuid, "To Delete", "delete.txt", 4, "text/plain", strings.NewReader("test"), "", "")
+	sp, err := svc.UploadFile(c.Uuid, m.Uuid, "To Delete", "delete.txt", 4, "text/plain", strings.NewReader("test"), "", "")
 	require.NoError(t, err)
 
 	// Verify in storage
@@ -308,7 +308,7 @@ func TestContentService_DeleteStaticPage(t *testing.T) {
 	require.NoError(t, err)
 
 	// Delete
-	err = svc.DeleteStaticPage(c.Uuid, m.Uuid, sp.Content.Uuid)
+	err = svc.DeleteFile(c.Uuid, m.Uuid, sp.Content.Uuid)
 	require.NoError(t, err)
 
 	// Verify deleted from storage
@@ -316,11 +316,11 @@ func TestContentService_DeleteStaticPage(t *testing.T) {
 	assert.ErrorIs(t, err, storage.ErrObjectNotFound)
 
 	// Verify deleted from DB
-	_, err = svc.GetStaticPage(c.Uuid, m.Uuid, sp.Content.Uuid, uuid.Nil, true)
+	_, err = svc.GetFile(c.Uuid, m.Uuid, sp.Content.Uuid, uuid.Nil, true)
 	assert.ErrorIs(t, err, content.ErrContentNotFound)
 
 	// Delete non-existent
-	err = svc.DeleteStaticPage(c.Uuid, m.Uuid, uuid.New())
+	err = svc.DeleteFile(c.Uuid, m.Uuid, uuid.New())
 	assert.ErrorIs(t, err, content.ErrContentNotFound)
 
 	// Delete with failing storage delete (should still delete DB record and succeed)
@@ -328,18 +328,18 @@ func TestContentService_DeleteStaticPage(t *testing.T) {
 		IStorageService: memStorage,
 		failDelete:      true,
 	}
-	db := testutil.NewSqliteTestDb(t, &user.User{}, &course.Course{}, &course.Module{}, &content.Content{}, &content.StaticPage{}, &content.StudentInteraction{})
+	db := testutil.NewSqliteTestDb(t, &user.User{}, &course.Course{}, &course.Module{}, &content.Content{}, &content.File{}, &content.StudentInteraction{})
 	require.NoError(t, db.Create(c).Error)
 	require.NoError(t, db.Create(m).Error)
 	failingSvc := content.NewContentService(db, failingStorage, nil)
 
-	sp2, err := failingSvc.UploadStaticPage(c.Uuid, m.Uuid, "Delete Warn", "del.txt", 3, "text/plain", strings.NewReader("abc"), "", "")
+	sp2, err := failingSvc.UploadFile(c.Uuid, m.Uuid, "Delete Warn", "del.txt", 3, "text/plain", strings.NewReader("abc"), "", "")
 	require.NoError(t, err)
 
-	err = failingSvc.DeleteStaticPage(c.Uuid, m.Uuid, sp2.Content.Uuid)
+	err = failingSvc.DeleteFile(c.Uuid, m.Uuid, sp2.Content.Uuid)
 	assert.NoError(t, err)
 
-	_, err = failingSvc.GetStaticPage(c.Uuid, m.Uuid, sp2.Content.Uuid, uuid.Nil, true)
+	_, err = failingSvc.GetFile(c.Uuid, m.Uuid, sp2.Content.Uuid, uuid.Nil, true)
 	assert.ErrorIs(t, err, content.ErrContentNotFound)
 }
 
@@ -355,7 +355,7 @@ func TestContentService_StudentPrerequisitesAndVisibility(t *testing.T) {
 	require.NoError(t, db.Create(student).Error)
 
 	// Module 1 content
-	page1, err := svc.UploadStaticPage(c.Uuid, m1.Uuid, "Page 1", "m1.pdf", 10, "application/pdf", strings.NewReader("data"), "", "")
+	page1, err := svc.UploadFile(c.Uuid, m1.Uuid, "Page 1", "m1.pdf", 10, "application/pdf", strings.NewReader("data"), "", "")
 	require.NoError(t, err)
 
 	// Module 2 depending on Module 1
@@ -369,31 +369,31 @@ func TestContentService_StudentPrerequisitesAndVisibility(t *testing.T) {
 	require.NoError(t, db.Create(m2).Error)
 
 	// Module 2 content
-	page2, err := svc.UploadStaticPage(c.Uuid, m2.Uuid, "Page 2", "m2.pdf", 10, "application/pdf", strings.NewReader("data2"), "", "")
+	page2, err := svc.UploadFile(c.Uuid, m2.Uuid, "Page 2", "m2.pdf", 10, "application/pdf", strings.NewReader("data2"), "", "")
 	require.NoError(t, err)
 
 	// Student attempts to list or get Module 2 without completing Module 1 -> ErrModuleLocked
-	_, err = svc.ListStaticPages(c.Uuid, m2.Uuid, student.Uuid, false)
+	_, err = svc.ListFiles(c.Uuid, m2.Uuid, student.Uuid, false)
 	assert.ErrorIs(t, err, content.ErrModuleLocked)
 
-	_, err = svc.GetStaticPage(c.Uuid, m2.Uuid, page2.Content.Uuid, student.Uuid, false)
+	_, err = svc.GetFile(c.Uuid, m2.Uuid, page2.Content.Uuid, student.Uuid, false)
 	assert.ErrorIs(t, err, content.ErrModuleLocked)
 
 	// Privileged teacher can still access Module 2
-	pages, err := svc.ListStaticPages(c.Uuid, m2.Uuid, uuid.Nil, true)
+	pages, err := svc.ListFiles(c.Uuid, m2.Uuid, uuid.Nil, true)
 	require.NoError(t, err)
 	assert.Len(t, pages, 1)
 
 	// Student views Module 1 content (records interaction)
-	_, err = svc.GetStaticPage(c.Uuid, m1.Uuid, page1.Content.Uuid, student.Uuid, false)
+	_, err = svc.GetFile(c.Uuid, m1.Uuid, page1.Content.Uuid, student.Uuid, false)
 	require.NoError(t, err)
 
 	// Viewing a second time updates existing interaction
-	_, err = svc.GetStaticPage(c.Uuid, m1.Uuid, page1.Content.Uuid, student.Uuid, false)
+	_, err = svc.GetFile(c.Uuid, m1.Uuid, page1.Content.Uuid, student.Uuid, false)
 	require.NoError(t, err)
 
 	// Now Module 2 is unlocked for student!
-	pagesStudent, err := svc.ListStaticPages(c.Uuid, m2.Uuid, student.Uuid, false)
+	pagesStudent, err := svc.ListFiles(c.Uuid, m2.Uuid, student.Uuid, false)
 	require.NoError(t, err)
 	assert.Len(t, pagesStudent, 1)
 
@@ -407,27 +407,27 @@ func TestContentService_StudentPrerequisitesAndVisibility(t *testing.T) {
 	past := time.Now().Add(-24 * time.Hour)
 
 	// Content with future VisibleFrom
-	pageHidden, err := svc.UploadStaticPage(c.Uuid, m1.Uuid, "Hidden Page", "h.txt", 4, "text/plain", strings.NewReader("hide"), "", "")
+	pageHidden, err := svc.UploadFile(c.Uuid, m1.Uuid, "Hidden Page", "h.txt", 4, "text/plain", strings.NewReader("hide"), "", "")
 	require.NoError(t, err)
 	require.NoError(t, db.Model(&content.Content{}).Where("id = ?", pageHidden.ContentID).Update("visible_from", &future).Error)
 
 	// Content with past VisibleUntil
-	pageExpired, err := svc.UploadStaticPage(c.Uuid, m1.Uuid, "Expired Page", "e.txt", 4, "text/plain", strings.NewReader("exp"), "", "")
+	pageExpired, err := svc.UploadFile(c.Uuid, m1.Uuid, "Expired Page", "e.txt", 4, "text/plain", strings.NewReader("exp"), "", "")
 	require.NoError(t, err)
 	require.NoError(t, db.Model(&content.Content{}).Where("id = ?", pageExpired.ContentID).Update("visible_until", &past).Error)
 
 	// Student cannot get hidden or expired content or stream it
-	_, err = svc.GetStaticPage(c.Uuid, m1.Uuid, pageHidden.Content.Uuid, student.Uuid, false)
+	_, err = svc.GetFile(c.Uuid, m1.Uuid, pageHidden.Content.Uuid, student.Uuid, false)
 	assert.ErrorIs(t, err, content.ErrContentNotAvailable)
 
 	_, _, err = svc.GetFileStream(c.Uuid, m1.Uuid, pageHidden.Content.Uuid, student.Uuid, false)
 	assert.ErrorIs(t, err, content.ErrContentNotAvailable)
 
-	_, err = svc.GetStaticPage(c.Uuid, m1.Uuid, pageExpired.Content.Uuid, student.Uuid, false)
+	_, err = svc.GetFile(c.Uuid, m1.Uuid, pageExpired.Content.Uuid, student.Uuid, false)
 	assert.ErrorIs(t, err, content.ErrContentNotAvailable)
 
 	// Privileged teacher can still get hidden content
-	gotHidden, err := svc.GetStaticPage(c.Uuid, m1.Uuid, pageHidden.Content.Uuid, uuid.Nil, true)
+	gotHidden, err := svc.GetFile(c.Uuid, m1.Uuid, pageHidden.Content.Uuid, uuid.Nil, true)
 	require.NoError(t, err)
 	assert.NotNil(t, gotHidden)
 }

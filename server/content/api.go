@@ -36,15 +36,15 @@ func NewContentCtn(contentService IContentService, courseService course.ICourseS
 }
 
 func (ctn *ContentCtn) RegisterEndpoints(api *gin.RouterGroup) {
-	pages := api.Group("/course/:uuid/module/:moduleUuid/static-page")
-	pages.Use(authutils.Protect())
+	files := api.Group("/course/:uuid/module/:moduleUuid/file")
+	files.Use(authutils.Protect())
 
-	pages.POST("", ctn.upload)
-	pages.GET("", ctn.list)
-	pages.GET("/:pageUuid", ctn.get)
-	pages.GET("/:pageUuid/preview", ctn.preview)
-	pages.PUT("/:pageUuid", ctn.update)
-	pages.DELETE("/:pageUuid", ctn.delete)
+	files.POST("", ctn.upload)
+	files.GET("", ctn.list)
+	files.GET("/:fileUuid", ctn.get)
+	files.GET("/:fileUuid/preview", ctn.preview)
+	files.PUT("/:fileUuid", ctn.update)
+	files.DELETE("/:fileUuid", ctn.delete)
 }
 
 func (ctn *ContentCtn) handleError(c *gin.Context, err error) bool {
@@ -71,9 +71,9 @@ func (ctn *ContentCtn) handleError(c *gin.Context, err error) bool {
 	}
 }
 
-// UploadStaticPage godoc
+// UploadFile godoc
 //
-//	@Summary		Upload or create static page material
+//	@Summary		Upload or create file material
 //	@Description	Uploads course material file (.pdf, .pptx, .docx, .md, .txt) to object storage or creates link (Teacher or Admin only)
 //	@Tags			content
 //	@Accept			multipart/form-data
@@ -85,13 +85,13 @@ func (ctn *ContentCtn) handleError(c *gin.Context, err error) bool {
 //	@Param			title		formData	string	false	"Title of material"
 //	@Param			description	formData	string	false	"Optional description"
 //	@Param			sourceUrl	formData	string	false	"Optional iframe or external URL"
-//	@Success		201			{object}	StaticPageDto
+//	@Success		201			{object}	FileDto
 //	@Failure		400			{object}	ginutil.ErrorResponse
 //	@Failure		401			{object}	ginutil.ErrorResponse
 //	@Failure		403			{object}	ginutil.ErrorResponse
 //	@Failure		404			{object}	ginutil.ErrorResponse
 //	@Failure		500			{object}	ginutil.ErrorResponse
-//	@Router			/course/{uuid}/module/{moduleUuid}/static-page [post]
+//	@Router			/course/{uuid}/module/{moduleUuid}/file [post]
 func (ctn *ContentCtn) upload(c *gin.Context) {
 	courseUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
 	if !ok {
@@ -197,7 +197,7 @@ func (ctn *ContentCtn) upload(c *gin.Context) {
 		return
 	}
 
-	sp, err := ctn.contentService.UploadStaticPage(
+	f, err := ctn.contentService.UploadFile(
 		courseUuid, moduleUuid,
 		title, fileName, fileSize, contentType,
 		fileReader, description, sourceUrl,
@@ -206,24 +206,24 @@ func (ctn *ContentCtn) upload(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, StaticPageDto{}.FromModel(sp))
+	c.JSON(http.StatusCreated, FileDto{}.FromModel(f))
 }
 
-// ListStaticPages godoc
+// ListFiles godoc
 //
-//	@Summary		List static pages / materials in module
-//	@Description	Returns all static page materials for a given course module
+//	@Summary		List files / materials in module
+//	@Description	Returns all file materials for a given course module
 //	@Tags			content
 //	@Produce		json
 //	@Security		BearerAuth
 //	@Param			uuid		path		string	true	"Course UUID"
 //	@Param			moduleUuid	path		string	true	"Module UUID"
-//	@Success		200			{array}		StaticPageDto
+//	@Success		200			{array}		FileDto
 //	@Failure		400			{object}	ginutil.ErrorResponse
 //	@Failure		401			{object}	ginutil.ErrorResponse
 //	@Failure		404			{object}	ginutil.ErrorResponse
 //	@Failure		500			{object}	ginutil.ErrorResponse
-//	@Router			/course/{uuid}/module/{moduleUuid}/static-page [get]
+//	@Router			/course/{uuid}/module/{moduleUuid}/file [get]
 func (ctn *ContentCtn) list(c *gin.Context) {
 	courseUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
 	if !ok {
@@ -242,36 +242,36 @@ func (ctn *ContentCtn) list(c *gin.Context) {
 		}
 	}
 
-	pages, err := ctn.contentService.ListStaticPages(courseUuid, moduleUuid, userUuid, isPrivileged)
+	files, err := ctn.contentService.ListFiles(courseUuid, moduleUuid, userUuid, isPrivileged)
 	if ctn.handleError(c, err) {
 		return
 	}
 
-	dtos := make([]StaticPageDto, 0, len(pages))
-	for i := range pages {
-		dtos = append(dtos, StaticPageDto{}.FromModel(&pages[i]))
+	dtos := make([]FileDto, 0, len(files))
+	for i := range files {
+		dtos = append(dtos, FileDto{}.FromModel(&files[i]))
 	}
 
 	c.JSON(http.StatusOK, dtos)
 }
 
-// GetStaticPage godoc
+// GetFile godoc
 //
-//	@Summary		Get static page material details
-//	@Description	Returns metadata for a specific static page
+//	@Summary		Get file material details
+//	@Description	Returns metadata for a specific file material
 //	@Tags			content
 //	@Produce		json
 //	@Security		BearerAuth
 //	@Param			uuid		path		string	true	"Course UUID"
 //	@Param			moduleUuid	path		string	true	"Module UUID"
-//	@Param			pageUuid	path		string	true	"Static page content UUID"
-//	@Success		200			{object}	StaticPageDto
+//	@Param			fileUuid	path		string	true	"File content UUID"
+//	@Success		200			{object}	FileDto
 //	@Failure		400			{object}	ginutil.ErrorResponse
 //	@Failure		401			{object}	ginutil.ErrorResponse
 //	@Failure		403			{object}	ginutil.ErrorResponse
 //	@Failure		404			{object}	ginutil.ErrorResponse
 //	@Failure		500			{object}	ginutil.ErrorResponse
-//	@Router			/course/{uuid}/module/{moduleUuid}/static-page/{pageUuid} [get]
+//	@Router			/course/{uuid}/module/{moduleUuid}/file/{fileUuid} [get]
 func (ctn *ContentCtn) get(c *gin.Context) {
 	courseUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
 	if !ok {
@@ -281,7 +281,7 @@ func (ctn *ContentCtn) get(c *gin.Context) {
 	if !ok {
 		return
 	}
-	pageUuid, ok := ginutil.ParseUUIDParam(c, "pageUuid")
+	fileUuid, ok := ginutil.ParseUUIDParam(c, "fileUuid")
 	if !ok {
 		return
 	}
@@ -294,30 +294,30 @@ func (ctn *ContentCtn) get(c *gin.Context) {
 		}
 	}
 
-	sp, err := ctn.contentService.GetStaticPage(courseUuid, moduleUuid, pageUuid, userUuid, isPrivileged)
+	f, err := ctn.contentService.GetFile(courseUuid, moduleUuid, fileUuid, userUuid, isPrivileged)
 	if ctn.handleError(c, err) {
 		return
 	}
 
-	c.JSON(http.StatusOK, StaticPageDto{}.FromModel(sp))
+	c.JSON(http.StatusOK, FileDto{}.FromModel(f))
 }
 
-// PreviewStaticPage godoc
+// PreviewFile godoc
 //
-//	@Summary		Preview or stream static page material file
+//	@Summary		Preview or stream file material
 //	@Description	Streams file content with inline Content-Disposition for browser embedded preview
 //	@Tags			content
 //	@Security		BearerAuth
 //	@Param			uuid		path	string	true	"Course UUID"
 //	@Param			moduleUuid	path	string	true	"Module UUID"
-//	@Param			pageUuid	path	string	true	"Static page content UUID"
+//	@Param			fileUuid	path	string	true	"File content UUID"
 //	@Success		200
 //	@Failure		400	{object}	ginutil.ErrorResponse
 //	@Failure		401	{object}	ginutil.ErrorResponse
 //	@Failure		403	{object}	ginutil.ErrorResponse
 //	@Failure		404	{object}	ginutil.ErrorResponse
 //	@Failure		500	{object}	ginutil.ErrorResponse
-//	@Router			/course/{uuid}/module/{moduleUuid}/static-page/{pageUuid}/preview [get]
+//	@Router			/course/{uuid}/module/{moduleUuid}/file/{fileUuid}/preview [get]
 func (ctn *ContentCtn) preview(c *gin.Context) {
 	courseUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
 	if !ok {
@@ -327,7 +327,7 @@ func (ctn *ContentCtn) preview(c *gin.Context) {
 	if !ok {
 		return
 	}
-	pageUuid, ok := ginutil.ParseUUIDParam(c, "pageUuid")
+	fileUuid, ok := ginutil.ParseUUIDParam(c, "fileUuid")
 	if !ok {
 		return
 	}
@@ -340,13 +340,13 @@ func (ctn *ContentCtn) preview(c *gin.Context) {
 		}
 	}
 
-	reader, sp, err := ctn.contentService.GetFileStream(courseUuid, moduleUuid, pageUuid, userUuid, isPrivileged)
+	reader, f, err := ctn.contentService.GetFileStream(courseUuid, moduleUuid, fileUuid, userUuid, isPrivileged)
 	if ctn.handleError(c, err) {
 		return
 	}
 	defer reader.Close()
 
-	cleanFileName := filepath.Base(sp.FileName)
+	cleanFileName := filepath.Base(f.FileName)
 	cleanFileName = strings.ReplaceAll(cleanFileName, "\r", "")
 	cleanFileName = strings.ReplaceAll(cleanFileName, "\n", "")
 	cleanFileName = strings.ReplaceAll(cleanFileName, "\"", "")
@@ -356,33 +356,33 @@ func (ctn *ContentCtn) preview(c *gin.Context) {
 	c.Header("X-Content-Type-Options", "nosniff")
 	c.Header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
 
-	contentType := sp.ContentType
+	contentType := f.ContentType
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
 
-	c.DataFromReader(http.StatusOK, sp.FileSize, contentType, reader, nil)
+	c.DataFromReader(http.StatusOK, f.FileSize, contentType, reader, nil)
 }
 
-// UpdateStaticPage godoc
+// UpdateFile godoc
 //
-//	@Summary		Update static page metadata
+//	@Summary		Update file metadata
 //	@Description	Updates title and description for course material (Teacher or Admin only)
 //	@Tags			content
 //	@Accept			json
 //	@Produce		json
 //	@Security		BearerAuth
-//	@Param			uuid		path		string				true	"Course UUID"
-//	@Param			moduleUuid	path		string				true	"Module UUID"
-//	@Param			pageUuid	path		string				true	"Static page content UUID"
-//	@Param			page		body		UpdateStaticPageDto	true	"Updated page metadata"
-//	@Success		200			{object}	StaticPageDto
+//	@Param			uuid		path		string			true	"Course UUID"
+//	@Param			moduleUuid	path		string			true	"Module UUID"
+//	@Param			fileUuid	path		string			true	"File content UUID"
+//	@Param			file		body		UpdateFileDto	true	"Updated file metadata"
+//	@Success		200			{object}	FileDto
 //	@Failure		400			{object}	ginutil.ErrorResponse
 //	@Failure		401			{object}	ginutil.ErrorResponse
 //	@Failure		403			{object}	ginutil.ErrorResponse
 //	@Failure		404			{object}	ginutil.ErrorResponse
 //	@Failure		500			{object}	ginutil.ErrorResponse
-//	@Router			/course/{uuid}/module/{moduleUuid}/static-page/{pageUuid} [put]
+//	@Router			/course/{uuid}/module/{moduleUuid}/file/{fileUuid} [put]
 func (ctn *ContentCtn) update(c *gin.Context) {
 	courseUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
 	if !ok {
@@ -392,7 +392,7 @@ func (ctn *ContentCtn) update(c *gin.Context) {
 	if !ok {
 		return
 	}
-	pageUuid, ok := ginutil.ParseUUIDParam(c, "pageUuid")
+	fileUuid, ok := ginutil.ParseUUIDParam(c, "fileUuid")
 	if !ok {
 		return
 	}
@@ -401,37 +401,37 @@ func (ctn *ContentCtn) update(c *gin.Context) {
 		return
 	}
 
-	var dto UpdateStaticPageDto
+	var dto UpdateFileDto
 	if err := c.ShouldBindJSON(&dto); err != nil {
 		ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
 
-	sp, err := ctn.contentService.UpdateStaticPage(courseUuid, moduleUuid, pageUuid, dto.Title, dto.Description)
+	f, err := ctn.contentService.UpdateFile(courseUuid, moduleUuid, fileUuid, dto.Title, dto.Description)
 	if ctn.handleError(c, err) {
 		return
 	}
 
-	c.JSON(http.StatusOK, StaticPageDto{}.FromModel(sp))
+	c.JSON(http.StatusOK, FileDto{}.FromModel(f))
 }
 
-// DeleteStaticPage godoc
+// DeleteFile godoc
 //
-//	@Summary		Delete static page material
-//	@Description	Deletes static page material from object storage and database (Teacher or Admin only)
+//	@Summary		Delete file material
+//	@Description	Deletes file material from object storage and database (Teacher or Admin only)
 //	@Tags			content
 //	@Produce		json
 //	@Security		BearerAuth
 //	@Param			uuid		path	string	true	"Course UUID"
 //	@Param			moduleUuid	path	string	true	"Module UUID"
-//	@Param			pageUuid	path	string	true	"Static page content UUID"
+//	@Param			fileUuid	path	string	true	"File content UUID"
 //	@Success		204
 //	@Failure		400	{object}	ginutil.ErrorResponse
 //	@Failure		401	{object}	ginutil.ErrorResponse
 //	@Failure		403	{object}	ginutil.ErrorResponse
 //	@Failure		404	{object}	ginutil.ErrorResponse
 //	@Failure		500	{object}	ginutil.ErrorResponse
-//	@Router			/course/{uuid}/module/{moduleUuid}/static-page/{pageUuid} [delete]
+//	@Router			/course/{uuid}/module/{moduleUuid}/file/{fileUuid} [delete]
 func (ctn *ContentCtn) delete(c *gin.Context) {
 	courseUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
 	if !ok {
@@ -441,7 +441,7 @@ func (ctn *ContentCtn) delete(c *gin.Context) {
 	if !ok {
 		return
 	}
-	pageUuid, ok := ginutil.ParseUUIDParam(c, "pageUuid")
+	fileUuid, ok := ginutil.ParseUUIDParam(c, "fileUuid")
 	if !ok {
 		return
 	}
@@ -450,7 +450,7 @@ func (ctn *ContentCtn) delete(c *gin.Context) {
 		return
 	}
 
-	err := ctn.contentService.DeleteStaticPage(courseUuid, moduleUuid, pageUuid)
+	err := ctn.contentService.DeleteFile(courseUuid, moduleUuid, fileUuid)
 	if ctn.handleError(c, err) {
 		return
 	}

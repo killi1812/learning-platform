@@ -4,14 +4,14 @@ import (
 	"time"
 )
 
-// UpdateStaticPageDto defines metadata that can be updated for a static page / uploaded material.
-type UpdateStaticPageDto struct {
+// UpdateFileDto defines metadata that can be updated for an uploaded file / course material.
+type UpdateFileDto struct {
 	Title       string `json:"title" binding:"required,min=2,max=255"`
 	Description string `json:"description,omitempty"`
 }
 
-// StaticPageDto represents the public view of course material stored in object storage.
-type StaticPageDto struct {
+// FileDto represents the public view of course material stored in object storage.
+type FileDto struct {
 	Uuid        string    `json:"uuid"`
 	ModuleUuid  string    `json:"moduleUuid,omitempty"`
 	Title       string    `json:"title"`
@@ -25,28 +25,28 @@ type StaticPageDto struct {
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
-// FromModel converts a StaticPage model into a StaticPageDto.
-func (StaticPageDto) FromModel(sp *StaticPage) StaticPageDto {
-	if sp == nil {
-		return StaticPageDto{}
+// FromModel converts a File model into a FileDto.
+func (FileDto) FromModel(f *File) FileDto {
+	if f == nil {
+		return FileDto{}
 	}
 
-	dto := StaticPageDto{
-		FileName:    sp.FileName,
-		FileSize:    sp.FileSize,
-		ContentType: sp.ContentType,
-		Description: sp.RichText,
-		SourceURL:   sp.SourceURL,
+	dto := FileDto{
+		FileName:    f.FileName,
+		FileSize:    f.FileSize,
+		ContentType: f.ContentType,
+		Description: f.RichText,
+		SourceURL:   f.SourceURL,
 	}
 
-	if sp.Content != nil {
-		dto.Uuid = sp.Content.Uuid.String()
-		dto.Title = sp.Content.Title
-		dto.Position = sp.Content.Position
-		dto.CreatedAt = sp.Content.CreatedAt
-		dto.UpdatedAt = sp.Content.UpdatedAt
-		if sp.Content.Module != nil {
-			dto.ModuleUuid = sp.Content.Module.Uuid.String()
+	if f.Content != nil {
+		dto.Uuid = f.Content.Uuid.String()
+		dto.Title = f.Content.Title
+		dto.Position = f.Content.Position
+		dto.CreatedAt = f.Content.CreatedAt
+		dto.UpdatedAt = f.Content.UpdatedAt
+		if f.Content.Module != nil {
+			dto.ModuleUuid = f.Content.Module.Uuid.String()
 		}
 	}
 

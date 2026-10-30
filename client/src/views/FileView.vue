@@ -134,13 +134,13 @@ import { useRouter } from 'vue-router'
 import { useToast } from '@/composables/useToast'
 import VueOfficePptx from '@vue-office/pptx'
 import VueOfficeDocx from '@vue-office/docx'
-import { getStaticPage, getStaticPagePreviewBlob } from '@/api/content'
-import type { StaticPage } from '@/types/content'
+import { getFile, getFilePreviewBlob } from '@/api/content'
+import type { FileUpload } from '@/types/content'
 
 const props = defineProps<{
   courseUuid: string
   moduleUuid: string
-  pageUuid: string
+  fileUuid: string
 }>()
 
 const router = useRouter()
@@ -150,7 +150,7 @@ let isMounted = false
 
 const loading = ref(true)
 const error = ref<string | undefined>(undefined)
-const page = ref<StaticPage | undefined>(undefined)
+const page = ref<FileUpload | undefined>(undefined)
 const previewBlobUrl = ref<string | undefined>(undefined)
 const previewData = ref<Blob | ArrayBuffer | undefined>(undefined)
 const previewFailed = ref(false)
@@ -240,16 +240,12 @@ async function loadPage() {
   previewFailed.value = false
 
   try {
-    const fetchedPage = await getStaticPage(props.courseUuid, props.moduleUuid, props.pageUuid)
+    const fetchedPage = await getFile(props.courseUuid, props.moduleUuid, props.fileUuid)
     if (!isMounted) return
     page.value = fetchedPage
 
     if (fetchedPage.fileName) {
-      const blob = await getStaticPagePreviewBlob(
-        props.courseUuid,
-        props.moduleUuid,
-        props.pageUuid,
-      )
+      const blob = await getFilePreviewBlob(props.courseUuid, props.moduleUuid, props.fileUuid)
       if (!isMounted) return
       previewData.value = blob
       previewBlobUrl.value = URL.createObjectURL(blob)
@@ -260,7 +256,7 @@ async function loadPage() {
     }
   } catch (err: unknown) {
     if (!isMounted) return
-    const errorMsg = err instanceof Error ? err.message : 'Failed to load static page material'
+    const errorMsg = err instanceof Error ? err.message : 'Failed to load file material'
     error.value = errorMsg
     if (
       errorMsg.includes('Forbidden') ||

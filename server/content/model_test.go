@@ -19,7 +19,7 @@ func TestContentAggregate_ClassTableInheritanceAndPreloads(t *testing.T) {
 		&course.Course{},
 		&course.Module{},
 		&content.Content{},
-		&content.StaticPage{},
+		&content.File{},
 		&content.Quiz{},
 		&content.Question{},
 		&content.Assignment{},
@@ -42,15 +42,15 @@ func TestContentAggregate_ClassTableInheritanceAndPreloads(t *testing.T) {
 	m := &course.Module{CourseID: c.ID, Title: "Week 1", Position: 1}
 	assert.NoError(t, db.Create(m).Error)
 
-	// 1. StaticPage with iframe source URL
+	// 1. File with iframe source URL
 	cntPage := &content.Content{
 		ModuleID: m.ID,
 		Title:    "Syllabus (Embedded)",
 		Position: 1,
-		Type:     content.TypeStaticPage,
+		Type:     content.TypeFile,
 	}
 	assert.NoError(t, db.Create(cntPage).Error)
-	page := &content.StaticPage{
+	page := &content.File{
 		ContentID: cntPage.ID,
 		SourceURL: "https://docs.example.com/syllabus-embed.html",
 		RichText:  "Embedded course syllabus iframe",
@@ -112,10 +112,10 @@ func TestContentAggregate_ClassTableInheritanceAndPreloads(t *testing.T) {
 
 	// Preload directly from Content
 	var foundPage content.Content
-	err := db.Preload("StaticPage").Preload("Module.Course").Preload("Interactions").First(&foundPage, cntPage.ID).Error
+	err := db.Preload("File").Preload("Module.Course").Preload("Interactions").First(&foundPage, cntPage.ID).Error
 	assert.NoError(t, err)
-	assert.NotNil(t, foundPage.StaticPage)
-	assert.Equal(t, "https://docs.example.com/syllabus-embed.html", foundPage.StaticPage.SourceURL)
+	assert.NotNil(t, foundPage.File)
+	assert.Equal(t, "https://docs.example.com/syllabus-embed.html", foundPage.File.SourceURL)
 	assert.Len(t, foundPage.Interactions, 1)
 
 	var foundQuiz content.Content

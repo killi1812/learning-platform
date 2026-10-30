@@ -573,7 +573,7 @@
           />
 
           <v-file-input
-            v-model="uploadFile"
+            v-model="uploadFileInput"
             class="mb-3"
             clearable
             label="Select File"
@@ -600,7 +600,8 @@
           <v-btn
             color="primary"
             :disabled="
-              (!uploadFile && !uploadSourceUrl.trim()) || (!uploadFile && !uploadTitle.trim())
+              (!uploadFileInput && !uploadSourceUrl.trim()) ||
+              (!uploadFileInput && !uploadTitle.trim())
             "
             :loading="uploading"
             variant="elevated"
@@ -680,14 +681,9 @@ import {
   updateCourse,
   deleteCourse,
 } from '@/api/course'
-import {
-  listStaticPages,
-  uploadStaticPage,
-  updateStaticPage,
-  deleteStaticPage,
-} from '@/api/content'
+import { listFiles, uploadFile, updateFile, deleteFile } from '@/api/content'
 import type { Course, Module, Enrollment, UpdateCoursePayload } from '@/types/course'
-import type { StaticPage } from '@/types/content'
+import type { FileUpload } from '@/types/content'
 
 const props = defineProps<{
   courseUuid?: string
@@ -753,10 +749,10 @@ const addingEnrollment = ref(false)
 const deletingEnrollmentUserUuid = ref<string | undefined>(undefined)
 
 // Course materials state
-const modulePages = ref<Record<string, StaticPage[]>>({})
+const modulePages = ref<Record<string, FileUpload[]>>({})
 const uploadDialogOpen = ref(false)
 const targetModuleUuid = ref<string>('')
-const uploadFile = ref<File | File[] | undefined>(undefined)
+const uploadFileInput = ref<File | File[] | undefined>(undefined)
 const uploadTitle = ref('')
 const uploadDescription = ref('')
 const uploadSourceUrl = ref('')
@@ -790,12 +786,12 @@ const availablePrerequisites = computed(() => {
 
 async function loadAllModulePages() {
   if (!resolvedCourseUuid.value || modules.value.length === 0) return
-  const pagesMap: Record<string, StaticPage[]> = {}
+  const pagesMap: Record<string, FileUpload[]> = {}
   let hasError = false
   await Promise.all(
     modules.value.map(async mod => {
       try {
-        pagesMap[mod.uuid] = await listStaticPages(resolvedCourseUuid.value, mod.uuid)
+        pagesMap[mod.uuid] = await listFiles(resolvedCourseUuid.value, mod.uuid)
       } catch {
         pagesMap[mod.uuid] = []
         hasError = true
@@ -810,14 +806,14 @@ async function loadAllModulePages() {
 
 function openUploadDialog(modUuid: string) {
   targetModuleUuid.value = modUuid
-  uploadFile.value = undefined
+  uploadFileInput.value = undefined
   uploadTitle.value = ''
   uploadDescription.value = ''
   uploadSourceUrl.value = ''
   uploadDialogOpen.value = true
 }
 
-function openEditMaterialDialog(modUuid: string, page: StaticPage) {
+function openEditMaterialDialog(modUuid: string, page: FileUpload) {
   editMaterialTargetModUuid.value = modUuid
   editMaterialTargetPageUuid.value = page.uuid
   editMaterialTitle.value = page.title
@@ -834,7 +830,7 @@ async function handleSaveMaterial() {
     return
   savingMaterial.value = true
   try {
-    await updateStaticPage(
+    await updateFile(
       resolvedCourseUuid.value,
       editMaterialTargetModUuid.value,
       editMaterialTargetPageUuid.value,
@@ -845,7 +841,7 @@ async function handleSaveMaterial() {
     )
     toast.success('Course material updated successfully.')
     editMaterialDialogOpen.value = false
-    modulePages.value[editMaterialTargetModUuid.value] = await listStaticPages(
+    modulePages.value[editMaterialTargetModUuid.value] = await listFiles(
       resolvedCourseUuid.value,
       editMaterialTargetModUuid.value,
     )
@@ -858,7 +854,9 @@ async function handleSaveMaterial() {
 
 async function handleUploadMaterial() {
   if (!targetModuleUuid.value || !resolvedCourseUuid.value) return
-  const rawFile = Array.isArray(uploadFile.value) ? uploadFile.value[0] : uploadFile.value
+  const rawFile = Array.isArray(uploadFileInput.value)
+    ? uploadFileInput.value[0]
+    : uploadFileInput.value
 
   if (!rawFile && !uploadSourceUrl.value.trim()) {
     toast.error('Please select a file or provide a URL.')
@@ -871,7 +869,7 @@ async function handleUploadMaterial() {
 
   uploading.value = true
   try {
-    await uploadStaticPage(resolvedCourseUuid.value, targetModuleUuid.value, {
+    await uploadFile(resolvedCourseUuid.value, targetModuleUuid.value, {
       file: rawFile || undefined,
       title: uploadTitle.value.trim() || undefined,
       description: uploadDescription.value.trim() || undefined,
@@ -879,7 +877,7 @@ async function handleUploadMaterial() {
     })
     toast.success('Course material uploaded successfully.')
     uploadDialogOpen.value = false
-    modulePages.value[targetModuleUuid.value] = await listStaticPages(
+    modulePages.value[targetModuleUuid.value] = await listFiles(
       resolvedCourseUuid.value,
       targetModuleUuid.value,
     )
@@ -893,23 +891,23 @@ async function handleUploadMaterial() {
 async function handleDeleteMaterial(moduleUuid: string, pageUuid: string) {
   if (!confirm('Are you sure you want to delete this course material?')) return
   try {
-    await deleteStaticPage(resolvedCourseUuid.value, moduleUuid, pageUuid)
+    await deleteFile(resolvedCourseUuid.value, moduleUuid, pageUuid)
     toast.success('Course material deleted.')
-    modulePages.value[moduleUuid] = await listStaticPages(resolvedCourseUuid.value, moduleUuid)
+    modulePages.value[moduleUuid] = await listFiles(resolvedCourseUuid.value, moduleUuid)
   } catch (err: unknown) {
     toast.error(err instanceof Error ? err.message : 'Failed to delete course material.')
   }
 }
 
 function viewMaterial(moduleUuid: string, pageUuid: string) {
-  router.push(`/courses/${resolvedCourseUuid.value}/modules/${moduleUuid}/pages/${pageUuid}`)
+  router.push(`/courses/${resolvedCourseUuid.value}/modules/${moduleUuid}/files/${pageUuid}`)
 }
 
 function handleComingSoon(item: string) {
   toast.info(`${item} feature coming soon`)
 }
 
-function getPageFormatIcon(page: StaticPage): string {
+function getPageFormatIcon(page: FileUpload): string {
   const name = page.fileName?.toLowerCase() || ''
   if (page.contentType?.includes('pdf') || name.endsWith('.pdf')) return 'mdi-file-pdf-box'
   if (page.contentType?.includes('word') || name.endsWith('.docx') || name.endsWith('.doc')) {
@@ -936,7 +934,7 @@ function getPageFormatIcon(page: StaticPage): string {
   return 'mdi-file-outline'
 }
 
-function getPageFormatColor(page: StaticPage): string {
+function getPageFormatColor(page: FileUpload): string {
   const name = page.fileName?.toLowerCase() || ''
   if (page.contentType?.includes('pdf') || name.endsWith('.pdf')) return 'error'
   if (page.contentType?.includes('word') || name.endsWith('.docx') || name.endsWith('.doc')) {

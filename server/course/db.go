@@ -237,11 +237,11 @@ func (s *CourseService) DeleteCourse(courseUuid uuid.UUID) error {
 	}
 
 	var storageKeys []string
-	_ = s.db.Table("static_pages").
-		Joins("JOIN contents ON contents.id = static_pages.content_id").
+	_ = s.db.Table("files").
+		Joins("JOIN contents ON contents.id = files.content_id").
 		Joins("JOIN modules ON modules.id = contents.module_id").
 		Where("modules.course_id = ?", existing.ID).
-		Pluck("static_pages.storage_key", &storageKeys).Error
+		Pluck("files.storage_key", &storageKeys).Error
 
 	if err := s.db.Unscoped().Delete(existing).Error; err != nil {
 		return err
@@ -526,10 +526,10 @@ func (s *CourseService) DeleteModule(courseUuid uuid.UUID, moduleUuid uuid.UUID)
 	}
 
 	var storageKeys []string
-	_ = s.db.Table("static_pages").
-		Joins("JOIN contents ON contents.id = static_pages.content_id").
+	_ = s.db.Table("files").
+		Joins("JOIN contents ON contents.id = files.content_id").
 		Where("contents.module_id = ?", existing.ID).
-		Pluck("static_pages.storage_key", &storageKeys).Error
+		Pluck("files.storage_key", &storageKeys).Error
 
 	if err := s.db.Unscoped().Delete(existing).Error; err != nil {
 		return err

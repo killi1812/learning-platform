@@ -1393,21 +1393,21 @@ const docTemplate = `{
                 }
             }
         },
-        "/course/{uuid}/module/{moduleUuid}/static-page": {
+        "/course/{uuid}/module/{moduleUuid}/file": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns all static page materials for a given course module",
+                "description": "Returns all file materials for a given course module",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "content"
                 ],
-                "summary": "List static pages / materials in module",
+                "summary": "List files / materials in module",
                 "parameters": [
                     {
                         "type": "string",
@@ -1430,7 +1430,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/content.StaticPageDto"
+                                "$ref": "#/definitions/content.FileDto"
                             }
                         }
                     },
@@ -1476,7 +1476,7 @@ const docTemplate = `{
                 "tags": [
                     "content"
                 ],
-                "summary": "Upload or create static page material",
+                "summary": "Upload or create file material",
                 "parameters": [
                     {
                         "type": "string",
@@ -1521,7 +1521,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/content.StaticPageDto"
+                            "$ref": "#/definitions/content.FileDto"
                         }
                     },
                     "400": {
@@ -1557,21 +1557,21 @@ const docTemplate = `{
                 }
             }
         },
-        "/course/{uuid}/module/{moduleUuid}/static-page/{pageUuid}": {
+        "/course/{uuid}/module/{moduleUuid}/file/{fileUuid}": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns metadata for a specific static page",
+                "description": "Returns metadata for a specific file material",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "content"
                 ],
-                "summary": "Get static page material details",
+                "summary": "Get file material details",
                 "parameters": [
                     {
                         "type": "string",
@@ -1589,8 +1589,8 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Static page content UUID",
-                        "name": "pageUuid",
+                        "description": "File content UUID",
+                        "name": "fileUuid",
                         "in": "path",
                         "required": true
                     }
@@ -1599,7 +1599,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/content.StaticPageDto"
+                            "$ref": "#/definitions/content.FileDto"
                         }
                     },
                     "400": {
@@ -1650,7 +1650,7 @@ const docTemplate = `{
                 "tags": [
                     "content"
                 ],
-                "summary": "Update static page metadata",
+                "summary": "Update file metadata",
                 "parameters": [
                     {
                         "type": "string",
@@ -1668,18 +1668,18 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Static page content UUID",
-                        "name": "pageUuid",
+                        "description": "File content UUID",
+                        "name": "fileUuid",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "Updated page metadata",
-                        "name": "page",
+                        "description": "Updated file metadata",
+                        "name": "file",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/content.UpdateStaticPageDto"
+                            "$ref": "#/definitions/content.UpdateFileDto"
                         }
                     }
                 ],
@@ -1687,7 +1687,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/content.StaticPageDto"
+                            "$ref": "#/definitions/content.FileDto"
                         }
                     },
                     "400": {
@@ -1728,14 +1728,14 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Deletes static page material from object storage and database (Teacher or Admin only)",
+                "description": "Deletes file material from object storage and database (Teacher or Admin only)",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "content"
                 ],
-                "summary": "Delete static page material",
+                "summary": "Delete file material",
                 "parameters": [
                     {
                         "type": "string",
@@ -1753,8 +1753,8 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Static page content UUID",
-                        "name": "pageUuid",
+                        "description": "File content UUID",
+                        "name": "fileUuid",
                         "in": "path",
                         "required": true
                     }
@@ -1796,7 +1796,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/course/{uuid}/module/{moduleUuid}/static-page/{pageUuid}/preview": {
+        "/course/{uuid}/module/{moduleUuid}/file/{fileUuid}/preview": {
             "get": {
                 "security": [
                     {
@@ -1807,7 +1807,7 @@ const docTemplate = `{
                 "tags": [
                     "content"
                 ],
-                "summary": "Preview or stream static page material file",
+                "summary": "Preview or stream file material",
                 "parameters": [
                     {
                         "type": "string",
@@ -1825,8 +1825,8 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Static page content UUID",
-                        "name": "pageUuid",
+                        "description": "File content UUID",
+                        "name": "fileUuid",
                         "in": "path",
                         "required": true
                     }
@@ -2347,7 +2347,7 @@ const docTemplate = `{
                 }
             }
         },
-        "content.StaticPageDto": {
+        "content.FileDto": {
             "type": "object",
             "properties": {
                 "contentType": {
@@ -2385,7 +2385,7 @@ const docTemplate = `{
                 }
             }
         },
-        "content.UpdateStaticPageDto": {
+        "content.UpdateFileDto": {
             "type": "object",
             "required": [
                 "title"

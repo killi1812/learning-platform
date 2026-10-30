@@ -1,4 +1,4 @@
-export interface StaticPage {
+export interface FileUpload {
   uuid: string
   moduleUuid?: string
   title: string
@@ -12,14 +12,14 @@ export interface StaticPage {
   updatedAt: string
 }
 
-export interface UploadStaticPagePayload {
+export interface UploadFilePayload {
   file?: File
   title?: string
   description?: string
   sourceUrl?: string
 }
 
-export interface UpdateStaticPagePayload {
+export interface UpdateFilePayload {
   title: string
   description?: string
 }

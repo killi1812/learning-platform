@@ -10,9 +10,9 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestStaticPageDto_FromModel(t *testing.T) {
+func TestFileDto_FromModel(t *testing.T) {
 	t.Run("nil model returns empty dto", func(t *testing.T) {
-		dto := StaticPageDto{}.FromModel(nil)
+		dto := FileDto{}.FromModel(nil)
 		assert.Empty(t, dto.Uuid)
 		assert.Empty(t, dto.FileName)
 	})
@@ -22,7 +22,7 @@ func TestStaticPageDto_FromModel(t *testing.T) {
 		moduleUuid := uuid.New()
 		now := time.Now()
 
-		sp := &StaticPage{
+		f := &File{
 			ContentID:   10,
 			FileName:    "lecture1.pptx",
 			FileSize:    2048,
@@ -38,7 +38,7 @@ func TestStaticPageDto_FromModel(t *testing.T) {
 				Uuid:     contentUuid,
 				Title:    "Lecture 1: Architecture",
 				Position: 0,
-				Type:     TypeStaticPage,
+				Type:     TypeFile,
 				Module: &course.Module{
 					Model: gorm.Model{ID: 2},
 					Uuid:  moduleUuid,
@@ -47,7 +47,7 @@ func TestStaticPageDto_FromModel(t *testing.T) {
 			},
 		}
 
-		dto := StaticPageDto{}.FromModel(sp)
+		dto := FileDto{}.FromModel(f)
 		assert.Equal(t, contentUuid.String(), dto.Uuid)
 		assert.Equal(t, moduleUuid.String(), dto.ModuleUuid)
 		assert.Equal(t, "Lecture 1: Architecture", dto.Title)

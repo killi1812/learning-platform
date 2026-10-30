@@ -84,13 +84,13 @@ export const routes: RouteRecordRaw[] = [
     },
   },
   {
-    path: '/courses/:uuid/modules/:moduleUuid/pages/:pageUuid',
-    name: 'StaticPageView',
-    component: () => import('@/views/StaticPageView.vue'),
+    path: '/courses/:uuid/modules/:moduleUuid/files/:fileUuid',
+    name: 'FileView',
+    component: () => import('@/views/FileView.vue'),
     props: route => ({
       courseUuid: String(route.params.uuid),
       moduleUuid: String(route.params.moduleUuid),
-      pageUuid: String(route.params.pageUuid),
+      fileUuid: String(route.params.fileUuid),
     }),
     meta: {
       requiresAuth: true,

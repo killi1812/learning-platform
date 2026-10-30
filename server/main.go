@@ -53,7 +53,7 @@ func main() {
 	app.RegisterModel(&course.Module{})
 	// Content
 	app.RegisterModel(&content.Content{})
-	app.RegisterModel(&content.StaticPage{})
+	app.RegisterModel(&content.File{})
 	app.RegisterModel(&content.Quiz{})
 	app.RegisterModel(&content.Question{})
 	app.RegisterModel(&content.Assignment{})

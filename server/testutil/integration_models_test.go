@@ -25,7 +25,7 @@ func TestAllLmsModels_EndToEndAutoMigrateAndWorkflow(t *testing.T) {
 		&course.Module{},
 		// Content aggregate
 		&content.Content{},
-		&content.StaticPage{},
+		&content.File{},
 		&content.Quiz{},
 		&content.Question{},
 		&content.Assignment{},
@@ -108,15 +108,15 @@ func TestAllLmsModels_EndToEndAutoMigrateAndWorkflow(t *testing.T) {
 	assert.NoError(t, db.Create(m2).Error)
 
 	// 7. Base Content items with specialized tables
-	// 7a. Static Page using iframe SourceURL
+	// 7a. File using iframe SourceURL
 	cntPage := &content.Content{
 		ModuleID: m1.ID,
 		Title:    "Syllabus & Lecture Notes",
 		Position: 1,
-		Type:     content.TypeStaticPage,
+		Type:     content.TypeFile,
 	}
 	assert.NoError(t, db.Create(cntPage).Error)
-	page := &content.StaticPage{
+	page := &content.File{
 		ContentID: cntPage.ID,
 		SourceURL: "https://docs.example.com/syllabus.html",
 		RichText:  "Embedded notes",
@@ -231,13 +231,13 @@ func TestAllLmsModels_EndToEndAutoMigrateAndWorkflow(t *testing.T) {
 
 	var loadedContent content.Content
 	err = db.
-		Preload("StaticPage").
+		Preload("File").
 		Preload("Module.Course").
 		Preload("Interactions.User").
 		First(&loadedContent, cntPage.ID).Error
 	assert.NoError(t, err)
-	assert.NotNil(t, loadedContent.StaticPage)
-	assert.Equal(t, "https://docs.example.com/syllabus.html", loadedContent.StaticPage.SourceURL)
+	assert.NotNil(t, loadedContent.File)
+	assert.Equal(t, "https://docs.example.com/syllabus.html", loadedContent.File.SourceURL)
 	assert.Equal(t, "DAT250: Distributed Systems", loadedContent.Module.Course.Title)
 
 	var loadedGroupSub submission.GroupSubmission

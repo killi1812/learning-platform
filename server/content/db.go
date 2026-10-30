@@ -25,12 +25,12 @@ var (
 )
 
 type IContentService interface {
-	UploadStaticPage(courseUuid, moduleUuid uuid.UUID, title, fileName string, fileSize int64, contentType string, fileReader io.Reader, description string, sourceUrl string) (*StaticPage, error)
-	GetStaticPage(courseUuid, moduleUuid, contentUuid, userUuid uuid.UUID, isPrivileged bool) (*StaticPage, error)
-	ListStaticPages(courseUuid, moduleUuid, userUuid uuid.UUID, isPrivileged bool) ([]StaticPage, error)
-	GetFileStream(courseUuid, moduleUuid, contentUuid, userUuid uuid.UUID, isPrivileged bool) (io.ReadCloser, *StaticPage, error)
-	UpdateStaticPage(courseUuid, moduleUuid, contentUuid uuid.UUID, title, description string) (*StaticPage, error)
-	DeleteStaticPage(courseUuid, moduleUuid, contentUuid uuid.UUID) error
+	UploadFile(courseUuid, moduleUuid uuid.UUID, title, fileName string, fileSize int64, contentType string, fileReader io.Reader, description string, sourceUrl string) (*File, error)
+	GetFile(courseUuid, moduleUuid, contentUuid, userUuid uuid.UUID, isPrivileged bool) (*File, error)
+	ListFiles(courseUuid, moduleUuid, userUuid uuid.UUID, isPrivileged bool) ([]File, error)
+	GetFileStream(courseUuid, moduleUuid, contentUuid, userUuid uuid.UUID, isPrivileged bool) (io.ReadCloser, *File, error)
+	UpdateFile(courseUuid, moduleUuid, contentUuid uuid.UUID, title, description string) (*File, error)
+	DeleteFile(courseUuid, moduleUuid, contentUuid uuid.UUID) error
 }
 
 type ContentService struct {
@@ -71,11 +71,11 @@ func (s *ContentService) findCourseAndModule(courseUuid, moduleUuid uuid.UUID) (
 	return &c, &m, nil
 }
 
-func (s *ContentService) findStaticPage(moduleID uint, contentUuid uuid.UUID) (*StaticPage, error) {
+func (s *ContentService) findFile(moduleID uint, contentUuid uuid.UUID) (*File, error) {
 	var cnt Content
 	err := s.db.
-		Where("uuid = ? AND module_id = ? AND type = ?", contentUuid, moduleID, TypeStaticPage).
-		Preload("StaticPage").
+		Where("uuid = ? AND module_id = ? AND type = ?", contentUuid, moduleID, TypeFile).
+		Preload("File").
 		Preload("Module.Course").
 		First(&cnt).Error
 	if err != nil {
@@ -84,14 +84,14 @@ func (s *ContentService) findStaticPage(moduleID uint, contentUuid uuid.UUID) (*
 		}
 		return nil, err
 	}
-	if cnt.StaticPage == nil {
+	if cnt.File == nil {
 		return nil, ErrContentNotFound
 	}
-	cnt.StaticPage.Content = &cnt
-	return cnt.StaticPage, nil
+	cnt.File.Content = &cnt
+	return cnt.File, nil
 }
 
-func (s *ContentService) UploadStaticPage(
+func (s *ContentService) UploadFile(
 	courseUuid, moduleUuid uuid.UUID,
 	title, fileName string,
 	fileSize int64,
@@ -99,7 +99,7 @@ func (s *ContentService) UploadStaticPage(
 	fileReader io.Reader,
 	description string,
 	sourceUrl string,
-) (*StaticPage, error) {
+) (*File, error) {
 	_, module, err := s.findCourseAndModule(courseUuid, moduleUuid)
 	if err != nil {
 		return nil, err
@@ -142,10 +142,10 @@ func (s *ContentService) UploadStaticPage(
 		Uuid:     contentUuid,
 		ModuleID: module.ID,
 		Title:    title,
-		Type:     TypeStaticPage,
+		Type:     TypeFile,
 	}
 
-	sp := StaticPage{
+	f := File{
 		FileName:    fileName,
 		FileSize:    fileSize,
 		ContentType: contentType,
@@ -165,8 +165,8 @@ func (s *ContentService) UploadStaticPage(
 		if err := tx.Create(&c).Error; err != nil {
 			return err
 		}
-		sp.ContentID = c.ID
-		if err := tx.Create(&sp).Error; err != nil {
+		f.ContentID = c.ID
+		if err := tx.Create(&f).Error; err != nil {
 			return err
 		}
 		return nil
@@ -180,8 +180,8 @@ func (s *ContentService) UploadStaticPage(
 	}
 
 	c.Module = module
-	sp.Content = &c
-	return &sp, nil
+	f.Content = &c
+	return &f, nil
 }
 
 func (s *ContentService) checkPrerequisiteCompleted(depID uint, userUuid uuid.UUID) error {
@@ -235,7 +235,7 @@ func (s *ContentService) recordInteraction(userUuid uuid.UUID, contentID uint) {
 	}
 }
 
-func (s *ContentService) GetStaticPage(courseUuid, moduleUuid, contentUuid, userUuid uuid.UUID, isPrivileged bool) (*StaticPage, error) {
+func (s *ContentService) GetFile(courseUuid, moduleUuid, contentUuid, userUuid uuid.UUID, isPrivileged bool) (*File, error) {
 	_, module, err := s.findCourseAndModule(courseUuid, moduleUuid)
 	if err != nil {
 		return nil, err
@@ -247,27 +247,27 @@ func (s *ContentService) GetStaticPage(courseUuid, moduleUuid, contentUuid, user
 		}
 	}
 
-	sp, err := s.findStaticPage(module.ID, contentUuid)
+	f, err := s.findFile(module.ID, contentUuid)
 	if err != nil {
 		return nil, err
 	}
 
-	if !isPrivileged && sp.Content != nil {
+	if !isPrivileged && f.Content != nil {
 		now := time.Now()
-		if (sp.Content.VisibleFrom != nil && now.Before(*sp.Content.VisibleFrom)) ||
-			(sp.Content.VisibleUntil != nil && now.After(*sp.Content.VisibleUntil)) {
+		if (f.Content.VisibleFrom != nil && now.Before(*f.Content.VisibleFrom)) ||
+			(f.Content.VisibleUntil != nil && now.After(*f.Content.VisibleUntil)) {
 			return nil, ErrContentNotAvailable
 		}
 	}
 
-	if !isPrivileged && userUuid != uuid.Nil && sp.Content != nil {
-		s.recordInteraction(userUuid, sp.Content.ID)
+	if !isPrivileged && userUuid != uuid.Nil && f.Content != nil {
+		s.recordInteraction(userUuid, f.Content.ID)
 	}
 
-	return sp, nil
+	return f, nil
 }
 
-func (s *ContentService) ListStaticPages(courseUuid, moduleUuid, userUuid uuid.UUID, isPrivileged bool) ([]StaticPage, error) {
+func (s *ContentService) ListFiles(courseUuid, moduleUuid, userUuid uuid.UUID, isPrivileged bool) ([]File, error) {
 	_, module, err := s.findCourseAndModule(courseUuid, moduleUuid)
 	if err != nil {
 		return nil, err
@@ -279,7 +279,7 @@ func (s *ContentService) ListStaticPages(courseUuid, moduleUuid, userUuid uuid.U
 		}
 	}
 
-	query := s.db.Where("module_id = ? AND type = ?", module.ID, TypeStaticPage)
+	query := s.db.Where("module_id = ? AND type = ?", module.ID, TypeFile)
 	if !isPrivileged {
 		now := time.Now()
 		query = query.Where("(visible_from IS NULL OR visible_from <= ?)", now).
@@ -288,7 +288,7 @@ func (s *ContentService) ListStaticPages(courseUuid, moduleUuid, userUuid uuid.U
 
 	var contents []Content
 	err = query.
-		Preload("StaticPage").
+		Preload("File").
 		Preload("Module.Course").
 		Order("position ASC, id ASC").
 		Find(&contents).Error
@@ -296,75 +296,75 @@ func (s *ContentService) ListStaticPages(courseUuid, moduleUuid, userUuid uuid.U
 		return nil, err
 	}
 
-	pages := make([]StaticPage, 0, len(contents))
+	files := make([]File, 0, len(contents))
 	for i := range contents {
-		if contents[i].StaticPage != nil {
-			contents[i].StaticPage.Content = &contents[i]
-			pages = append(pages, *contents[i].StaticPage)
+		if contents[i].File != nil {
+			contents[i].File.Content = &contents[i]
+			files = append(files, *contents[i].File)
 		}
 	}
-	return pages, nil
+	return files, nil
 }
 
-func (s *ContentService) GetFileStream(courseUuid, moduleUuid, contentUuid, userUuid uuid.UUID, isPrivileged bool) (io.ReadCloser, *StaticPage, error) {
-	sp, err := s.GetStaticPage(courseUuid, moduleUuid, contentUuid, userUuid, isPrivileged)
+func (s *ContentService) GetFileStream(courseUuid, moduleUuid, contentUuid, userUuid uuid.UUID, isPrivileged bool) (io.ReadCloser, *File, error) {
+	f, err := s.GetFile(courseUuid, moduleUuid, contentUuid, userUuid, isPrivileged)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	if sp.StorageKey == "" {
+	if f.StorageKey == "" {
 		return nil, nil, storage.ErrObjectNotFound
 	}
 
-	reader, _, err := s.storage.Get(sp.StorageKey)
+	reader, _, err := s.storage.Get(f.StorageKey)
 	if err != nil {
 		return nil, nil, err
 	}
-	return reader, sp, nil
+	return reader, f, nil
 }
 
-func (s *ContentService) UpdateStaticPage(
+func (s *ContentService) UpdateFile(
 	courseUuid, moduleUuid, contentUuid uuid.UUID,
 	title, description string,
-) (*StaticPage, error) {
-	sp, err := s.GetStaticPage(courseUuid, moduleUuid, contentUuid, uuid.Nil, true)
+) (*File, error) {
+	f, err := s.GetFile(courseUuid, moduleUuid, contentUuid, uuid.Nil, true)
 	if err != nil {
 		return nil, err
 	}
 
 	if title != "" {
-		sp.Content.Title = title
+		f.Content.Title = title
 	}
-	sp.RichText = description
+	f.RichText = description
 
 	err = s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Save(sp.Content).Error; err != nil {
+		if err := tx.Save(f.Content).Error; err != nil {
 			return err
 		}
-		return tx.Save(sp).Error
+		return tx.Save(f).Error
 	})
 	if err != nil {
 		return nil, err
 	}
-	return sp, nil
+	return f, nil
 }
 
-func (s *ContentService) DeleteStaticPage(courseUuid, moduleUuid, contentUuid uuid.UUID) error {
-	sp, err := s.GetStaticPage(courseUuid, moduleUuid, contentUuid, uuid.Nil, true)
+func (s *ContentService) DeleteFile(courseUuid, moduleUuid, contentUuid uuid.UUID) error {
+	f, err := s.GetFile(courseUuid, moduleUuid, contentUuid, uuid.Nil, true)
 	if err != nil {
 		return err
 	}
 
-	if sp.StorageKey != "" {
-		if err := s.storage.Delete(sp.StorageKey); err != nil {
-			s.logger.Warnf("Failed to delete storage key %s: %v", sp.StorageKey, err)
+	if f.StorageKey != "" {
+		if err := s.storage.Delete(f.StorageKey); err != nil {
+			s.logger.Warnf("Failed to delete storage key %s: %v", f.StorageKey, err)
 		}
 	}
 
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Unscoped().Delete(&StaticPage{}, "content_id = ?", sp.ContentID).Error; err != nil {
+		if err := tx.Unscoped().Delete(&File{}, "content_id = ?", f.ContentID).Error; err != nil {
 			return err
 		}
-		return tx.Unscoped().Delete(&Content{}, "id = ?", sp.Content.ID).Error
+		return tx.Unscoped().Delete(&Content{}, "id = ?", f.Content.ID).Error
 	})
 }

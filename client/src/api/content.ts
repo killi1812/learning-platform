@@ -1,6 +1,6 @@
 import axios from 'axios'
 import { authApi, getApiErrorMessage } from './client'
-import type { StaticPage, UploadStaticPagePayload, UpdateStaticPagePayload } from '@/types/content'
+import type { FileUpload, UploadFilePayload, UpdateFilePayload } from '@/types/content'
 
 async function wrapRequest<T>(promise: Promise<{ data: T }>): Promise<T> {
   try {
@@ -11,30 +11,25 @@ async function wrapRequest<T>(promise: Promise<{ data: T }>): Promise<T> {
   }
 }
 
-export async function listStaticPages(
+export async function listFiles(courseUuid: string, moduleUuid: string): Promise<FileUpload[]> {
+  return wrapRequest(authApi.get<FileUpload[]>(`/course/${courseUuid}/module/${moduleUuid}/file`))
+}
+
+export async function getFile(
   courseUuid: string,
   moduleUuid: string,
-): Promise<StaticPage[]> {
+  fileUuid: string,
+): Promise<FileUpload> {
   return wrapRequest(
-    authApi.get<StaticPage[]>(`/course/${courseUuid}/module/${moduleUuid}/static-page`),
+    authApi.get<FileUpload>(`/course/${courseUuid}/module/${moduleUuid}/file/${fileUuid}`),
   )
 }
 
-export async function getStaticPage(
+export async function uploadFile(
   courseUuid: string,
   moduleUuid: string,
-  pageUuid: string,
-): Promise<StaticPage> {
-  return wrapRequest(
-    authApi.get<StaticPage>(`/course/${courseUuid}/module/${moduleUuid}/static-page/${pageUuid}`),
-  )
-}
-
-export async function uploadStaticPage(
-  courseUuid: string,
-  moduleUuid: string,
-  payload: UploadStaticPagePayload,
-): Promise<StaticPage> {
+  payload: UploadFilePayload,
+): Promise<FileUpload> {
   const formData = new FormData()
   if (payload.file) formData.append('file', payload.file)
   if (payload.title) formData.append('title', payload.title)
@@ -42,20 +37,20 @@ export async function uploadStaticPage(
   if (payload.sourceUrl) formData.append('sourceUrl', payload.sourceUrl)
 
   return wrapRequest(
-    authApi.post<StaticPage>(`/course/${courseUuid}/module/${moduleUuid}/static-page`, formData, {
+    authApi.post<FileUpload>(`/course/${courseUuid}/module/${moduleUuid}/file`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     }),
   )
 }
 
-export async function getStaticPagePreviewBlob(
+export async function getFilePreviewBlob(
   courseUuid: string,
   moduleUuid: string,
-  pageUuid: string,
+  fileUuid: string,
 ): Promise<Blob> {
   try {
     const response = await authApi.get<Blob>(
-      `/course/${courseUuid}/module/${moduleUuid}/static-page/${pageUuid}/preview`,
+      `/course/${courseUuid}/module/${moduleUuid}/file/${fileUuid}/preview`,
       {
         responseType: 'blob',
       },
@@ -79,26 +74,23 @@ export async function getStaticPagePreviewBlob(
   }
 }
 
-export async function updateStaticPage(
+export async function updateFile(
   courseUuid: string,
   moduleUuid: string,
-  pageUuid: string,
-  payload: UpdateStaticPagePayload,
-): Promise<StaticPage> {
+  fileUuid: string,
+  payload: UpdateFilePayload,
+): Promise<FileUpload> {
   return wrapRequest(
-    authApi.put<StaticPage>(
-      `/course/${courseUuid}/module/${moduleUuid}/static-page/${pageUuid}`,
-      payload,
-    ),
+    authApi.put<FileUpload>(`/course/${courseUuid}/module/${moduleUuid}/file/${fileUuid}`, payload),
   )
 }
 
-export async function deleteStaticPage(
+export async function deleteFile(
   courseUuid: string,
   moduleUuid: string,
-  pageUuid: string,
+  fileUuid: string,
 ): Promise<void> {
   await wrapRequest(
-    authApi.delete<void>(`/course/${courseUuid}/module/${moduleUuid}/static-page/${pageUuid}`),
+    authApi.delete<void>(`/course/${courseUuid}/module/${moduleUuid}/file/${fileUuid}`),
   )
 }

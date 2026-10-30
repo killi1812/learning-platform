@@ -13,7 +13,7 @@ import (
 type ContentType string
 
 const (
-	TypeStaticPage     ContentType = "STATIC_PAGE"
+	TypeFile           ContentType = "FILE"
 	TypeQuiz           ContentType = "QUIZ"
 	TypeAssignment     ContentType = "ASSIGNMENT"
 	TypeCodingExercise ContentType = "CODING_EXERCISE"
@@ -42,7 +42,7 @@ type Content struct {
 	VisibleUntil *time.Time     `json:"visibleUntil,omitempty"`
 
 	// 1-to-1 extension relations for Class Table Inheritance
-	StaticPage     *StaticPage     `json:"staticPage,omitempty" gorm:"foreignKey:ContentID;constraint:OnDelete:CASCADE;"`
+	File           *File           `json:"file,omitempty" gorm:"foreignKey:ContentID;constraint:OnDelete:CASCADE;"`
 	Quiz           *Quiz           `json:"quiz,omitempty" gorm:"foreignKey:ContentID;constraint:OnDelete:CASCADE;"`
 	Assignment     *Assignment     `json:"assignment,omitempty" gorm:"foreignKey:ContentID;constraint:OnDelete:CASCADE;"`
 	CodingExercise *CodingExercise `json:"codingExercise,omitempty" gorm:"foreignKey:ContentID;constraint:OnDelete:CASCADE;"`
@@ -57,8 +57,8 @@ func (c *Content) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
-// StaticPage represents course material (e.g. .pdf, .pptx, .md, .txt) stored in object storage or linked.
-type StaticPage struct {
+// File represents course material (e.g. .pdf, .pptx, .md, .txt) stored in object storage or linked.
+type File struct {
 	ContentID   uint     `json:"contentId" gorm:"primaryKey;autoIncrement:false"`
 	Content     *Content `json:"content,omitempty" gorm:"foreignKey:ContentID;constraint:OnDelete:CASCADE;"`
 	FileName    string   `json:"fileName,omitempty" gorm:"type:varchar(255)"`

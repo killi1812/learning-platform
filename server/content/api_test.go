@@ -24,19 +24,19 @@ import (
 )
 
 type mockContentService struct {
-	uploadStaticPageFunc func(courseUuid, moduleUuid uuid.UUID, title, fileName string, fileSize int64, contentType string, fileReader io.Reader, description string, sourceUrl string) (*content.StaticPage, error)
-	getStaticPageFunc    func(courseUuid, moduleUuid, contentUuid, userUuid uuid.UUID, isPrivileged bool) (*content.StaticPage, error)
-	listStaticPagesFunc  func(courseUuid, moduleUuid, userUuid uuid.UUID, isPrivileged bool) ([]content.StaticPage, error)
-	getFileStreamFunc    func(courseUuid, moduleUuid, contentUuid, userUuid uuid.UUID, isPrivileged bool) (io.ReadCloser, *content.StaticPage, error)
-	updateStaticPageFunc func(courseUuid, moduleUuid, contentUuid uuid.UUID, title, description string) (*content.StaticPage, error)
-	deleteStaticPageFunc func(courseUuid, moduleUuid, contentUuid uuid.UUID) error
+	uploadFileFunc    func(courseUuid, moduleUuid uuid.UUID, title, fileName string, fileSize int64, contentType string, fileReader io.Reader, description string, sourceUrl string) (*content.File, error)
+	getFileFunc       func(courseUuid, moduleUuid, contentUuid, userUuid uuid.UUID, isPrivileged bool) (*content.File, error)
+	listFilesFunc     func(courseUuid, moduleUuid, userUuid uuid.UUID, isPrivileged bool) ([]content.File, error)
+	getFileStreamFunc func(courseUuid, moduleUuid, contentUuid, userUuid uuid.UUID, isPrivileged bool) (io.ReadCloser, *content.File, error)
+	updateFileFunc    func(courseUuid, moduleUuid, contentUuid uuid.UUID, title, description string) (*content.File, error)
+	deleteFileFunc    func(courseUuid, moduleUuid, contentUuid uuid.UUID) error
 }
 
-func (m *mockContentService) UploadStaticPage(courseUuid, moduleUuid uuid.UUID, title, fileName string, fileSize int64, contentType string, fileReader io.Reader, description string, sourceUrl string) (*content.StaticPage, error) {
-	if m.uploadStaticPageFunc != nil {
-		return m.uploadStaticPageFunc(courseUuid, moduleUuid, title, fileName, fileSize, contentType, fileReader, description, sourceUrl)
+func (m *mockContentService) UploadFile(courseUuid, moduleUuid uuid.UUID, title, fileName string, fileSize int64, contentType string, fileReader io.Reader, description string, sourceUrl string) (*content.File, error) {
+	if m.uploadFileFunc != nil {
+		return m.uploadFileFunc(courseUuid, moduleUuid, title, fileName, fileSize, contentType, fileReader, description, sourceUrl)
 	}
-	return &content.StaticPage{
+	return &content.File{
 		Content: &content.Content{
 			Uuid:     uuid.New(),
 			Title:    title,
@@ -50,11 +50,11 @@ func (m *mockContentService) UploadStaticPage(courseUuid, moduleUuid uuid.UUID, 
 	}, nil
 }
 
-func (m *mockContentService) GetStaticPage(courseUuid, moduleUuid, contentUuid, userUuid uuid.UUID, isPrivileged bool) (*content.StaticPage, error) {
-	if m.getStaticPageFunc != nil {
-		return m.getStaticPageFunc(courseUuid, moduleUuid, contentUuid, userUuid, isPrivileged)
+func (m *mockContentService) GetFile(courseUuid, moduleUuid, contentUuid, userUuid uuid.UUID, isPrivileged bool) (*content.File, error) {
+	if m.getFileFunc != nil {
+		return m.getFileFunc(courseUuid, moduleUuid, contentUuid, userUuid, isPrivileged)
 	}
-	return &content.StaticPage{
+	return &content.File{
 		Content: &content.Content{
 			Uuid:     contentUuid,
 			Title:    "Sample Page",
@@ -66,11 +66,11 @@ func (m *mockContentService) GetStaticPage(courseUuid, moduleUuid, contentUuid, 
 	}, nil
 }
 
-func (m *mockContentService) ListStaticPages(courseUuid, moduleUuid, userUuid uuid.UUID, isPrivileged bool) ([]content.StaticPage, error) {
-	if m.listStaticPagesFunc != nil {
-		return m.listStaticPagesFunc(courseUuid, moduleUuid, userUuid, isPrivileged)
+func (m *mockContentService) ListFiles(courseUuid, moduleUuid, userUuid uuid.UUID, isPrivileged bool) ([]content.File, error) {
+	if m.listFilesFunc != nil {
+		return m.listFilesFunc(courseUuid, moduleUuid, userUuid, isPrivileged)
 	}
-	return []content.StaticPage{
+	return []content.File{
 		{
 			Content: &content.Content{
 				Uuid:     uuid.New(),
@@ -82,11 +82,11 @@ func (m *mockContentService) ListStaticPages(courseUuid, moduleUuid, userUuid uu
 	}, nil
 }
 
-func (m *mockContentService) GetFileStream(courseUuid, moduleUuid, contentUuid, userUuid uuid.UUID, isPrivileged bool) (io.ReadCloser, *content.StaticPage, error) {
+func (m *mockContentService) GetFileStream(courseUuid, moduleUuid, contentUuid, userUuid uuid.UUID, isPrivileged bool) (io.ReadCloser, *content.File, error) {
 	if m.getFileStreamFunc != nil {
 		return m.getFileStreamFunc(courseUuid, moduleUuid, contentUuid, userUuid, isPrivileged)
 	}
-	sp := &content.StaticPage{
+	sp := &content.File{
 		Content: &content.Content{
 			Uuid:  contentUuid,
 			Title: "Stream File",
@@ -99,11 +99,11 @@ func (m *mockContentService) GetFileStream(courseUuid, moduleUuid, contentUuid, 
 	return io.NopCloser(strings.NewReader("pdf-content-bytes")), sp, nil
 }
 
-func (m *mockContentService) UpdateStaticPage(courseUuid, moduleUuid, contentUuid uuid.UUID, title, description string) (*content.StaticPage, error) {
-	if m.updateStaticPageFunc != nil {
-		return m.updateStaticPageFunc(courseUuid, moduleUuid, contentUuid, title, description)
+func (m *mockContentService) UpdateFile(courseUuid, moduleUuid, contentUuid uuid.UUID, title, description string) (*content.File, error) {
+	if m.updateFileFunc != nil {
+		return m.updateFileFunc(courseUuid, moduleUuid, contentUuid, title, description)
 	}
-	return &content.StaticPage{
+	return &content.File{
 		Content: &content.Content{
 			Uuid:  contentUuid,
 			Title: title,
@@ -112,9 +112,9 @@ func (m *mockContentService) UpdateStaticPage(courseUuid, moduleUuid, contentUui
 	}, nil
 }
 
-func (m *mockContentService) DeleteStaticPage(courseUuid, moduleUuid, contentUuid uuid.UUID) error {
-	if m.deleteStaticPageFunc != nil {
-		return m.deleteStaticPageFunc(courseUuid, moduleUuid, contentUuid)
+func (m *mockContentService) DeleteFile(courseUuid, moduleUuid, contentUuid uuid.UUID) error {
+	if m.deleteFileFunc != nil {
+		return m.deleteFileFunc(courseUuid, moduleUuid, contentUuid)
 	}
 	return nil
 }
@@ -220,10 +220,10 @@ func TestContentCtn_Upload(t *testing.T) {
 			"title":       "Syllabus PDF",
 			"description": "Course syllabus document",
 		}
-		w := doMultipartReq(r, http.MethodPost, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page", auth, fields, "syllabus.pdf", []byte("%PDF-1.4 test pdf content"))
+		w := doMultipartReq(r, http.MethodPost, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file", auth, fields, "syllabus.pdf", []byte("%PDF-1.4 test pdf content"))
 		assert.Equal(t, http.StatusCreated, w.Code)
 
-		var res content.StaticPageDto
+		var res content.FileDto
 		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &res))
 		assert.Equal(t, "Syllabus PDF", res.Title)
 		assert.Equal(t, "syllabus.pdf", res.FileName)
@@ -235,13 +235,13 @@ func TestContentCtn_Upload(t *testing.T) {
 			"title":     "Web Link",
 			"sourceUrl": "https://example.com",
 		}
-		w := doMultipartReq(r, http.MethodPost, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page", auth, fields, "", nil)
+		w := doMultipartReq(r, http.MethodPost, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file", auth, fields, "", nil)
 		assert.Equal(t, http.StatusCreated, w.Code)
 	})
 
 	t.Run("upload disallowed file type returns bad request", func(t *testing.T) {
 		r := setupContentApiTest(&mockContentService{}, &mockCourseServiceForContent{})
-		w := doMultipartReq(r, http.MethodPost, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page", auth, map[string]string{"title": "Bad HTML"}, "test.html", []byte("<script>alert(1)</script>"))
+		w := doMultipartReq(r, http.MethodPost, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file", auth, map[string]string{"title": "Bad HTML"}, "test.html", []byte("<script>alert(1)</script>"))
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
 
@@ -251,7 +251,7 @@ func TestContentCtn_Upload(t *testing.T) {
 			"title":     "Bad Link",
 			"sourceUrl": "javascript:alert(1)",
 		}
-		w := doMultipartReq(r, http.MethodPost, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page", auth, fields, "", nil)
+		w := doMultipartReq(r, http.MethodPost, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file", auth, fields, "", nil)
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
 
@@ -261,7 +261,7 @@ func TestContentCtn_Upload(t *testing.T) {
 			"title":     strings.Repeat("a", 256),
 			"sourceUrl": "https://example.com",
 		}
-		w := doMultipartReq(r, http.MethodPost, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page", auth, fields, "", nil)
+		w := doMultipartReq(r, http.MethodPost, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file", auth, fields, "", nil)
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
 
@@ -271,34 +271,34 @@ func TestContentCtn_Upload(t *testing.T) {
 			"title":     "a",
 			"sourceUrl": "https://example.com",
 		}
-		w := doMultipartReq(r, http.MethodPost, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page", auth, fields, "", nil)
+		w := doMultipartReq(r, http.MethodPost, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file", auth, fields, "", nil)
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
 
 	t.Run("upload unsupported extension returns bad request", func(t *testing.T) {
 		r := setupContentApiTest(&mockContentService{}, &mockCourseServiceForContent{})
-		w := doMultipartReq(r, http.MethodPost, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page", auth, map[string]string{"title": "File"}, "test.unknown", []byte("xyz"))
+		w := doMultipartReq(r, http.MethodPost, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file", auth, map[string]string{"title": "File"}, "test.unknown", []byte("xyz"))
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
 
 	t.Run("upload PDF with mismatching content returns bad request", func(t *testing.T) {
 		r := setupContentApiTest(&mockContentService{}, &mockCourseServiceForContent{})
-		w := doMultipartReq(r, http.MethodPost, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page", auth, map[string]string{"title": "Fake PDF"}, "test.pdf", []byte("plain text instead of pdf signature"))
+		w := doMultipartReq(r, http.MethodPost, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file", auth, map[string]string{"title": "Fake PDF"}, "test.pdf", []byte("plain text instead of pdf signature"))
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
 
 	t.Run("missing all required fields", func(t *testing.T) {
 		r := setupContentApiTest(&mockContentService{}, &mockCourseServiceForContent{})
-		w := doMultipartReq(r, http.MethodPost, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page", auth, map[string]string{}, "", nil)
+		w := doMultipartReq(r, http.MethodPost, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file", auth, map[string]string{}, "", nil)
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
 
 	t.Run("invalid UUIDs", func(t *testing.T) {
 		r := setupContentApiTest(&mockContentService{}, &mockCourseServiceForContent{})
-		w := doMultipartReq(r, http.MethodPost, "/api/course/invalid/module/"+moduleUuid.String()+"/static-page", auth, map[string]string{"title": "Test"}, "", nil)
+		w := doMultipartReq(r, http.MethodPost, "/api/course/invalid/module/"+moduleUuid.String()+"/file", auth, map[string]string{"title": "Test"}, "", nil)
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 
-		w = doMultipartReq(r, http.MethodPost, "/api/course/"+courseUuid.String()+"/module/invalid/static-page", auth, map[string]string{"title": "Test"}, "", nil)
+		w = doMultipartReq(r, http.MethodPost, "/api/course/"+courseUuid.String()+"/module/invalid/file", auth, map[string]string{"title": "Test"}, "", nil)
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
 
@@ -309,7 +309,7 @@ func TestContentCtn_Upload(t *testing.T) {
 			},
 		}
 		r := setupContentApiTest(&mockContentService{}, courseMock)
-		w := doMultipartReq(r, http.MethodPost, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page", auth, map[string]string{"title": "Test"}, "", nil)
+		w := doMultipartReq(r, http.MethodPost, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file", auth, map[string]string{"title": "Test"}, "", nil)
 		assert.Equal(t, http.StatusForbidden, w.Code)
 	})
 
@@ -320,29 +320,29 @@ func TestContentCtn_Upload(t *testing.T) {
 			},
 		}
 		r := setupContentApiTest(&mockContentService{}, courseMock)
-		w := doMultipartReq(r, http.MethodPost, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page", auth, map[string]string{"title": "Test"}, "", nil)
+		w := doMultipartReq(r, http.MethodPost, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file", auth, map[string]string{"title": "Test"}, "", nil)
 		assert.Equal(t, http.StatusNotFound, w.Code)
 	})
 
 	t.Run("service not found error", func(t *testing.T) {
 		contentMock := &mockContentService{
-			uploadStaticPageFunc: func(courseUuid, moduleUuid uuid.UUID, title, fileName string, fileSize int64, contentType string, fileReader io.Reader, description string, sourceUrl string) (*content.StaticPage, error) {
+			uploadFileFunc: func(courseUuid, moduleUuid uuid.UUID, title, fileName string, fileSize int64, contentType string, fileReader io.Reader, description string, sourceUrl string) (*content.File, error) {
 				return nil, content.ErrModuleNotFound
 			},
 		}
 		r := setupContentApiTest(contentMock, &mockCourseServiceForContent{})
-		w := doMultipartReq(r, http.MethodPost, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page", auth, map[string]string{"title": "Test"}, "", nil)
+		w := doMultipartReq(r, http.MethodPost, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file", auth, map[string]string{"title": "Test"}, "", nil)
 		assert.Equal(t, http.StatusNotFound, w.Code)
 	})
 
 	t.Run("unexpected service error", func(t *testing.T) {
 		contentMock := &mockContentService{
-			uploadStaticPageFunc: func(courseUuid, moduleUuid uuid.UUID, title, fileName string, fileSize int64, contentType string, fileReader io.Reader, description string, sourceUrl string) (*content.StaticPage, error) {
+			uploadFileFunc: func(courseUuid, moduleUuid uuid.UUID, title, fileName string, fileSize int64, contentType string, fileReader io.Reader, description string, sourceUrl string) (*content.File, error) {
 				return nil, errors.New("db explosion")
 			},
 		}
 		r := setupContentApiTest(contentMock, &mockCourseServiceForContent{})
-		w := doMultipartReq(r, http.MethodPost, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page", auth, map[string]string{"title": "Test"}, "", nil)
+		w := doMultipartReq(r, http.MethodPost, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file", auth, map[string]string{"title": "Test"}, "", nil)
 		assert.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 }
@@ -353,47 +353,47 @@ func TestContentCtn_ListAndGet(t *testing.T) {
 	pageUuid := uuid.New()
 	auth := generateAuthHeader(t, authutils.ROLE_USER)
 
-	t.Run("list static pages successfully", func(t *testing.T) {
+	t.Run("list files successfully", func(t *testing.T) {
 		r := setupContentApiTest(&mockContentService{}, &mockCourseServiceForContent{})
-		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page", auth, nil)
+		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file", auth, nil)
 		assert.Equal(t, http.StatusOK, w.Code)
 
-		var list []content.StaticPageDto
+		var list []content.FileDto
 		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &list))
 		assert.Len(t, list, 1)
 	})
 
 	t.Run("list with invalid course UUID", func(t *testing.T) {
 		r := setupContentApiTest(&mockContentService{}, &mockCourseServiceForContent{})
-		w := doReq(r, http.MethodGet, "/api/course/not-a-uuid/module/"+moduleUuid.String()+"/static-page", auth, nil)
+		w := doReq(r, http.MethodGet, "/api/course/not-a-uuid/module/"+moduleUuid.String()+"/file", auth, nil)
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
 
 	t.Run("list with invalid module UUID", func(t *testing.T) {
 		r := setupContentApiTest(&mockContentService{}, &mockCourseServiceForContent{})
-		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/not-a-uuid/static-page", auth, nil)
+		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/not-a-uuid/file", auth, nil)
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
 
 	t.Run("list module not found", func(t *testing.T) {
 		contentMock := &mockContentService{
-			listStaticPagesFunc: func(courseUuid, moduleUuid, userUuid uuid.UUID, isPrivileged bool) ([]content.StaticPage, error) {
+			listFilesFunc: func(courseUuid, moduleUuid, userUuid uuid.UUID, isPrivileged bool) ([]content.File, error) {
 				return nil, content.ErrModuleNotFound
 			},
 		}
 		r := setupContentApiTest(contentMock, &mockCourseServiceForContent{})
-		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page", auth, nil)
+		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file", auth, nil)
 		assert.Equal(t, http.StatusNotFound, w.Code)
 	})
 
 	t.Run("list module locked returns 403", func(t *testing.T) {
 		contentMock := &mockContentService{
-			listStaticPagesFunc: func(courseUuid, moduleUuid, userUuid uuid.UUID, isPrivileged bool) ([]content.StaticPage, error) {
+			listFilesFunc: func(courseUuid, moduleUuid, userUuid uuid.UUID, isPrivileged bool) ([]content.File, error) {
 				return nil, content.ErrModuleLocked
 			},
 		}
 		r := setupContentApiTest(contentMock, &mockCourseServiceForContent{})
-		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page", auth, nil)
+		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file", auth, nil)
 		assert.Equal(t, http.StatusForbidden, w.Code)
 	})
 
@@ -407,11 +407,11 @@ func TestContentCtn_ListAndGet(t *testing.T) {
 			},
 		}
 		r := setupContentApiTest(&mockContentService{}, courseMock)
-		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page", auth, nil)
+		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file", auth, nil)
 		assert.Equal(t, http.StatusForbidden, w.Code)
 	})
 
-	t.Run("get static page forbidden when not enrolled", func(t *testing.T) {
+	t.Run("get file forbidden when not enrolled", func(t *testing.T) {
 		courseMock := &mockCourseServiceForContent{
 			isEnrolledOrAdminFunc: func(courseUuid, userUuid uuid.UUID, isSystemAdmin bool) (bool, error) {
 				return false, nil
@@ -421,36 +421,36 @@ func TestContentCtn_ListAndGet(t *testing.T) {
 			},
 		}
 		r := setupContentApiTest(&mockContentService{}, courseMock)
-		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page/"+pageUuid.String(), auth, nil)
+		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file/"+pageUuid.String(), auth, nil)
 		assert.Equal(t, http.StatusForbidden, w.Code)
 	})
 
-	t.Run("get static page successfully", func(t *testing.T) {
+	t.Run("get file successfully", func(t *testing.T) {
 		r := setupContentApiTest(&mockContentService{}, &mockCourseServiceForContent{})
-		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page/"+pageUuid.String(), auth, nil)
+		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file/"+pageUuid.String(), auth, nil)
 		assert.Equal(t, http.StatusOK, w.Code)
 	})
 
-	t.Run("get static page invalid page UUID", func(t *testing.T) {
+	t.Run("get file invalid file UUID", func(t *testing.T) {
 		r := setupContentApiTest(&mockContentService{}, &mockCourseServiceForContent{})
-		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page/not-uuid", auth, nil)
+		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file/not-uuid", auth, nil)
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 
-		w = doReq(r, http.MethodGet, "/api/course/not-uuid/module/"+moduleUuid.String()+"/static-page/"+pageUuid.String(), auth, nil)
+		w = doReq(r, http.MethodGet, "/api/course/not-uuid/module/"+moduleUuid.String()+"/file/"+pageUuid.String(), auth, nil)
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 
-		w = doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/not-uuid/static-page/"+pageUuid.String(), auth, nil)
+		w = doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/not-uuid/file/"+pageUuid.String(), auth, nil)
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
 
-	t.Run("get static page not found", func(t *testing.T) {
+	t.Run("get file not found", func(t *testing.T) {
 		contentMock := &mockContentService{
-			getStaticPageFunc: func(courseUuid, moduleUuid, contentUuid, userUuid uuid.UUID, isPrivileged bool) (*content.StaticPage, error) {
+			getFileFunc: func(courseUuid, moduleUuid, contentUuid, userUuid uuid.UUID, isPrivileged bool) (*content.File, error) {
 				return nil, content.ErrContentNotFound
 			},
 		}
 		r := setupContentApiTest(contentMock, &mockCourseServiceForContent{})
-		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page/"+pageUuid.String(), auth, nil)
+		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file/"+pageUuid.String(), auth, nil)
 		assert.Equal(t, http.StatusNotFound, w.Code)
 	})
 }
@@ -463,7 +463,7 @@ func TestContentCtn_Preview(t *testing.T) {
 
 	t.Run("preview file successfully with inline header", func(t *testing.T) {
 		r := setupContentApiTest(&mockContentService{}, &mockCourseServiceForContent{})
-		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page/"+pageUuid.String()+"/preview", auth, nil)
+		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file/"+pageUuid.String()+"/preview", auth, nil)
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Contains(t, w.Header().Get("Content-Disposition"), "inline")
 		assert.Contains(t, w.Header().Get("Content-Disposition"), "filename=")
@@ -474,31 +474,31 @@ func TestContentCtn_Preview(t *testing.T) {
 
 	t.Run("preview object not found in storage", func(t *testing.T) {
 		contentMock := &mockContentService{
-			getFileStreamFunc: func(courseUuid, moduleUuid, contentUuid, userUuid uuid.UUID, isPrivileged bool) (io.ReadCloser, *content.StaticPage, error) {
+			getFileStreamFunc: func(courseUuid, moduleUuid, contentUuid, userUuid uuid.UUID, isPrivileged bool) (io.ReadCloser, *content.File, error) {
 				return nil, nil, storage.ErrObjectNotFound
 			},
 		}
 		r := setupContentApiTest(contentMock, &mockCourseServiceForContent{})
-		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page/"+pageUuid.String()+"/preview", auth, nil)
+		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file/"+pageUuid.String()+"/preview", auth, nil)
 		assert.Equal(t, http.StatusNotFound, w.Code)
 	})
 
-	t.Run("preview invalid page UUID", func(t *testing.T) {
+	t.Run("preview invalid file UUID", func(t *testing.T) {
 		r := setupContentApiTest(&mockContentService{}, &mockCourseServiceForContent{})
-		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page/invalid-uuid/preview", auth, nil)
+		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file/invalid-uuid/preview", auth, nil)
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 
-		w = doReq(r, http.MethodGet, "/api/course/invalid-uuid/module/"+moduleUuid.String()+"/static-page/"+pageUuid.String()+"/preview", auth, nil)
+		w = doReq(r, http.MethodGet, "/api/course/invalid-uuid/module/"+moduleUuid.String()+"/file/"+pageUuid.String()+"/preview", auth, nil)
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 
-		w = doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/invalid-uuid/static-page/"+pageUuid.String()+"/preview", auth, nil)
+		w = doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/invalid-uuid/file/"+pageUuid.String()+"/preview", auth, nil)
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
 
 	t.Run("preview file with empty content type defaults to octet-stream", func(t *testing.T) {
 		contentMock := &mockContentService{
-			getFileStreamFunc: func(courseUuid, moduleUuid, contentUuid, userUuid uuid.UUID, isPrivileged bool) (io.ReadCloser, *content.StaticPage, error) {
-				return io.NopCloser(strings.NewReader("bytes")), &content.StaticPage{
+			getFileStreamFunc: func(courseUuid, moduleUuid, contentUuid, userUuid uuid.UUID, isPrivileged bool) (io.ReadCloser, *content.File, error) {
+				return io.NopCloser(strings.NewReader("bytes")), &content.File{
 					Content:     &content.Content{Uuid: contentUuid, Title: "No MIME"},
 					FileName:    "file.bin",
 					ContentType: "",
@@ -506,7 +506,7 @@ func TestContentCtn_Preview(t *testing.T) {
 			},
 		}
 		r := setupContentApiTest(contentMock, &mockCourseServiceForContent{})
-		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page/"+pageUuid.String()+"/preview", auth, nil)
+		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file/"+pageUuid.String()+"/preview", auth, nil)
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Equal(t, "application/octet-stream", w.Header().Get("Content-Type"))
 	})
@@ -521,7 +521,7 @@ func TestContentCtn_Preview(t *testing.T) {
 			},
 		}
 		r := setupContentApiTest(&mockContentService{}, courseMock)
-		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page/"+pageUuid.String()+"/preview", auth, nil)
+		w := doReq(r, http.MethodGet, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file/"+pageUuid.String()+"/preview", auth, nil)
 		assert.Equal(t, http.StatusForbidden, w.Code)
 	})
 }
@@ -532,16 +532,16 @@ func TestContentCtn_Update(t *testing.T) {
 	pageUuid := uuid.New()
 	auth := generateAuthHeader(t, authutils.ROLE_USER)
 
-	t.Run("update static page metadata successfully", func(t *testing.T) {
+	t.Run("update file metadata successfully", func(t *testing.T) {
 		r := setupContentApiTest(&mockContentService{}, &mockCourseServiceForContent{})
-		body := content.UpdateStaticPageDto{
+		body := content.UpdateFileDto{
 			Title:       "Updated Title",
 			Description: "Updated Description",
 		}
-		w := doReq(r, http.MethodPut, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page/"+pageUuid.String(), auth, body)
+		w := doReq(r, http.MethodPut, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file/"+pageUuid.String(), auth, body)
 		assert.Equal(t, http.StatusOK, w.Code)
 
-		var res content.StaticPageDto
+		var res content.FileDto
 		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &res))
 		assert.Equal(t, "Updated Title", res.Title)
 		assert.Equal(t, "Updated Description", res.Description)
@@ -549,16 +549,16 @@ func TestContentCtn_Update(t *testing.T) {
 
 	t.Run("update invalid request body", func(t *testing.T) {
 		r := setupContentApiTest(&mockContentService{}, &mockCourseServiceForContent{})
-		w := doReq(r, http.MethodPut, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page/"+pageUuid.String(), auth, "{invalid-json")
+		w := doReq(r, http.MethodPut, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file/"+pageUuid.String(), auth, "{invalid-json")
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 
-		w = doReq(r, http.MethodPut, "/api/course/not-uuid/module/"+moduleUuid.String()+"/static-page/"+pageUuid.String(), auth, content.UpdateStaticPageDto{Title: "T"})
+		w = doReq(r, http.MethodPut, "/api/course/not-uuid/module/"+moduleUuid.String()+"/file/"+pageUuid.String(), auth, content.UpdateFileDto{Title: "T"})
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 
-		w = doReq(r, http.MethodPut, "/api/course/"+courseUuid.String()+"/module/not-uuid/static-page/"+pageUuid.String(), auth, content.UpdateStaticPageDto{Title: "T"})
+		w = doReq(r, http.MethodPut, "/api/course/"+courseUuid.String()+"/module/not-uuid/file/"+pageUuid.String(), auth, content.UpdateFileDto{Title: "T"})
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 
-		w = doReq(r, http.MethodPut, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page/not-uuid", auth, content.UpdateStaticPageDto{Title: "T"})
+		w = doReq(r, http.MethodPut, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file/not-uuid", auth, content.UpdateFileDto{Title: "T"})
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
 
@@ -569,20 +569,20 @@ func TestContentCtn_Update(t *testing.T) {
 			},
 		}
 		r := setupContentApiTest(&mockContentService{}, courseMock)
-		body := content.UpdateStaticPageDto{Title: "Updated"}
-		w := doReq(r, http.MethodPut, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page/"+pageUuid.String(), auth, body)
+		body := content.UpdateFileDto{Title: "Updated"}
+		w := doReq(r, http.MethodPut, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file/"+pageUuid.String(), auth, body)
 		assert.Equal(t, http.StatusForbidden, w.Code)
 	})
 
-	t.Run("update static page service error", func(t *testing.T) {
+	t.Run("update file service error", func(t *testing.T) {
 		contentMock := &mockContentService{
-			updateStaticPageFunc: func(courseUuid, moduleUuid, contentUuid uuid.UUID, title, description string) (*content.StaticPage, error) {
+			updateFileFunc: func(courseUuid, moduleUuid, contentUuid uuid.UUID, title, description string) (*content.File, error) {
 				return nil, errors.New("update failed")
 			},
 		}
 		r := setupContentApiTest(contentMock, &mockCourseServiceForContent{})
-		body := content.UpdateStaticPageDto{Title: "Updated"}
-		w := doReq(r, http.MethodPut, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page/"+pageUuid.String(), auth, body)
+		body := content.UpdateFileDto{Title: "Updated"}
+		w := doReq(r, http.MethodPut, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file/"+pageUuid.String(), auth, body)
 		assert.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 }
@@ -593,29 +593,29 @@ func TestContentCtn_Delete(t *testing.T) {
 	pageUuid := uuid.New()
 	auth := generateAuthHeader(t, authutils.ROLE_USER)
 
-	t.Run("delete static page successfully", func(t *testing.T) {
+	t.Run("delete file successfully", func(t *testing.T) {
 		r := setupContentApiTest(&mockContentService{}, &mockCourseServiceForContent{})
-		w := doReq(r, http.MethodDelete, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page/"+pageUuid.String(), auth, nil)
+		w := doReq(r, http.MethodDelete, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file/"+pageUuid.String(), auth, nil)
 		assert.Equal(t, http.StatusNoContent, w.Code)
 	})
 
-	t.Run("delete static page not found", func(t *testing.T) {
+	t.Run("delete file not found", func(t *testing.T) {
 		contentMock := &mockContentService{
-			deleteStaticPageFunc: func(courseUuid, moduleUuid, contentUuid uuid.UUID) error {
+			deleteFileFunc: func(courseUuid, moduleUuid, contentUuid uuid.UUID) error {
 				return content.ErrContentNotFound
 			},
 		}
 		r := setupContentApiTest(contentMock, &mockCourseServiceForContent{})
-		w := doReq(r, http.MethodDelete, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page/"+pageUuid.String(), auth, nil)
+		w := doReq(r, http.MethodDelete, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file/"+pageUuid.String(), auth, nil)
 		assert.Equal(t, http.StatusNotFound, w.Code)
 
-		w = doReq(r, http.MethodDelete, "/api/course/not-uuid/module/"+moduleUuid.String()+"/static-page/"+pageUuid.String(), auth, nil)
+		w = doReq(r, http.MethodDelete, "/api/course/not-uuid/module/"+moduleUuid.String()+"/file/"+pageUuid.String(), auth, nil)
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 
-		w = doReq(r, http.MethodDelete, "/api/course/"+courseUuid.String()+"/module/not-uuid/static-page/"+pageUuid.String(), auth, nil)
+		w = doReq(r, http.MethodDelete, "/api/course/"+courseUuid.String()+"/module/not-uuid/file/"+pageUuid.String(), auth, nil)
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 
-		w = doReq(r, http.MethodDelete, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page/not-uuid", auth, nil)
+		w = doReq(r, http.MethodDelete, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file/not-uuid", auth, nil)
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
 
@@ -626,7 +626,7 @@ func TestContentCtn_Delete(t *testing.T) {
 			},
 		}
 		r := setupContentApiTest(&mockContentService{}, courseMock)
-		w := doReq(r, http.MethodDelete, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/static-page/"+pageUuid.String(), auth, nil)
+		w := doReq(r, http.MethodDelete, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file/"+pageUuid.String(), auth, nil)
 		assert.Equal(t, http.StatusForbidden, w.Code)
 	})
 }
