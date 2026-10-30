@@ -1,7 +1,0 @@
-:80 {
-	# Enable compression for static assets and API responses
-	encode gzip zstd
-
-	# Reverse proxy all requests (SPA, API, Swagger) to embedded Go app
-	reverse_proxy app:8080
-}
