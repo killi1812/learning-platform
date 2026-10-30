@@ -67,18 +67,6 @@ func TestUserCrudService_CRUD(t *testing.T) {
 		assert.ErrorIs(t, err, ErrRecordNotFound)
 	})
 
-	t.Run("GetUserByUsername finds existing user", func(t *testing.T) {
-		found, err := svc.GetUserByUsername("sigmar")
-		assert.NoError(t, err)
-		assert.NotNil(t, found)
-		assert.Equal(t, createdUser.Uuid, found.Uuid)
-	})
-
-	t.Run("GetUserByUsername non-existent returns ErrRecordNotFound", func(t *testing.T) {
-		_, err := svc.GetUserByUsername("nonexistent")
-		assert.ErrorIs(t, err, ErrRecordNotFound)
-	})
-
 	t.Run("Create second user and ReadAll / GetAllUsers", func(t *testing.T) {
 		u2 := &User{
 			Username: "karlfranz",

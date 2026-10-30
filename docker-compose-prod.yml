@@ -4,17 +4,13 @@ services:
     container_name: prod-postgres
     restart: always
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DB:-learning_platform}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - prod_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}",
-        ]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-learning_platform}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -35,39 +31,19 @@ services:
         aliases:
           - mongo
 
-  rabbitmq:
-    image: rabbitmq:4-management-alpine
-    container_name: prod-rabbitmq
-    restart: always
-    environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
-    volumes:
-      - prod_rabbitmq_data:/var/lib/rabbitmq
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      default:
-        aliases:
-          - rabbitmq
-
   app:
-    image: ${APP_IMAGE}
+    image: ${APP_IMAGE:-dat250-project-app:latest}
     build:
       context: .
       dockerfile: Dockerfile
     container_name: prod-app
     restart: always
-    ports:
-      - "8080:8080"
+    expose:
+      - "8080"
     environment:
       PORT: 8080
-      DATABASE_CONN: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?sslmode=disable
+      DATABASE_CONN: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-learning_platform}?sslmode=disable
       MONGO_CONN: mongodb://mongo:27017
-      RABBITMQ_CONN: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
       ACCESS_KEY: ${ACCESS_KEY}
       REFRESH_KEY: ${REFRESH_KEY}
       SUPERADMIN_PASSWORD: ${SUPERADMIN_PASSWORD}
@@ -76,10 +52,23 @@ services:
         condition: service_healthy
       mongo:
         condition: service_started
-      rabbitmq:
-        condition: service_healthy
+
+  caddy:
+    image: caddy:alpine
+    container_name: prod-caddy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - prod_caddy_data:/data
+      - prod_caddy_config:/config
+    depends_on:
+      - app
 
 volumes:
   prod_postgres_data:
   prod_mongo_data:
-  prod_rabbitmq_data:
+  prod_caddy_data:
+  prod_caddy_config:

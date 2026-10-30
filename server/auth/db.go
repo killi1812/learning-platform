@@ -51,7 +51,7 @@ type AuthService struct {
 type AuthServiceParams struct {
 	dig.In
 	GormDb        *gorm.DB
-	MongoDb       *mongo.Database
+	MongoDb       *mongo.Database `name:"mongo"`
 	Logger        *zap.SugaredLogger
 	Notifications notification.INotificationService
 }
@@ -161,8 +161,7 @@ func (s *AuthService) Login(email, password, userAgent, ip, requestedSessionId s
 		defer cancel()
 
 		if isExistingSession {
-			_, err = s.sessionsColl().UpdateOne(
-				ctx,
+			_, err = s.sessionsColl().UpdateOne(ctx,
 				bson.M{"session_uuid": sessionUuid},
 				bson.M{
 					"$set": bson.M{
@@ -368,8 +367,7 @@ func (s *AuthService) RefreshTokens(rawRefreshToken string) (*AuthResult, error)
 		return []byte(app.AccessKey), nil
 	})
 
-	_, err = s.sessionsColl().UpdateOne(
-		ctx,
+	_, err = s.sessionsColl().UpdateOne(ctx,
 		bson.M{"session_uuid": refreshClaims.SessionUuid, "token_uuid": refreshClaims.TokenUuid},
 		bson.M{
 			"$set": bson.M{

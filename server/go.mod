@@ -22,7 +22,6 @@ require (
 
 require (
 	github.com/glebarez/sqlite v1.11.0
-	github.com/rabbitmq/amqp091-go v1.16.0
 	gorm.io/driver/postgres v1.5.11
 	gorm.io/gorm v1.25.12
 )

@@ -11,6 +11,7 @@ import (
 )
 
 type NewUserDto struct {
+	Uuid     string `json:"uuid"`
 	Username string `json:"username" binding:"required,min=2,max=100"`
 	Email    string `json:"email" binding:"omitempty,email"`
 	Password string `json:"password" binding:"required,min=6"`
@@ -24,6 +25,13 @@ func (dto NewUserDto) ToModel() (*User, error) {
 		zap.S().Errorf("Failed to parse role = %+v, err = %+v", dto.Role, err)
 		return nil, cerror.ErrUnknownRole
 	}
+	if dto.Uuid != "" {
+		_, err := uuid.Parse(dto.Uuid)
+		if err != nil {
+			zap.S().Errorf("Failed to parse uuid = %s, err = %+v", dto.Uuid, err)
+			return nil, cerror.ErrBadUuid
+		}
+	}
 
 	return &User{
 		Uuid:     uuid.New(),
@@ -31,6 +39,17 @@ func (dto NewUserDto) ToModel() (*User, error) {
 		Email:    dto.Email,
 		Role:     role,
 	}, nil
+}
+
+// FromModel returns a dto from model struct
+func (NewUserDto) FromModel(m *User) NewUserDto {
+	dto := NewUserDto{
+		Uuid:     m.Uuid.String(),
+		Username: m.Username,
+		Email:    m.Email,
+		Role:     string(m.Role),
+	}
+	return dto
 }
 
 type UserDto struct {

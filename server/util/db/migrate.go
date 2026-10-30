@@ -12,7 +12,7 @@ import (
 // If runMigration is false in production and tables are missing, a warning is logged.
 func HandleMigrations(db *gorm.DB, isDev bool, runMigration bool, models ...any) error {
 	silentDb := db.Session(&gorm.Session{
-		Logger: db.Logger.LogMode(logger.Error),
+		Logger: db.Logger.LogMode(logger.Silent),
 	})
 
 	if isDev {

@@ -23,6 +23,5 @@ var (
 	RefreshKey   string
 	MongoConn    string
 	DatabaseConn string
-	RabbitMqConn string
 	RunMigrate   bool
 )
