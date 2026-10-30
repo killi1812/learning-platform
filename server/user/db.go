@@ -25,6 +25,7 @@ type IUserCrudService interface {
 	GetAllUsers() ([]User, error)
 	SearchUsersByName(query string) ([]User, error)
 	GetUserByEmail(email string) (*User, error)
+	GetUserByUsername(username string) (*User, error)
 }
 
 type UserCrudService struct {
@@ -157,6 +158,18 @@ func (u *UserCrudService) SearchUsersByName(query string) ([]User, error) {
 func (u *UserCrudService) GetUserByEmail(email string) (*User, error) {
 	var user User
 	err := u.db.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrRecordNotFound
+		}
+		return nil, err
+	}
+	return &user, nil
+}
+
+func (u *UserCrudService) GetUserByUsername(username string) (*User, error) {
+	var user User
+	err := u.db.Where("username = ?", username).First(&user).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrRecordNotFound
