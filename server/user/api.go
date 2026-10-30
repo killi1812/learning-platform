@@ -101,7 +101,7 @@ func (u *UserCtn) create(c *gin.Context) {
 	}
 
 	// Log the response for debugging
-	responseDto := UserDto{}.FromModel(user)
+	responseDto := inputDto.FromModel(user)
 	u.logger.Infof("Response DTO: %+v", responseDto)
 
 	c.JSON(http.StatusCreated, responseDto)

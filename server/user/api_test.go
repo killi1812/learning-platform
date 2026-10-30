@@ -25,7 +25,6 @@ type mockUserCrudService struct {
 	getAllUsersFunc       func() ([]User, error)
 	searchUsersByNameFunc func(query string) ([]User, error)
 	getUserByEmailFunc    func(email string) (*User, error)
-	getUserByUsernameFunc func(username string) (*User, error)
 }
 
 func (m *mockUserCrudService) Create(user *User, password string) (*User, error) {
@@ -80,13 +79,6 @@ func (m *mockUserCrudService) SearchUsersByName(query string) ([]User, error) {
 func (m *mockUserCrudService) GetUserByEmail(email string) (*User, error) {
 	if m.getUserByEmailFunc != nil {
 		return m.getUserByEmailFunc(email)
-	}
-	return nil, ErrRecordNotFound
-}
-
-func (m *mockUserCrudService) GetUserByUsername(username string) (*User, error) {
-	if m.getUserByUsernameFunc != nil {
-		return m.getUserByUsernameFunc(username)
 	}
 	return nil, ErrRecordNotFound
 }

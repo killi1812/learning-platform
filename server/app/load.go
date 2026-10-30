@@ -36,7 +36,6 @@ func LoadConfig() {
 
 	MongoConn = loadString("MONGO_CONN")
 	DatabaseConn = loadString("DATABASE_CONN")
-	RabbitMqConn = loadString("RABBITMQ_CONN")
 
 	zap.S().Debugf("Finished loading env variables")
 }

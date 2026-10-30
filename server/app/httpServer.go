@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/docs"
-	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/rabbitmq"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/web"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/dig"
@@ -45,32 +44,7 @@ func Start() {
 	go run(schedulerCtx, &schedulerWg)
 	zap.S().Debugf("Started HTTP server")
 
-	// start background workers via dig
-	Invoke(func(p struct {
-		dig.In
-		Workers []Worker `group:"workers"`
-	}) {
-		for _, w := range p.Workers {
-			worker := w
-			schedulerWg.Add(1)
-			go func() {
-				defer schedulerWg.Done()
-				worker.Run(schedulerCtx)
-			}()
-			zap.S().Debugf("Started background worker %T", worker)
-		}
-	})
-
 	schedulerWg.Wait()
-
-	Invoke(func(p struct {
-		dig.In
-		Rmq rabbitmq.IClient `optional:"true"`
-	}) {
-		if p.Rmq != nil {
-			_ = p.Rmq.Close()
-		}
-	})
 
 	zap.S().Debugf("Terminated program")
 }
