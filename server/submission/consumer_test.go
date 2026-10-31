@@ -103,6 +103,17 @@ func TestSubmissionConsumer_Process(t *testing.T) {
 
 		err := consumer.Process(data)
 		assert.ErrorIs(t, err, submission.ErrInvalidMessage)
+
+		msgNilUuid := submission.SubmissionMessage{
+			Uuid:        uuid.Nil,
+			ContentID:   1,
+			UserID:      1,
+			PayloadURL:  "https://example.com",
+			PayloadType: submission.PayloadTypeURL,
+		}
+		dataNil, _ := json.Marshal(msgNilUuid)
+		errNil := consumer.Process(dataNil)
+		assert.ErrorIs(t, errNil, submission.ErrInvalidMessage)
 	})
 
 	t.Run("Service failure returns error", func(t *testing.T) {

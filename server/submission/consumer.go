@@ -9,6 +9,7 @@ import (
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/rabbitmq"
+	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"go.uber.org/zap"
 )
@@ -65,6 +66,7 @@ func (c *SubmissionConsumer) handle(d amqp.Delivery) {
 	// Database or transient persistence failure
 	if !d.Redelivered {
 		c.logger.Warnf("Transient failure processing submission; requeuing once: %v", err)
+		time.Sleep(200 * time.Millisecond)
 		if nackErr := d.Nack(false, true); nackErr != nil {
 			c.logger.Errorf("Failed to requeue delivery: %v", nackErr)
 		}
@@ -83,7 +85,7 @@ func (c *SubmissionConsumer) Process(body []byte) error {
 		return fmt.Errorf("%w: failed to parse JSON: %v", ErrInvalidMessage, err)
 	}
 
-	if msg.ContentID == 0 || msg.UserID == 0 || msg.PayloadURL == "" {
+	if msg.Uuid == uuid.Nil || msg.ContentID == 0 || msg.UserID == 0 || msg.PayloadURL == "" {
 		return fmt.Errorf("%w: missing required fields", ErrInvalidMessage)
 	}
 

@@ -314,9 +314,6 @@ func (c *Client) DeclareQueue(name string) error {
 
 // Publish writes a persistent message with publisher confirmation.
 func (c *Client) Publish(ctx context.Context, queue string, body []byte) error {
-	c.pubMu.Lock()
-	defer c.pubMu.Unlock()
-
 	c.closeMu.RLock()
 	if c.isClosed {
 		c.closeMu.RUnlock()
@@ -324,19 +321,41 @@ func (c *Client) Publish(ctx context.Context, queue string, body []byte) error {
 	}
 	c.closeMu.RUnlock()
 
-	deferred, err := c.pubCh.PublishWithDeferredConfirmWithContext(
+	c.pubMu.Lock()
+	ch := c.pubCh
+	msg := amqp.Publishing{
+		DeliveryMode: amqp.Persistent,
+		ContentType:  "application/json",
+		Timestamp:    time.Now().UTC(),
+		Body:         body,
+	}
+
+	deferred, err := ch.PublishWithDeferredConfirmWithContext(
 		ctx,
 		"",    // default exchange
 		queue, // routing key
 		false, // mandatory
 		false, // immediate
-		amqp.Publishing{
-			DeliveryMode: amqp.Persistent,
-			ContentType:  "application/json",
-			Timestamp:    time.Now().UTC(),
-			Body:         body,
-		},
+		msg,
 	)
+	if err != nil && c.conn != nil {
+		c.logger.Warnf("Publish failed on publisher channel (%v), attempting to reopen channel...", err)
+		if newCh, openErr := c.conn.Channel(); openErr == nil && newCh.Confirm(false) == nil {
+			_ = c.pubCh.Close()
+			c.pubCh = newCh
+			ch = newCh
+			deferred, err = ch.PublishWithDeferredConfirmWithContext(
+				ctx,
+				"",
+				queue,
+				false,
+				false,
+				msg,
+			)
+		}
+	}
+	c.pubMu.Unlock()
+
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrPublishFailed, err)
 	}
