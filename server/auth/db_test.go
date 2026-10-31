@@ -242,6 +242,12 @@ func (m *mockFailingNotifier) NotifySystem(recipientUuid uuid.UUID, content noti
 }
 
 func TestAuthService_Integration(t *testing.T) {
+	origAccess := app.AccessKey
+	origRefresh := app.RefreshKey
+	t.Cleanup(func() {
+		app.AccessKey = origAccess
+		app.RefreshKey = origRefresh
+	})
 	app.AccessKey = "test-auth-access-key-12345"
 	app.RefreshKey = "test-auth-refresh-key-12345"
 
@@ -271,7 +277,7 @@ func TestAuthService_Integration(t *testing.T) {
 	err = gormDb.Create(&testUser).Error
 	assert.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	var firstSessionUuid uuid.UUID

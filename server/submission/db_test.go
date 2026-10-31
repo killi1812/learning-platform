@@ -363,6 +363,22 @@ func TestSubmissionService_SaveFromMessage(t *testing.T) {
 	})
 
 	t.Run("Second attempt saves with attempt=2", func(t *testing.T) {
+		// Ensure first attempt exists so subtest is completely isolated
+		var existingCount int64
+		assert.NoError(t, db.Model(&submission.IndividualSubmission{}).Where("content_id = ? AND user_id = ?", cnt.ID, u.ID).Count(&existingCount).Error)
+		if existingCount == 0 {
+			_, err := svc.SaveFromMessage(submission.SubmissionMessage{
+				Uuid:        uuid.New(),
+				ContentID:   cnt.ID,
+				UserID:      u.ID,
+				UserEmail:   u.Email,
+				PayloadType: submission.PayloadTypeURL,
+				PayloadURL:  "https://git.app.uib.no/student/task1.git",
+				SubmittedAt: time.Now(),
+			})
+			assert.NoError(t, err)
+		}
+
 		msg := submission.SubmissionMessage{
 			Uuid:        uuid.New(),
 			ContentID:   cnt.ID,

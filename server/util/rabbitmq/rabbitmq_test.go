@@ -89,12 +89,13 @@ func (m *mockChannel) Close() error {
 }
 
 type mockConnection struct {
-	mu          sync.Mutex
-	channels    []amqpChannel
-	channelErr  error
-	closeErr    error
-	closed      bool
-	notifyChans []chan *amqp.Error
+	mu            sync.Mutex
+	channels      []amqpChannel
+	channelErr    error
+	closeErr      error
+	closed        bool
+	notifyChans   []chan *amqp.Error
+	onNotifyClose chan struct{}
 }
 
 func (m *mockConnection) Channel() (amqpChannel, error) {
@@ -117,6 +118,12 @@ func (m *mockConnection) NotifyClose(receiver chan *amqp.Error) chan *amqp.Error
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.notifyChans = append(m.notifyChans, receiver)
+	if m.onNotifyClose != nil {
+		select {
+		case m.onNotifyClose <- struct{}{}:
+		default:
+		}
+	}
 	return receiver
 }
 
@@ -435,7 +442,7 @@ func TestClient_ConsumeAndReconnect(t *testing.T) {
 	})
 
 	t.Run("MonitorConnection reconnects on unexpected connection loss", func(t *testing.T) {
-		conn1 := &mockConnection{channels: []amqpChannel{&mockChannel{}}}
+		conn1 := &mockConnection{channels: []amqpChannel{&mockChannel{}}, onNotifyClose: make(chan struct{}, 1)}
 		conn2 := &mockConnection{channels: []amqpChannel{&mockChannel{}}}
 		badConn := &mockConnection{channels: []amqpChannel{&mockChannel{confirmErr: errors.New("confirm fail")}}}
 
@@ -464,7 +471,11 @@ func TestClient_ConsumeAndReconnect(t *testing.T) {
 		require.NoError(t, err)
 		defer func() { _ = client.Close() }()
 
-		time.Sleep(2 * time.Millisecond)
+		select {
+		case <-conn1.onNotifyClose:
+		case <-time.After(1 * time.Second):
+			t.Fatal("timed out waiting for monitorConnection to register NotifyClose")
+		}
 		conn1.triggerClose(&amqp.Error{Code: 504, Reason: "channel/connection is not open"})
 
 		select {
