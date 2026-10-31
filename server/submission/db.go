@@ -159,7 +159,30 @@ func (s *SubmissionService) SaveFromMessage(msg SubmissionMessage) (*IndividualS
 			UserEmail: msg.UserEmail,
 		}
 
-		return tx.Create(&savedSub).Error
+		if err := tx.Create(&savedSub).Error; err != nil {
+			return err
+		}
+
+		var inter content.StudentInteraction
+		interErr := tx.Where("user_id = ? AND content_id = ?", msg.UserID, msg.ContentID).First(&inter).Error
+		if errors.Is(interErr, gorm.ErrRecordNotFound) {
+			inter = content.StudentInteraction{
+				UserID:      msg.UserID,
+				UserEmail:   msg.UserEmail,
+				ContentID:   msg.ContentID,
+				CompletedAt: &msg.SubmittedAt,
+			}
+			if err := tx.Create(&inter).Error; err != nil {
+				return fmt.Errorf("failed to record interaction: %w", err)
+			}
+		} else if interErr == nil && inter.CompletedAt == nil {
+			inter.CompletedAt = &msg.SubmittedAt
+			if err := tx.Save(&inter).Error; err != nil {
+				return fmt.Errorf("failed to update interaction: %w", err)
+			}
+		}
+
+		return nil
 	})
 	if err != nil {
 		return nil, err

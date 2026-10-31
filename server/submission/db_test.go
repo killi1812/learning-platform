@@ -253,6 +253,7 @@ func TestSubmissionService_SaveFromMessage(t *testing.T) {
 		&course.Module{},
 		&content.Content{},
 		&content.Assignment{},
+		&content.StudentInteraction{},
 		&submission.Submission{},
 		&submission.IndividualSubmission{},
 	)
@@ -309,6 +310,10 @@ func TestSubmissionService_SaveFromMessage(t *testing.T) {
 		assert.False(t, saved.IsLate)
 		assert.Equal(t, msg.PayloadURL, saved.PayloadURL)
 		assert.Equal(t, u.Email, saved.UserEmail)
+
+		var inter content.StudentInteraction
+		assert.NoError(t, db.Where("user_id = ? AND content_id = ?", u.ID, cnt.ID).First(&inter).Error)
+		assert.NotNil(t, inter.CompletedAt)
 	})
 
 	t.Run("Second attempt saves with attempt=2", func(t *testing.T) {
