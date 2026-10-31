@@ -58,5 +58,9 @@ func Insert() {
 		zap.S().DPanicf("Failed to seed assignments: %+v", err)
 	}
 
+	if _, err := seedFiles(courses, modules); err != nil {
+		zap.S().DPanicf("Failed to seed files: %+v", err)
+	}
+
 	zap.S().Infoln("Successfully seeded dev data")
 }

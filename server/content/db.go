@@ -242,24 +242,24 @@ func (s *ContentService) checkPrerequisiteCompleted(depID uint, userUuid uuid.UU
 		return ErrModuleLocked
 	}
 
-	var totalContents int64
-	if err := s.db.Model(&Content{}).Where("module_id = ?", depID).Count(&totalContents).Error; err != nil {
+	var totalFiles int64
+	if err := s.db.Model(&Content{}).Where("module_id = ? AND type = ?", depID, TypeFile).Count(&totalFiles).Error; err != nil {
 		return err
 	}
-	if totalContents == 0 {
+	if totalFiles == 0 {
 		return nil
 	}
 
-	var completedContents int64
+	var completedFiles int64
 	err := s.db.Model(&StudentInteraction{}).
 		Joins("JOIN contents ON contents.id = student_interactions.content_id").
-		Where("contents.module_id = ? AND student_interactions.user_id = ? AND student_interactions.completed_at IS NOT NULL", depID, u.ID).
-		Count(&completedContents).Error
+		Where("contents.module_id = ? AND contents.type = ? AND student_interactions.user_id = ? AND student_interactions.completed_at IS NOT NULL", depID, TypeFile, u.ID).
+		Count(&completedFiles).Error
 	if err != nil {
 		return err
 	}
 
-	if completedContents < totalContents {
+	if completedFiles < totalFiles {
 		return ErrModuleLocked
 	}
 	return nil

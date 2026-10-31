@@ -100,6 +100,7 @@ func TestSeedInsert(t *testing.T) {
 			&course.Module{},
 			&content.Content{},
 			&content.Assignment{},
+			&content.File{},
 		)
 
 		app.Test()
@@ -133,6 +134,7 @@ func TestSeedInsert(t *testing.T) {
 			&course.Module{},
 			&content.Content{},
 			&content.Assignment{},
+			&content.File{},
 		)
 
 		app.Test()
@@ -170,6 +172,10 @@ func TestSeedInsert(t *testing.T) {
 		db.Model(&content.Assignment{}).Count(&assignmentCount)
 		assert.Equal(t, int64(4), assignmentCount)
 
+		var fileCount int64
+		db.Model(&content.File{}).Count(&fileCount)
+		assert.Equal(t, int64(4), fileCount)
+
 		var enrollmentCount int64
 		db.Model(&course.Enrollment{}).Count(&enrollmentCount)
 		assert.Equal(t, int64(18), enrollmentCount) // C1: 2 teachers + 10 students; C2: 1 teacher + 5 students
@@ -192,6 +198,7 @@ func TestSeedInsert(t *testing.T) {
 			&course.Module{},
 			&content.Content{},
 			&content.Assignment{},
+			&content.File{},
 		)
 
 		app.Test()
@@ -227,6 +234,14 @@ func TestSeedInsert(t *testing.T) {
 		assignments, err := seedAssignments(modules)
 		assert.NoError(t, err)
 		assert.Len(t, assignments, 4)
+
+		files, err := seedFiles(courses, modules)
+		assert.NoError(t, err)
+		assert.Len(t, files, 4)
+
+		filesAgain, err := seedFiles(courses, modules)
+		assert.NoError(t, err)
+		assert.Len(t, filesAgain, 4)
 
 		// Calling seedTeachers again returns existing items without duplicating
 		teachersAgain, err := seedTeachers()
