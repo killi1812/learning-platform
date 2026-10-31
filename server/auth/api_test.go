@@ -447,6 +447,13 @@ func TestAuthCtn_DualLogout(t *testing.T) {
 		c2.Request = httptest.NewRequest(http.MethodPost, "/logout-all", nil)
 		ctn.logoutAll(c2)
 		assert.Equal(t, http.StatusUnauthorized, w2.Code)
+
+		w3 := httptest.NewRecorder()
+		c3, _ := gin.CreateTestContext(w3)
+		c3.Request = httptest.NewRequest(http.MethodPost, "/logout", nil)
+		c3.Set("userUuid", userUuid.String())
+		ctn.logoutCurrent(c3)
+		assert.Equal(t, http.StatusUnauthorized, w3.Code)
 	})
 }
 
@@ -560,6 +567,13 @@ func TestAuthCtn_Sessions(t *testing.T) {
 		c2.Params = gin.Params{{Key: "uuid", Value: uuid.New().String()}}
 		ctn.revokeSession(c2)
 		assert.Equal(t, http.StatusUnauthorized, w2.Code)
+
+		w3 := httptest.NewRecorder()
+		c3, _ := gin.CreateTestContext(w3)
+		c3.Request = httptest.NewRequest(http.MethodGet, "/session", nil)
+		c3.Set("userUuid", userUuid.String())
+		ctn.listSessions(c3)
+		assert.Equal(t, http.StatusUnauthorized, w3.Code)
 	})
 }
 
