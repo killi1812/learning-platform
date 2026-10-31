@@ -4,13 +4,19 @@ services:
     container_name: dev-postgres
     restart: unless-stopped
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_PORT}:5432"
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-learning_platform}
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - dev_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 3s
     networks:
       default:
         aliases:
@@ -22,9 +28,15 @@ services:
     container_name: dev-mongo
     restart: unless-stopped
     ports:
-      - "${MONGO_PORT:-27018}:27017"
+      - "${MONGO_PORT}:27017"
     volumes:
       - dev_mongo_data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --eval 'db.adminCommand(\"ping\")' --quiet || exit 1"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 3s
     networks:
       default:
         aliases:
@@ -35,16 +47,45 @@ services:
     container_name: dev-seaweedfs
     restart: unless-stopped
     ports:
-      - "${SEAWEEDFS_FILER_PORT:-8888}:8888"
+      - "${SEAWEEDFS_FILER_PORT}:8888"
     command: "server -filer"
     volumes:
       - dev_seaweedfs_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8888/ || exit 1"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 3s
     networks:
       default:
         aliases:
           - seaweedfs
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    container_name: dev-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "${RABBITMQ_PORT}:5672"
+      - "${RABBITMQ_MGMT_PORT}:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    volumes:
+      - dev_rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 3s
+    networks:
+      default:
+        aliases:
+          - rabbitmq
 
 volumes:
   dev_postgres_data:
   dev_mongo_data:
   dev_seaweedfs_data:
+  dev_rabbitmq_data:

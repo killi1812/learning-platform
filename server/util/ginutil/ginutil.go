@@ -10,7 +10,7 @@ import (
 
 // ErrorResponse represents a standardized API error response payload.
 type ErrorResponse struct {
-	Error string `json:"error" example:"Invalid email or password"`
+	Error string `json:"error" example:"Example error, something went wrong"`
 }
 
 // RespondWithError halts the Gin context and writes a standardized JSON error response.

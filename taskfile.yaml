@@ -1,5 +1,7 @@
 version: "3"
 
+dotenv: ['.env']
+
 env:
   PATH: "{{.HOME}}/go/bin:{{.PATH}}"
 
@@ -238,7 +240,7 @@ tasks:
     dir: "{{.TASKFILE_DIR}}"
     cmds:
       - task: colima-status
-      - cmd: docker compose up -d
+      - cmd: docker compose up -d --wait
     silent: true
 
   dev:services-down:

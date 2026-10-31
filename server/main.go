@@ -41,6 +41,8 @@ func main() {
 	app.Provide(content.NewContentService)
 	app.Provide(notification.NewHub)
 	app.Provide(notification.NewNotificationService)
+	app.Provide(submission.NewSubmissionService)
+	app.Provide(submission.NewSubmissionPublisher)
 
 	app.RegisterApi(info.NewInfoApi)
 	app.RegisterApi(user.NewUserCtn)
@@ -48,6 +50,8 @@ func main() {
 	app.RegisterApi(course.NewCourseCtn)
 	app.RegisterApi(content.NewContentCtn)
 	app.RegisterApi(notification.NewNotificationCtn)
+	app.RegisterApi(submission.NewSubmissionCtn)
+	app.RegisterWorker(submission.NewSubmissionConsumer)
 
 	app.RegisterModel(&user.User{})
 	// Course
@@ -60,9 +64,9 @@ func main() {
 	// Content
 	app.RegisterModel(&content.Content{})
 	app.RegisterModel(&content.File{})
+	app.RegisterModel(&content.Assignment{})
 	app.RegisterModel(&content.Quiz{})
 	app.RegisterModel(&content.Question{})
-	app.RegisterModel(&content.Assignment{})
 	app.RegisterModel(&content.CodingExercise{})
 	app.RegisterModel(&content.StudentInteraction{})
 	// Submission

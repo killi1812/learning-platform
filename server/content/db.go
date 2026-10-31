@@ -31,6 +31,9 @@ type IContentService interface {
 	GetFileStream(courseUuid, moduleUuid, contentUuid, userUuid uuid.UUID, isPrivileged bool) (io.ReadCloser, *File, error)
 	UpdateFile(courseUuid, moduleUuid, contentUuid uuid.UUID, title, description string) (*File, error)
 	DeleteFile(courseUuid, moduleUuid, contentUuid uuid.UUID) error
+	CreateAssignment(moduleUuid uuid.UUID, cnt *Content, asgn *Assignment) (*Content, error)
+	GetContent(contentUuid uuid.UUID) (*Content, error)
+	GetAssignmentByModule(moduleUuid uuid.UUID) (*Content, error)
 }
 
 type ContentService struct {
@@ -40,9 +43,6 @@ type ContentService struct {
 }
 
 func NewContentService(db *gorm.DB, storage storage.IStorageService, logger *zap.SugaredLogger) IContentService {
-	if logger == nil {
-		logger = zap.S()
-	}
 	return &ContentService{
 		db:      db,
 		storage: storage,
@@ -69,6 +69,58 @@ func (s *ContentService) findCourseAndModule(courseUuid, moduleUuid uuid.UUID) (
 	m.Course = &c
 
 	return &c, &m, nil
+}
+
+// CreateAssignment persists a new Content record of type ASSIGNMENT and its corresponding Assignment record within the specified module.
+func (s *ContentService) CreateAssignment(moduleUuid uuid.UUID, cnt *Content, asgn *Assignment) (*Content, error) {
+	var m course.Module
+	if err := s.db.Where("uuid = ?", moduleUuid).First(&m).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrModuleNotFound
+		}
+		return nil, err
+	}
+
+	cnt.ModuleID = m.ID
+	cnt.Type = TypeAssignment
+
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(cnt).Error; err != nil {
+			return fmt.Errorf("failed to create content: %w", err)
+		}
+
+		asgn.ContentID = cnt.ID
+		if err := tx.Create(asgn).Error; err != nil {
+			return fmt.Errorf("failed to create assignment: %w", err)
+		}
+
+		cnt.Assignment = asgn
+		return nil
+	})
+	if err != nil {
+		s.logger.Errorf("Failed to create assignment content: %v", err)
+		return nil, err
+	}
+
+	return cnt, nil
+}
+
+// GetContent retrieves a content item along with its assignment details by UUID.
+func (s *ContentService) GetContent(contentUuid uuid.UUID) (*Content, error) {
+	var cnt Content
+	err := s.db.
+		Preload("Assignment.Quiz.Questions").
+		Preload("Assignment.CodingExercise").
+		Preload("File").
+		Where("uuid = ?", contentUuid).
+		First(&cnt).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrContentNotFound
+		}
+		return nil, err
+	}
+	return &cnt, nil
 }
 
 func (s *ContentService) findFile(moduleID uint, contentUuid uuid.UUID) (*File, error) {
@@ -323,10 +375,7 @@ func (s *ContentService) GetFileStream(courseUuid, moduleUuid, contentUuid, user
 	return reader, f, nil
 }
 
-func (s *ContentService) UpdateFile(
-	courseUuid, moduleUuid, contentUuid uuid.UUID,
-	title, description string,
-) (*File, error) {
+func (s *ContentService) UpdateFile(courseUuid, moduleUuid, contentUuid uuid.UUID, title, description string) (*File, error) {
 	f, err := s.GetFile(courseUuid, moduleUuid, contentUuid, uuid.Nil, true)
 	if err != nil {
 		return nil, err
@@ -367,4 +416,21 @@ func (s *ContentService) DeleteFile(courseUuid, moduleUuid, contentUuid uuid.UUI
 		}
 		return tx.Unscoped().Delete(&Content{}, "id = ?", f.Content.ID).Error
 	})
+}
+
+// GetAssignmentByModule retrieves the first assignment content within the specified module.
+func (s *ContentService) GetAssignmentByModule(moduleUuid uuid.UUID) (*Content, error) {
+	var cnt Content
+	err := s.db.
+		Joins("JOIN modules ON modules.id = contents.module_id").
+		Preload("Assignment").
+		Where("modules.uuid = ? AND contents.type = ?", moduleUuid, TypeAssignment).
+		First(&cnt).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrContentNotFound
+		}
+		return nil, err
+	}
+	return &cnt, nil
 }

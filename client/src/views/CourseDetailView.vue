@@ -162,6 +162,16 @@
                     <span class="text-caption text-secondary">
                       Prerequisite: {{ mod.dependsOn.title }}
                     </span>
+                    <v-chip
+                      v-if="lockedModules[mod.uuid]"
+                      class="ml-1 font-weight-bold"
+                      color="warning"
+                      size="x-small"
+                      variant="tonal"
+                    >
+                      <v-icon start icon="mdi-lock-outline" size="x-small" />
+                      Locked
+                    </v-chip>
                   </div>
                 </div>
               </div>
@@ -237,7 +247,21 @@
             </div>
 
             <!-- Material Items -->
-            <div v-if="(modulePages[mod.uuid] || []).length > 0" class="d-flex flex-column ga-2">
+            <div
+              v-if="lockedModules[mod.uuid]"
+              class="d-flex align-center ga-2 py-2 text-medium-emphasis"
+            >
+              <v-icon color="warning" icon="mdi-lock-outline" size="small" />
+              <span class="text-caption">
+                This module is locked until prerequisite
+                <template v-if="mod.dependsOn">({{ mod.dependsOn.title }})</template>
+                is completed.
+              </span>
+            </div>
+            <div
+              v-else-if="(modulePages[mod.uuid] || []).length > 0"
+              class="d-flex flex-column ga-2"
+            >
               <v-card
                 v-for="page in modulePages[mod.uuid]"
                 :key="page.uuid"
@@ -682,6 +706,8 @@ import {
   deleteCourse,
 } from '@/api/course'
 import { listFiles, uploadFile, updateFile, deleteFile } from '@/api/content'
+import { isAxiosError } from 'axios'
+import { getApiErrorMessage } from '@/api/client'
 import type { Course, Module, Enrollment, UpdateCoursePayload } from '@/types/course'
 import type { FileUpload } from '@/types/content'
 
@@ -750,6 +776,7 @@ const deletingEnrollmentUserUuid = ref<string | undefined>(undefined)
 
 // Course materials state
 const modulePages = ref<Record<string, FileUpload[]>>({})
+const lockedModules = ref<Record<string, boolean>>({})
 const uploadDialogOpen = ref(false)
 const targetModuleUuid = ref<string>('')
 const uploadFileInput = ref<File | File[] | undefined>(undefined)
@@ -787,18 +814,29 @@ const availablePrerequisites = computed(() => {
 async function loadAllModulePages() {
   if (!resolvedCourseUuid.value || modules.value.length === 0) return
   const pagesMap: Record<string, FileUpload[]> = {}
+  const lockedMap: Record<string, boolean> = {}
   let hasError = false
   await Promise.all(
     modules.value.map(async mod => {
       try {
         pagesMap[mod.uuid] = await listFiles(resolvedCourseUuid.value, mod.uuid)
-      } catch {
+      } catch (err: unknown) {
         pagesMap[mod.uuid] = []
-        hasError = true
+        const errMsg = getApiErrorMessage(err, '')
+        const is403 = isAxiosError(err) && err.response?.status === 403
+        if (
+          (is403 && (errMsg.toLowerCase().includes('prerequisite') || !!mod.dependsOn)) ||
+          errMsg.toLowerCase().includes('prerequisite')
+        ) {
+          lockedMap[mod.uuid] = true
+        } else {
+          hasError = true
+        }
       }
     }),
   )
   modulePages.value = pagesMap
+  lockedModules.value = lockedMap
   if (hasError) {
     toast.error('Failed to load materials for one or more modules.')
   }

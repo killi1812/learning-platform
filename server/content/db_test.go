@@ -175,7 +175,7 @@ func TestContentService_UploadFile_Failures(t *testing.T) {
 	failingDb := testutil.NewSqliteTestDb(t, &user.User{}, &course.Course{}, &course.Module{}, &content.Content{}, &content.File{}, &content.StudentInteraction{})
 	require.NoError(t, failingDb.Create(c).Error)
 	require.NoError(t, failingDb.Create(m).Error)
-	failingSvc := content.NewContentService(failingDb, failingStorage, nil)
+	failingSvc := content.NewContentService(failingDb, failingStorage, zap.NewNop().Sugar())
 
 	_, err = failingSvc.UploadFile(
 		c.Uuid, m.Uuid,
@@ -272,7 +272,7 @@ func TestContentService_GetFileStream(t *testing.T) {
 	db := testutil.NewSqliteTestDb(t, &user.User{}, &course.Course{}, &course.Module{}, &content.Content{}, &content.File{}, &content.StudentInteraction{})
 	require.NoError(t, db.Create(c).Error)
 	require.NoError(t, db.Create(m).Error)
-	failingSvc := content.NewContentService(db, failingStorage, nil)
+	failingSvc := content.NewContentService(db, failingStorage, zap.NewNop().Sugar())
 	spFail, err := failingSvc.UploadFile(c.Uuid, m.Uuid, "Will Fail", "fail.txt", 4, "text/plain", strings.NewReader("test"), "", "")
 	require.NoError(t, err)
 
@@ -331,7 +331,7 @@ func TestContentService_DeleteFile(t *testing.T) {
 	db := testutil.NewSqliteTestDb(t, &user.User{}, &course.Course{}, &course.Module{}, &content.Content{}, &content.File{}, &content.StudentInteraction{})
 	require.NoError(t, db.Create(c).Error)
 	require.NoError(t, db.Create(m).Error)
-	failingSvc := content.NewContentService(db, failingStorage, nil)
+	failingSvc := content.NewContentService(db, failingStorage, zap.NewNop().Sugar())
 
 	sp2, err := failingSvc.UploadFile(c.Uuid, m.Uuid, "Delete Warn", "del.txt", 3, "text/plain", strings.NewReader("abc"), "", "")
 	require.NoError(t, err)
@@ -430,4 +430,114 @@ func TestContentService_StudentPrerequisitesAndVisibility(t *testing.T) {
 	gotHidden, err := svc.GetFile(c.Uuid, m1.Uuid, pageHidden.Content.Uuid, uuid.Nil, true)
 	require.NoError(t, err)
 	assert.NotNil(t, gotHidden)
+}
+
+func TestContentService_CreateAssignmentAndGet(t *testing.T) {
+	db := testutil.NewSqliteTestDb(t,
+		&course.Course{},
+		&course.Module{},
+		&content.Content{},
+		&content.File{},
+		&content.Assignment{},
+		&content.Quiz{},
+		&content.Question{},
+		&content.CodingExercise{},
+	)
+
+	svc := content.NewContentService(db, storage.NewMemoryStorageService(), zap.NewNop().Sugar())
+
+	c := &course.Course{Title: "DAT250", Term: course.TermAutumn, Year: 2026}
+	assert.NoError(t, db.Create(c).Error)
+
+	m := &course.Module{CourseID: c.ID, Title: "Week 1", Position: 1}
+	assert.NoError(t, db.Create(m).Error)
+
+	t.Run("CreateAssignment succeeds with valid module", func(t *testing.T) {
+		deadline := time.Now().Add(48 * time.Hour)
+		cnt := &content.Content{
+			Title:    "Exercise 1",
+			Position: 1,
+		}
+		asgn := &content.Assignment{
+			Type:                   content.AssignmentHandIn,
+			Deadline:               &deadline,
+			AcceptsLateSubmissions: false,
+		}
+
+		created, err := svc.CreateAssignment(m.Uuid, cnt, asgn)
+		assert.NoError(t, err)
+		assert.NotNil(t, created)
+		assert.NotEqual(t, uuid.Nil, created.Uuid)
+		assert.Equal(t, m.ID, created.ModuleID)
+		assert.Equal(t, content.TypeAssignment, created.Type)
+		assert.Equal(t, created.ID, created.Assignment.ContentID)
+
+		// Verify retrieval
+		fetched, err := svc.GetContent(created.Uuid)
+		assert.NoError(t, err)
+		assert.NotNil(t, fetched)
+		assert.Equal(t, created.Title, fetched.Title)
+		assert.NotNil(t, fetched.Assignment)
+		assert.Equal(t, content.AssignmentHandIn, fetched.Assignment.Type)
+
+		// Verify retrieval by module
+		byMod, err := svc.GetAssignmentByModule(m.Uuid)
+		assert.NoError(t, err)
+		assert.NotNil(t, byMod)
+		assert.Equal(t, created.Uuid, byMod.Uuid)
+		assert.NotNil(t, byMod.Assignment)
+	})
+
+	t.Run("CreateAssignment fails when module not found", func(t *testing.T) {
+		_, err := svc.CreateAssignment(uuid.New(), &content.Content{Title: "Orphan"}, &content.Assignment{Type: content.AssignmentHandIn})
+		assert.ErrorIs(t, err, content.ErrModuleNotFound)
+	})
+
+	t.Run("GetContent fails when content not found", func(t *testing.T) {
+		_, err := svc.GetContent(uuid.New())
+		assert.ErrorIs(t, err, content.ErrContentNotFound)
+	})
+
+	t.Run("GetAssignmentByModule fails when no assignment found", func(t *testing.T) {
+		_, err := svc.GetAssignmentByModule(uuid.New())
+		assert.ErrorIs(t, err, content.ErrContentNotFound)
+	})
+
+	t.Run("CreateAssignment fails when assignment creation fails inside transaction", func(t *testing.T) {
+		cnt := &content.Content{
+			Title:    "Exercise Duplicate",
+			Position: 2,
+		}
+		asgn := &content.Assignment{
+			Type: content.AssignmentHandIn,
+		}
+		created, err := svc.CreateAssignment(m.Uuid, cnt, asgn)
+		assert.NoError(t, err)
+
+		// Drop assignments table to force tx.Create(asgn) failure
+		assert.NoError(t, db.Migrator().DropTable(&content.Assignment{}))
+
+		cnt2 := &content.Content{
+			Title:    "Exercise Broken",
+			Position: 3,
+		}
+		_, err = svc.CreateAssignment(m.Uuid, cnt2, &content.Assignment{Type: content.AssignmentHandIn})
+		assert.Error(t, err)
+
+		// Recreate table and test closed DB error paths
+		assert.NoError(t, db.AutoMigrate(&content.Assignment{}))
+
+		sqlDB, err := db.DB()
+		assert.NoError(t, err)
+		_ = sqlDB.Close()
+
+		_, err = svc.CreateAssignment(m.Uuid, &content.Content{Title: "Closed"}, &content.Assignment{})
+		assert.Error(t, err)
+
+		_, err = svc.GetContent(created.Uuid)
+		assert.Error(t, err)
+
+		_, err = svc.GetAssignmentByModule(m.Uuid)
+		assert.Error(t, err)
+	})
 }

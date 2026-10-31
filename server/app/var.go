@@ -25,4 +25,5 @@ var (
 	DatabaseConn      string
 	SeaweedFSEndpoint string
 	RunMigrate        bool
+	RabbitMqConn      string
 )

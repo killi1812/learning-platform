@@ -25,9 +25,6 @@ type ContentCtn struct {
 }
 
 func NewContentCtn(contentService IContentService, courseService course.ICourseService, logger *zap.SugaredLogger) app.Api {
-	if logger == nil {
-		logger = zap.S()
-	}
 	return &ContentCtn{
 		contentService: contentService,
 		courseService:  courseService,

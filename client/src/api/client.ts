@@ -165,14 +165,6 @@ authApi.interceptors.response.use(
       }
     }
 
-    if (status === 403) {
-      const currentPath = window.location.pathname
-      if (currentPath !== '/unauthorized') {
-        const redirectParam = encodeURIComponent(currentPath + window.location.search)
-        window.location.href = `/unauthorized?redirect=${redirectParam}`
-      }
-    }
-
     return Promise.reject(error)
   },
 )

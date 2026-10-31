@@ -45,9 +45,10 @@ func Setup() {
 		digContainer = dig.New()
 	}
 
-	// Database setup (PostgreSQL as default + MongoDB under "mongo")
+	// Database & Broker setup (PostgreSQL as default + MongoDB under "mongo" + RabbitMQ)
 	{
 		Provide(NewGormDb)
-		Provide(NewMongoDb, dig.Name("mongo"))
+		Provide(NewMongoDb)
+		Provide(NewRabbitMq)
 	}
 }

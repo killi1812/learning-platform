@@ -119,6 +119,18 @@ func (m *mockContentService) DeleteFile(courseUuid, moduleUuid, contentUuid uuid
 	return nil
 }
 
+func (m *mockContentService) CreateAssignment(moduleUuid uuid.UUID, cnt *content.Content, asgn *content.Assignment) (*content.Content, error) {
+	return cnt, nil
+}
+
+func (m *mockContentService) GetContent(contentUuid uuid.UUID) (*content.Content, error) {
+	return nil, content.ErrContentNotFound
+}
+
+func (m *mockContentService) GetAssignmentByModule(moduleUuid uuid.UUID) (*content.Content, error) {
+	return nil, content.ErrContentNotFound
+}
+
 type mockCourseServiceForContent struct {
 	course.ICourseService
 	isTeacherOrAdminFunc  func(courseUuid, userUuid uuid.UUID, isSystemAdmin bool) (bool, error)
@@ -208,7 +220,7 @@ func doMultipartReq(r http.Handler, method, path, auth string, fields map[string
 }
 
 func TestContentCtn_Upload(t *testing.T) {
-	assert.NotNil(t, content.NewContentCtn(&mockContentService{}, &mockCourseServiceForContent{}, nil))
+	assert.NotNil(t, content.NewContentCtn(&mockContentService{}, &mockCourseServiceForContent{}, zap.NewNop().Sugar()))
 
 	courseUuid := uuid.New()
 	moduleUuid := uuid.New()

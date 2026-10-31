@@ -248,7 +248,7 @@ definitions:
   ginutil.ErrorResponse:
     properties:
       error:
-        example: Invalid email or password
+        example: Example error, something went wrong
         type: string
     type: object
   info.ServerInfoDto:
@@ -313,6 +313,48 @@ definitions:
       count:
         type: integer
     type: object
+  submission.CreateSubmissionDto:
+    properties:
+      payloadType:
+        allOf:
+        - $ref: '#/definitions/submission.PayloadType'
+        enum:
+        - URL
+        - FILE
+        example: URL
+      payloadUrl:
+        example: https://git.app.uib.no/student/exercise1.git
+        maxLength: 2048
+        type: string
+    required:
+    - payloadType
+    - payloadUrl
+    type: object
+  submission.PayloadType:
+    enum:
+    - URL
+    - FILE
+    type: string
+    x-enum-comments:
+      PayloadTypeFile: Reserved for uploaded documents; not accepted yet
+      PayloadTypeURL: Link to a git repository or externally hosted document
+    x-enum-descriptions:
+    - Link to a git repository or externally hosted document
+    - Reserved for uploaded documents; not accepted yet
+    x-enum-varnames:
+    - PayloadTypeURL
+    - PayloadTypeFile
+  submission.SubmissionAcceptedDto:
+    properties:
+      status:
+        example: QUEUED
+        type: string
+      submittedAt:
+        type: string
+      uuid:
+        example: a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11
+        type: string
+    type: object
   user.NewUserDto:
     properties:
       email:
@@ -328,8 +370,6 @@ definitions:
       username:
         maxLength: 100
         minLength: 2
-        type: string
-      uuid:
         type: string
     required:
     - password
@@ -728,6 +768,65 @@ paths:
       summary: Update course
       tags:
       - course
+  /course/{uuid}/content/{contentUuid}/submission:
+    post:
+      consumes:
+      - application/json
+      description: Stamps receipt time, verifies eligibility, and enqueues the submission
+        for asynchronous persistence.
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Content UUID
+        in: path
+        name: contentUuid
+        required: true
+        type: string
+      - description: Submission payload
+        in: body
+        name: submission
+        required: true
+        schema:
+          $ref: '#/definitions/submission.CreateSubmissionDto'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/submission.SubmissionAcceptedDto'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Submit assignment deliverable
+      tags:
+      - submission
   /course/{uuid}/enroll:
     delete:
       description: Removes the authenticated user's enrollment from the course

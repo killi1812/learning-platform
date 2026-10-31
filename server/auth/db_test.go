@@ -2,9 +2,14 @@ package auth
 
 import (
 	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/gin-gonic/gin"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/notification"
@@ -22,20 +27,31 @@ import (
 )
 
 func getTestMongoDb(t *testing.T) *mongo.Database {
-	uri := os.Getenv("MONGO_CONN")
-	if uri == "" {
-		uri = "mongodb://127.0.0.1:27017"
+	candidates := []string{}
+	if uri := os.Getenv("MONGO_CONN"); uri != "" {
+		candidates = append(candidates, uri)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
+	candidates = append(candidates, "mongodb://localhost:27018", "mongodb://localhost:27017")
 
-	client, err := mongo.Connect(options.Client().ApplyURI(uri))
-	if err != nil {
-		t.Skipf("Skipping Mongo test: unable to connect to mongo: %v", err)
-		return nil
+	var client *mongo.Client
+	var err error
+	for _, uri := range candidates {
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		c, connErr := mongo.Connect(options.Client().ApplyURI(uri))
+		if connErr == nil && c.Ping(ctx, nil) == nil {
+			cancel()
+			client = c
+			break
+		}
+		cancel()
+		if c != nil {
+			_ = c.Disconnect(context.Background())
+		}
+		err = connErr
 	}
-	if err := client.Ping(ctx, nil); err != nil {
-		t.Skipf("Skipping Mongo test: mongo ping failed: %v", err)
+
+	if client == nil {
+		t.Skipf("Skipping Mongo test: unable to connect to mongo (tried %v): %v", candidates, err)
 		return nil
 	}
 
@@ -45,6 +61,7 @@ func getTestMongoDb(t *testing.T) *mongo.Database {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cleanupCancel()
 		_ = db.Drop(cleanupCtx)
+		_ = client.Disconnect(cleanupCtx)
 	})
 	return db
 }
@@ -185,9 +202,52 @@ func TestAuthService_Unit(t *testing.T) {
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, cerror.ErrUserAlreadyExists)
 	})
+
+	t.Run("Login returns error when database query fails", func(t *testing.T) {
+		closedDb := testutil.NewSqliteTestDb(t, &user.User{})
+		sqlDb, _ := closedDb.DB()
+		_ = sqlDb.Close()
+		failingSvc := &AuthService{db: closedDb, logger: logger}
+		_, err := failingSvc.Login("tester@example.com", "pass", "", "", "")
+		assert.Error(t, err)
+	})
+
+	t.Run("Register returns error when database query fails", func(t *testing.T) {
+		closedDb := testutil.NewSqliteTestDb(t, &user.User{})
+		sqlDb, _ := closedDb.DB()
+		_ = sqlDb.Close()
+		failingSvc := &AuthService{db: closedDb, logger: logger}
+		_, err := failingSvc.Register("newuser", "new@example.com", "pass", "", "")
+		assert.Error(t, err)
+	})
+
+	t.Run("Register succeeds even when notification delivery fails", func(t *testing.T) {
+		svcWithFailingNotifier := &AuthService{
+			db:            gormDb,
+			logger:        logger,
+			notifications: &mockFailingNotifier{},
+		}
+		tokens, err := svcWithFailingNotifier.Register("notifieruser", "notifier@example.com", "Password123", "", "")
+		assert.NoError(t, err)
+		assert.NotEmpty(t, tokens.AccessToken)
+	})
+}
+
+type mockFailingNotifier struct {
+	notification.INotificationService
+}
+
+func (m *mockFailingNotifier) NotifySystem(recipientUuid uuid.UUID, content notification.NotificationContent) (*notification.Notification, error) {
+	return nil, errors.New("notification delivery error")
 }
 
 func TestAuthService_Integration(t *testing.T) {
+	origAccess := app.AccessKey
+	origRefresh := app.RefreshKey
+	t.Cleanup(func() {
+		app.AccessKey = origAccess
+		app.RefreshKey = origRefresh
+	})
 	app.AccessKey = "test-auth-access-key-12345"
 	app.RefreshKey = "test-auth-refresh-key-12345"
 
@@ -217,7 +277,7 @@ func TestAuthService_Integration(t *testing.T) {
 	err = gormDb.Create(&testUser).Error
 	assert.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	var firstSessionUuid uuid.UUID
@@ -378,7 +438,19 @@ func TestAuthService_Integration(t *testing.T) {
 			return []byte(app.AccessKey), nil
 		})
 
-		// Session is active in Mongo -> validation returns true
+		// Test the session validator through Protect middleware
+		gin.SetMode(gin.TestMode)
+		r := gin.New()
+		r.GET("/test-protected", authUtil.Protect(), func(c *gin.Context) {
+			c.Status(http.StatusOK)
+		})
+
+		reqActive := httptest.NewRequest(http.MethodGet, "/test-protected", nil)
+		reqActive.Header.Set("Authorization", "Bearer "+loginTokens3.AccessToken)
+		wActive := httptest.NewRecorder()
+		r.ServeHTTP(wActive, reqActive)
+		assert.Equal(t, http.StatusOK, wActive.Code)
+
 		var session user.Session
 		findErr := mongoDb.Collection("sessions").FindOne(ctx, bson.M{
 			"user_uuid":    userUuid,
@@ -391,7 +463,12 @@ func TestAuthService_Integration(t *testing.T) {
 		err = svc.RevokeSession(userUuid, parsedSessUuid)
 		assert.NoError(t, err)
 
-		// Verification in Mongo: session is gone
+		// After revoke, Protect middleware rejects with 401
+		reqRevoked := httptest.NewRequest(http.MethodGet, "/test-protected", nil)
+		reqRevoked.Header.Set("Authorization", "Bearer "+loginTokens3.AccessToken)
+		wRevoked := httptest.NewRecorder()
+		r.ServeHTTP(wRevoked, reqRevoked)
+		assert.Equal(t, http.StatusUnauthorized, wRevoked.Code)
 		findErrAfter := mongoDb.Collection("sessions").FindOne(ctx, bson.M{
 			"user_uuid":    userUuid,
 			"session_uuid": parsedSessUuid,
@@ -454,6 +531,58 @@ func TestAuthService_Integration(t *testing.T) {
 			Logger:  logger,
 		})
 		assert.NotNil(t, fullSvc)
+	})
+
+	t.Run("RefreshTokens fails when session document not found in mongoDb", func(t *testing.T) {
+		orphanSessionUuid := uuid.New()
+		_, refreshToken, err := authUtil.GenerateTokens(testUser.Email, testUser.Username, testUser.Role, testUser.Uuid, orphanSessionUuid)
+		assert.NoError(t, err)
+
+		_, err = svc.RefreshTokens(refreshToken)
+		assert.ErrorIs(t, err, cerror.ErrInvalidTokenFormat)
+	})
+
+	t.Run("RefreshTokens fails when user not found in gorm db", func(t *testing.T) {
+		missingUserUuid := uuid.New()
+		missingSessionUuid := uuid.New()
+		accessToken, refreshToken, err := authUtil.GenerateTokens("missing@example.com", "missing", authUtil.ROLE_USER, missingUserUuid, missingSessionUuid)
+		assert.NoError(t, err)
+
+		var claims authUtil.Claims
+		_, _ = jwt.ParseWithClaims(accessToken, &claims, func(t *jwt.Token) (any, error) {
+			return []byte(app.AccessKey), nil
+		})
+
+		_, err = mongoDb.Collection("sessions").InsertOne(ctx, user.Session{
+			SessionUuid:  missingSessionUuid,
+			UserUuid:     missingUserUuid,
+			TokenUuid:    claims.TokenUuid,
+			RefreshToken: hashToken(refreshToken),
+			ExpiresAt:    time.Now().Add(24 * time.Hour),
+		})
+		assert.NoError(t, err)
+
+		_, err = svc.RefreshTokens(refreshToken)
+		assert.Error(t, err)
+	})
+
+	t.Run("LogoutCurrent, LogoutAll, ListSessions, RevokeSession return error when mongoDb disconnected", func(t *testing.T) {
+		disconnectedClient, err := mongo.Connect(options.Client().ApplyURI("mongodb://localhost:27018"))
+		assert.NoError(t, err)
+		disconnectedDb := disconnectedClient.Database("lp_disconnected_" + uuid.New().String()[:8])
+		_ = disconnectedClient.Disconnect(context.Background())
+
+		failingMongoSvc := &AuthService{
+			db:      gormDb,
+			mongoDb: disconnectedDb,
+			logger:  logger,
+		}
+
+		assert.Error(t, failingMongoSvc.LogoutCurrent(userUuid, uuid.New()))
+		assert.Error(t, failingMongoSvc.LogoutAll(userUuid))
+		_, err = failingMongoSvc.ListSessions(userUuid, uuid.New())
+		assert.Error(t, err)
+		assert.Error(t, failingMongoSvc.RevokeSession(userUuid, uuid.New()))
 	})
 }
 

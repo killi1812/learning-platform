@@ -1,17 +1,28 @@
 package submission
 
 import (
+	"time"
+
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/content"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/course"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
+)
+
+// PayloadType identifies how a submission's deliverable is provided.
+type PayloadType string
+
+const (
+	PayloadTypeURL  PayloadType = "URL"  // Link to a git repository or externally hosted document
+	PayloadTypeFile PayloadType = "FILE" // Reserved for uploaded documents; not accepted yet
 )
 
 // Grade represents the evaluation score and instructor feedback for a submission.
 type Grade struct {
 	gorm.Model
 	SubmissionID       uint        `json:"submissionId" gorm:"not null;uniqueIndex"`
-	Submission         *Submission `json:"submission,omitempty" gorm:"foreignKey:SubmissionID;constraint:OnDelete:CASCADE;"`
+	Submission         *Submission `json:"submission,omitempty" gorm:"foreignKey:SubmissionID"`
 	Score              float64     `json:"score" gorm:"type:decimal(5,2);not null"`
 	Feedback           string      `json:"feedback,omitempty" gorm:"type:text"`
 	IsVisibleToStudent bool        `json:"isVisibleToStudent" gorm:"not null;default:false"`
@@ -22,12 +33,22 @@ type Grade struct {
 // Submission records student responses or deliverables for quizzes, coding exercises, and assignments.
 type Submission struct {
 	gorm.Model
-	ContentID  uint             `json:"contentId" gorm:"not null;index"`
-	Content    *content.Content `json:"content,omitempty" gorm:"foreignKey:ContentID;constraint:OnDelete:CASCADE;"`
-	Attempt    int              `json:"attempt" gorm:"not null;default:1"`
-	IsLate     bool             `json:"isLate" gorm:"not null;default:false"`
-	PayloadURL string           `json:"payloadUrl" gorm:"type:text;not null"`
-	Grade      *Grade           `json:"grade,omitempty" gorm:"foreignKey:SubmissionID;constraint:OnDelete:CASCADE;"`
+	Uuid        uuid.UUID        `json:"uuid" gorm:"type:uuid;uniqueIndex;not null"`
+	ContentID   uint             `json:"contentId" gorm:"not null;index"`
+	Content     *content.Content `json:"content,omitempty" gorm:"foreignKey:ContentID;constraint:OnDelete:CASCADE;"`
+	Attempt     int              `json:"attempt" gorm:"not null;default:1"`
+	IsLate      bool             `json:"isLate" gorm:"not null;default:false"`
+	PayloadType PayloadType      `json:"payloadType" gorm:"type:varchar(20);not null;default:'URL'"`
+	PayloadURL  string           `json:"payloadUrl" gorm:"type:text;not null"`
+	SubmittedAt time.Time        `json:"submittedAt" gorm:"not null;index"`
+	Grade       *Grade           `json:"grade,omitempty" gorm:"foreignKey:SubmissionID;constraint:OnDelete:CASCADE;"`
+}
+
+func (s *Submission) BeforeCreate(tx *gorm.DB) error {
+	if s.Uuid == uuid.Nil {
+		s.Uuid = uuid.New()
+	}
+	return nil
 }
 
 // GroupSubmission
