@@ -175,7 +175,7 @@ func TestContentService_UploadFile_Failures(t *testing.T) {
 	failingDb := testutil.NewSqliteTestDb(t, &user.User{}, &course.Course{}, &course.Module{}, &content.Content{}, &content.File{}, &content.StudentInteraction{})
 	require.NoError(t, failingDb.Create(c).Error)
 	require.NoError(t, failingDb.Create(m).Error)
-	failingSvc := content.NewContentService(failingDb, failingStorage, nil)
+	failingSvc := content.NewContentService(failingDb, failingStorage, zap.NewNop().Sugar())
 
 	_, err = failingSvc.UploadFile(
 		c.Uuid, m.Uuid,
@@ -272,7 +272,7 @@ func TestContentService_GetFileStream(t *testing.T) {
 	db := testutil.NewSqliteTestDb(t, &user.User{}, &course.Course{}, &course.Module{}, &content.Content{}, &content.File{}, &content.StudentInteraction{})
 	require.NoError(t, db.Create(c).Error)
 	require.NoError(t, db.Create(m).Error)
-	failingSvc := content.NewContentService(db, failingStorage, nil)
+	failingSvc := content.NewContentService(db, failingStorage, zap.NewNop().Sugar())
 	spFail, err := failingSvc.UploadFile(c.Uuid, m.Uuid, "Will Fail", "fail.txt", 4, "text/plain", strings.NewReader("test"), "", "")
 	require.NoError(t, err)
 
@@ -331,7 +331,7 @@ func TestContentService_DeleteFile(t *testing.T) {
 	db := testutil.NewSqliteTestDb(t, &user.User{}, &course.Course{}, &course.Module{}, &content.Content{}, &content.File{}, &content.StudentInteraction{})
 	require.NoError(t, db.Create(c).Error)
 	require.NoError(t, db.Create(m).Error)
-	failingSvc := content.NewContentService(db, failingStorage, nil)
+	failingSvc := content.NewContentService(db, failingStorage, zap.NewNop().Sugar())
 
 	sp2, err := failingSvc.UploadFile(c.Uuid, m.Uuid, "Delete Warn", "del.txt", 3, "text/plain", strings.NewReader("abc"), "", "")
 	require.NoError(t, err)
@@ -430,26 +430,21 @@ func TestContentService_StudentPrerequisitesAndVisibility(t *testing.T) {
 	gotHidden, err := svc.GetFile(c.Uuid, m1.Uuid, pageHidden.Content.Uuid, uuid.Nil, true)
 	require.NoError(t, err)
 	assert.NotNil(t, gotHidden)
-
-=======
-	"github.com/google/uuid"
-	"github.com/stretchr/testify/assert"
-	"go.uber.org/zap"
-)
+}
 
 func TestContentService_CreateAssignmentAndGet(t *testing.T) {
 	db := testutil.NewSqliteTestDb(t,
 		&course.Course{},
 		&course.Module{},
 		&content.Content{},
-		&content.StaticPage{},
+		&content.File{},
 		&content.Assignment{},
 		&content.Quiz{},
 		&content.Question{},
 		&content.CodingExercise{},
 	)
 
-	svc := content.NewContentService(db, zap.NewNop().Sugar())
+	svc := content.NewContentService(db, storage.NewMemoryStorageService(), zap.NewNop().Sugar())
 
 	c := &course.Course{Title: "DAT250", Term: course.TermAutumn, Year: 2026}
 	assert.NoError(t, db.Create(c).Error)
@@ -507,9 +502,6 @@ func TestContentService_CreateAssignmentAndGet(t *testing.T) {
 		_, err := svc.GetAssignmentByModule(uuid.New())
 		assert.ErrorIs(t, err, content.ErrContentNotFound)
 	})
-<<<<<<< HEAD
->>>>>>> 56122a2 (Add async assignment submissions with RabbitMQ)
-=======
 
 	t.Run("CreateAssignment fails when assignment creation fails inside transaction", func(t *testing.T) {
 		cnt := &content.Content{
@@ -548,5 +540,4 @@ func TestContentService_CreateAssignmentAndGet(t *testing.T) {
 		_, err = svc.GetAssignmentByModule(m.Uuid)
 		assert.Error(t, err)
 	})
->>>>>>> b1c7a53 (Fix production compose, RabbitMQ client, and tests)
 }

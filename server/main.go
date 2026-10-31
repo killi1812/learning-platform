@@ -41,7 +41,6 @@ func main() {
 	app.Provide(content.NewContentService)
 	app.Provide(notification.NewHub)
 	app.Provide(notification.NewNotificationService)
-	app.Provide(content.NewContentService)
 	app.Provide(submission.NewSubmissionService)
 	app.Provide(submission.NewSubmissionPublisher)
 
@@ -65,7 +64,6 @@ func main() {
 	// Content
 	app.RegisterModel(&content.Content{})
 	app.RegisterModel(&content.File{})
-	app.RegisterModel(&content.StaticPage{})
 	app.RegisterModel(&content.Assignment{})
 	app.RegisterModel(&content.Quiz{})
 	app.RegisterModel(&content.Question{})

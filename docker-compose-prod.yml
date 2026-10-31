@@ -38,6 +38,11 @@ services:
     command: "server -filer"
     volumes:
       - prod_seaweedfs_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8888/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       default:
         aliases:
@@ -85,23 +90,9 @@ services:
       mongo:
         condition: service_started
       seaweedfs:
-        condition: service_started
-
-  caddy:
-    image: caddy:alpine
-    container_name: prod-caddy
-    restart: always
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - prod_caddy_data:/data
-      - prod_caddy_config:/config
-    depends_on:
-      - app
-    rabbitmq:
-      condition: service_healthy
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
 volumes:
   prod_postgres_data:

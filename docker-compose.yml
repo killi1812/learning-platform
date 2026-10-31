@@ -35,10 +35,15 @@ services:
     container_name: dev-seaweedfs
     restart: unless-stopped
     ports:
-      - "${SEAWEEDFS_FILER_PORT:-8888}:8888"
+      - "${SEAWEEDFS_FILER_PORT}:8888"
     command: "server -filer"
     volumes:
       - dev_seaweedfs_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8888/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       default:
         aliases:

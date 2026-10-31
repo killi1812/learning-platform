@@ -48,7 +48,7 @@ type Content struct {
 	VisibleFrom  *time.Time     `json:"visibleFrom,omitempty"`
 	VisibleUntil *time.Time     `json:"visibleUntil,omitempty"`
 
-	StaticPage   *StaticPage          `json:"staticPage,omitempty" gorm:"foreignKey:ContentID;constraint:OnDelete:CASCADE;"`
+	File         *File                `json:"file,omitempty" gorm:"foreignKey:ContentID;constraint:OnDelete:CASCADE;"`
 	Assignment   *Assignment          `json:"assignment,omitempty" gorm:"foreignKey:ContentID;constraint:OnDelete:CASCADE;"`
 	Interactions []StudentInteraction `json:"interactions,omitempty" gorm:"foreignKey:ContentID;constraint:OnDelete:CASCADE;"`
 }
@@ -70,14 +70,6 @@ type File struct {
 	StorageKey  string   `json:"storageKey,omitempty" gorm:"type:varchar(512)"`
 	SourceURL   string   `json:"sourceUrl,omitempty" gorm:"type:text"`
 	RichText    string   `json:"richText,omitempty" gorm:"type:text"`
-}
-
-// StaticPage represents course material embedded via iframe URL and/or formatted rich text.
-type StaticPage struct {
-	ContentID uint     `json:"contentId" gorm:"primaryKey;autoIncrement:false"`
-	Content   *Content `json:"content,omitempty" gorm:"foreignKey:ContentID;constraint:OnDelete:CASCADE;"`
-	SourceURL string   `json:"sourceUrl" gorm:"type:text;not null"` // Target URL rendered directly in client iframe
-	RichText  string   `json:"richText,omitempty" gorm:"type:text"` // Optional text / description / markdown fallback
 }
 
 // Assignment is the base for every submittable content item (hand-ins, quizzes, coding exercises).

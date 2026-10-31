@@ -10,6 +10,7 @@ import (
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/testutil"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/storage"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -104,6 +105,7 @@ func TestSeedInsert(t *testing.T) {
 		app.Test()
 		app.Provide(func() *gorm.DB { return db })
 		app.Provide(zap.S)
+		app.Provide(func() storage.IStorageService { return storage.NewMemoryStorageService() })
 		app.Provide(user.NewUserCrudService)
 		app.Provide(course.NewCourseService)
 		app.Provide(content.NewContentService)
@@ -136,6 +138,7 @@ func TestSeedInsert(t *testing.T) {
 		app.Test()
 		app.Provide(func() *gorm.DB { return db })
 		app.Provide(zap.S)
+		app.Provide(func() storage.IStorageService { return storage.NewMemoryStorageService() })
 		app.Provide(user.NewUserCrudService)
 		app.Provide(course.NewCourseService)
 		app.Provide(content.NewContentService)
@@ -194,6 +197,7 @@ func TestSeedInsert(t *testing.T) {
 		app.Test()
 		app.Provide(func() *gorm.DB { return db })
 		app.Provide(zap.S)
+		app.Provide(func() storage.IStorageService { return storage.NewMemoryStorageService() })
 		app.Provide(user.NewUserCrudService)
 		app.Provide(course.NewCourseService)
 		app.Provide(content.NewContentService)

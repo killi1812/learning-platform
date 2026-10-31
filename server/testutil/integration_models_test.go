@@ -27,7 +27,6 @@ func TestAllLmsModels_EndToEndAutoMigrateAndWorkflow(t *testing.T) {
 		// Content aggregate
 		&content.Content{},
 		&content.File{},
-		&content.StaticPage{},
 		&content.Assignment{},
 		&content.Quiz{},
 		&content.Question{},

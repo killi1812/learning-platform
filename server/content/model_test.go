@@ -21,7 +21,6 @@ func TestContentAggregate_ClassTableInheritanceAndPreloads(t *testing.T) {
 		&course.Module{},
 		&content.Content{},
 		&content.File{},
-		&content.StaticPage{},
 		&content.Assignment{},
 		&content.Quiz{},
 		&content.Question{},
@@ -64,10 +63,9 @@ func TestContentAggregate_ClassTableInheritanceAndPreloads(t *testing.T) {
 		Type:     content.TypeFile,
 	}
 	assert.NoError(t, db.Create(cntPage).Error)
-	page := &content.File{}
 	assert.NotEqual(t, uuid.Nil, cntPage.Uuid, "uuids don't match")
 
-	page := &content.StaticPage{
+	page := &content.File{
 		ContentID: cntPage.ID,
 		SourceURL: "https://docs.example.com/syllabus-embed.html",
 		RichText:  "Embedded course syllabus iframe",
@@ -164,6 +162,7 @@ func TestContentAggregate_ClassTableInheritanceAndPreloads(t *testing.T) {
 	var foundPage content.Content
 	err := db.Preload("File").Preload("Module.Course").Preload("Interactions").First(&foundPage, cntPage.ID).Error
 	assert.NoError(t, err)
+	assert.NotNil(t, foundPage.File)
 	assert.Equal(t, "https://docs.example.com/syllabus-embed.html", foundPage.File.SourceURL)
 	assert.Len(t, foundPage.Interactions, 1)
 

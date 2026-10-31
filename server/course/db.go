@@ -55,9 +55,6 @@ type CourseService struct {
 }
 
 func NewCourseService(db *gorm.DB, storage storage.IStorageService, logger *zap.SugaredLogger) ICourseService {
-	if logger == nil {
-		logger = zap.S()
-	}
 	return &CourseService{
 		db:      db,
 		storage: storage,

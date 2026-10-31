@@ -652,4 +652,3 @@ func TestNewAuthCtn(t *testing.T) {
 	ctn := NewAuthCtn(&mockAuthService{}, zap.NewNop().Sugar())
 	assert.NotNil(t, ctn)
 }
-

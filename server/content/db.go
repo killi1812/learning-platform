@@ -82,7 +82,6 @@ func (s *ContentService) CreateAssignment(moduleUuid uuid.UUID, cnt *Content, as
 	}
 
 	cnt.ModuleID = m.ID
-	cnt.Assignment = asgn
 	cnt.Type = TypeAssignment
 
 	err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -112,7 +111,7 @@ func (s *ContentService) GetContent(contentUuid uuid.UUID) (*Content, error) {
 	err := s.db.
 		Preload("Assignment.Quiz.Questions").
 		Preload("Assignment.CodingExercise").
-		Preload("StaticPage").
+		Preload("File").
 		Where("uuid = ?", contentUuid).
 		First(&cnt).Error
 	if err != nil {
@@ -132,15 +131,16 @@ func (s *ContentService) findFile(moduleID uint, contentUuid uuid.UUID) (*File, 
 		Preload("Module.Course").
 		First(&cnt).Error
 	if err != nil {
-		// TODO: log
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrContentNotFound
+		}
 		return nil, err
 	}
-	if cnt.StaticPage == nil {
+	if cnt.File == nil {
 		return nil, ErrContentNotFound
 	}
-	// cnt.StaticPage.Content.File.Content = &cnt
-	// return cnt.File, nil
-	return nil, nil
+	cnt.File.Content = &cnt
+	return cnt.File, nil
 }
 
 func (s *ContentService) UploadFile(
@@ -348,15 +348,14 @@ func (s *ContentService) ListFiles(courseUuid, moduleUuid, userUuid uuid.UUID, i
 		return nil, err
 	}
 
-	// files := make([]File, 0, len(contents))
-	// for i := range contents {
-	// 	if contents[i].File != nil {
-	// 		contents[i].File.Content = &contents[i]
-	// 		files = append(files, *contents[i].File)
-	// 	}
-	// }
-	// return files, nil
-	return nil, nil
+	files := make([]File, 0, len(contents))
+	for i := range contents {
+		if contents[i].File != nil {
+			contents[i].File.Content = &contents[i]
+			files = append(files, *contents[i].File)
+		}
+	}
+	return files, nil
 }
 
 func (s *ContentService) GetFileStream(courseUuid, moduleUuid, contentUuid, userUuid uuid.UUID, isPrivileged bool) (io.ReadCloser, *File, error) {
@@ -433,5 +432,5 @@ func (s *ContentService) GetAssignmentByModule(moduleUuid uuid.UUID) (*Content, 
 		}
 		return nil, err
 	}
-	return nil, nil
+	return &cnt, nil
 }

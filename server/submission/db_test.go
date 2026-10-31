@@ -23,7 +23,7 @@ func TestSubmissionService_ResolveTarget(t *testing.T) {
 		&course.Group{},
 		&course.Module{},
 		&content.Content{},
-		&content.StaticPage{},
+		&content.File{},
 		&content.Assignment{},
 		&content.Quiz{},
 		&content.CodingExercise{},
@@ -162,15 +162,15 @@ func TestSubmissionService_ResolveTarget(t *testing.T) {
 		assert.ErrorIs(t, err, submission.ErrNotEnrolled)
 	})
 
-	t.Run("Fails when content is a static page", func(t *testing.T) {
+	t.Run("Fails when content is a file", func(t *testing.T) {
 		cntStatic := &content.Content{
 			ModuleID: m.ID,
-			Title:    "Static Page",
+			Title:    "File Material",
 			Position: 3,
-			Type:     content.TypeStaticPage,
+			Type:     content.TypeFile,
 		}
 		assert.NoError(t, db.Create(cntStatic).Error)
-		assert.NoError(t, db.Create(&content.StaticPage{
+		assert.NoError(t, db.Create(&content.File{
 			ContentID: cntStatic.ID,
 			SourceURL: "https://example.com",
 		}).Error)
