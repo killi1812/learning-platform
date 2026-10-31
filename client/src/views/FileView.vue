@@ -128,8 +128,7 @@
 </template>
 
 <script setup lang="ts">
-import '@vue-office/docx/lib/index.css'
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, onErrorCaptured } from 'vue'
 import { useRouter } from 'vue-router'
 import { useToast } from '@/composables/useToast'
 import VueOfficePptx from '@vue-office/pptx'
@@ -234,6 +233,12 @@ function onPptxError(err: unknown) {
   previewFailed.value = true
 }
 
+onErrorCaptured(err => {
+  console.warn('Preview render error caught by boundary:', err)
+  previewFailed.value = true
+  return false
+})
+
 async function loadPage() {
   loading.value = true
   error.value = undefined
@@ -247,8 +252,13 @@ async function loadPage() {
     if (fetchedPage.fileName) {
       const blob = await getFilePreviewBlob(props.courseUuid, props.moduleUuid, props.fileUuid)
       if (!isMounted) return
-      previewData.value = blob
       previewBlobUrl.value = URL.createObjectURL(blob)
+
+      if (isPptx.value || isDocx.value) {
+        previewData.value = await blob.arrayBuffer()
+      } else {
+        previewData.value = blob
+      }
 
       if (isText.value) {
         textContent.value = await blob.text()
@@ -305,6 +315,25 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   overflow: auto;
+}
+
+:deep(.vue-office-docx) {
+  height: 100%;
+  overflow-y: auto;
+}
+
+:deep(.vue-office-docx .docx-wrapper > section.docx) {
+  margin-bottom: 5px;
+}
+
+@media screen and (max-width: 800px) {
+  :deep(.vue-office-docx .docx-wrapper) {
+    padding: 10px;
+  }
+  :deep(.vue-office-docx .docx-wrapper > section.docx) {
+    padding: 10px !important;
+    width: 100% !important;
+  }
 }
 
 .img-preview {
