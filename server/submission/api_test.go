@@ -156,6 +156,18 @@ func TestSubmissionCtn_Submit(t *testing.T) {
 			"payloadUrl":  "not-a-valid-url",
 		})
 		assert.Equal(t, http.StatusBadRequest, rec.Code)
+
+		recJS := doReq(r, http.MethodPost, path, auth, map[string]string{
+			"payloadType": "URL",
+			"payloadUrl":  "javascript:alert(1)",
+		})
+		assert.Equal(t, http.StatusBadRequest, recJS.Code)
+
+		recFile := doReq(r, http.MethodPost, path, auth, map[string]string{
+			"payloadType": "URL",
+			"payloadUrl":  "file:///etc/passwd",
+		})
+		assert.Equal(t, http.StatusBadRequest, recFile.Code)
 	})
 
 	t.Run("400 Bad Request on unsupported FILE payloadType", func(t *testing.T) {
@@ -221,6 +233,18 @@ func TestSubmissionCtn_Submit(t *testing.T) {
 		r := setupTestRouter(mockSvc, &mockPublisher{})
 		rec := doReq(r, http.MethodPost, path, auth, validPayload)
 		assert.Equal(t, http.StatusForbidden, rec.Code)
+	})
+
+	t.Run("403 Forbidden when prerequisite module is locked", func(t *testing.T) {
+		mockSvc := &mockSubmissionService{
+			resolveTargetFunc: func(courseUuid, contentUuid, userUuid uuid.UUID, submittedAt time.Time) (*submission.SubmissionTarget, error) {
+				return nil, submission.ErrModuleLocked
+			},
+		}
+		r := setupTestRouter(mockSvc, &mockPublisher{})
+		rec := doReq(r, http.MethodPost, path, auth, validPayload)
+		assert.Equal(t, http.StatusForbidden, rec.Code)
+		assert.Contains(t, rec.Body.String(), "prerequisite")
 	})
 
 	t.Run("500 Internal Server Error on unexpected service error", func(t *testing.T) {

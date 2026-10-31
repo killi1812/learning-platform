@@ -9,7 +9,7 @@ import (
 // CreateSubmissionDto represents the request payload sent by a student when submitting an assignment.
 type CreateSubmissionDto struct {
 	PayloadType PayloadType `json:"payloadType" binding:"required,oneof=URL FILE" example:"URL"`
-	PayloadURL  string      `json:"payloadUrl" binding:"required,url,max=2048" example:"https://git.app.uib.no/student/exercise1.git"`
+	PayloadURL  string      `json:"payloadUrl" binding:"required,http_url,max=2048" example:"https://git.app.uib.no/student/exercise1.git"`
 }
 
 // SubmissionAcceptedDto is the immediate 202 response confirming the submission has been queued.

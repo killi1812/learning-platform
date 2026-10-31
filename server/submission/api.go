@@ -48,7 +48,8 @@ func (ctn *SubmissionCtn) handleError(c *gin.Context, err error, fallbackMsg str
 		errors.Is(err, ErrAssignmentTypeUnsupported),
 		errors.Is(err, ErrDeadlinePassed):
 		ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
-	case errors.Is(err, ErrNotEnrolled):
+	case errors.Is(err, ErrNotEnrolled),
+		errors.Is(err, ErrModuleLocked):
 		ginutil.RespondWithError(c, http.StatusForbidden, err.Error())
 	default:
 		ctn.logger.Errorf("%s: %v", fallbackMsg, err)

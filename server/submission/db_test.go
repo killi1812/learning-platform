@@ -27,6 +27,7 @@ func TestSubmissionService_ResolveTarget(t *testing.T) {
 		&content.Assignment{},
 		&content.Quiz{},
 		&content.CodingExercise{},
+		&content.StudentInteraction{},
 		&submission.Submission{},
 		&submission.IndividualSubmission{},
 	)
@@ -241,6 +242,51 @@ func TestSubmissionService_ResolveTarget(t *testing.T) {
 		}).Error)
 
 		target, err := svc.ResolveTarget(c.Uuid, cntPastAcceptsLate.Uuid, student.Uuid, time.Now())
+		assert.NoError(t, err)
+		assert.NotNil(t, target)
+	})
+
+	t.Run("Fails when prerequisite module is locked, succeeds when completed", func(t *testing.T) {
+		mDep := &course.Module{
+			CourseID:    c.ID,
+			Title:       "Week 2 (Locked)",
+			Position:    2,
+			DependsOnID: &m.ID,
+		}
+		assert.NoError(t, db.Create(mDep).Error)
+
+		cntInLockedMod := &content.Content{
+			ModuleID: mDep.ID,
+			Title:    "Assignment in Locked Mod",
+			Position: 1,
+			Type:     content.TypeAssignment,
+		}
+		assert.NoError(t, db.Create(cntInLockedMod).Error)
+		assert.NoError(t, db.Create(&content.Assignment{
+			ContentID:              cntInLockedMod.ID,
+			Type:                   content.AssignmentHandIn,
+			Deadline:               &openDeadline,
+			AcceptsLateSubmissions: false,
+		}).Error)
+
+		// Student has not completed all items in module m -> ErrModuleLocked
+		_, err := svc.ResolveTarget(c.Uuid, cntInLockedMod.Uuid, student.Uuid, time.Now())
+		assert.ErrorIs(t, err, submission.ErrModuleLocked)
+
+		// Student completes all content items in prerequisite module m
+		var allContents []content.Content
+		assert.NoError(t, db.Where("module_id = ?", m.ID).Find(&allContents).Error)
+		now := time.Now()
+		for _, item := range allContents {
+			assert.NoError(t, db.Create(&content.StudentInteraction{
+				UserID:      student.ID,
+				ContentID:   item.ID,
+				CompletedAt: &now,
+			}).Error)
+		}
+
+		// Now student can resolve target in dependent module
+		target, err := svc.ResolveTarget(c.Uuid, cntInLockedMod.Uuid, student.Uuid, time.Now())
 		assert.NoError(t, err)
 		assert.NotNil(t, target)
 	})

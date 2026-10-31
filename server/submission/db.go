@@ -19,6 +19,7 @@ var (
 	ErrAssignmentTypeUnsupported = errors.New("submissions for this assignment type are not supported yet")
 	ErrNotEnrolled               = errors.New("user is not enrolled as a student in this course")
 	ErrDeadlinePassed            = errors.New("deadline has passed and late submissions are not accepted")
+	ErrModuleLocked              = errors.New("module is locked because prerequisite module has not been completed")
 )
 
 // SubmissionTarget contains database primary IDs for publishing the submission message.
@@ -56,6 +57,7 @@ func (s *SubmissionService) ResolveTarget(courseUuid, contentUuid, userUuid uuid
 		Joins("JOIN modules ON modules.id = contents.module_id").
 		Joins("JOIN courses ON courses.id = modules.course_id").
 		Preload("Assignment").
+		Preload("Module").
 		Where("contents.uuid = ? AND courses.uuid = ?", contentUuid, courseUuid).
 		First(&cnt).Error
 	if err != nil {
@@ -90,6 +92,27 @@ func (s *SubmissionService) ResolveTarget(courseUuid, contentUuid, userUuid uuid
 			return nil, ErrNotEnrolled
 		}
 		return nil, err
+	}
+
+	if cnt.Module != nil && cnt.Module.DependsOnID != nil {
+		depID := *cnt.Module.DependsOnID
+		var totalContents int64
+		if err := s.db.Model(&content.Content{}).Where("module_id = ?", depID).Count(&totalContents).Error; err != nil {
+			return nil, err
+		}
+		if totalContents > 0 {
+			var completedContents int64
+			err := s.db.Model(&content.StudentInteraction{}).
+				Joins("JOIN contents ON contents.id = student_interactions.content_id").
+				Where("contents.module_id = ? AND student_interactions.user_id = ? AND student_interactions.completed_at IS NOT NULL", depID, u.ID).
+				Count(&completedContents).Error
+			if err != nil {
+				return nil, err
+			}
+			if completedContents < totalContents {
+				return nil, ErrModuleLocked
+			}
+		}
 	}
 
 	var enrollment course.Enrollment
