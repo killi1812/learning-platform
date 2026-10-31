@@ -706,6 +706,8 @@ import {
   deleteCourse,
 } from '@/api/course'
 import { listFiles, uploadFile, updateFile, deleteFile } from '@/api/content'
+import { isAxiosError } from 'axios'
+import { getApiErrorMessage } from '@/api/client'
 import type { Course, Module, Enrollment, UpdateCoursePayload } from '@/types/course'
 import type { FileUpload } from '@/types/content'
 
@@ -820,8 +822,12 @@ async function loadAllModulePages() {
         pagesMap[mod.uuid] = await listFiles(resolvedCourseUuid.value, mod.uuid)
       } catch (err: unknown) {
         pagesMap[mod.uuid] = []
-        const errMsg = err instanceof Error ? err.message : String(err)
-        if (errMsg.toLowerCase().includes('prerequisite') || errMsg.includes('403')) {
+        const errMsg = getApiErrorMessage(err, '')
+        const is403 = isAxiosError(err) && err.response?.status === 403
+        if (
+          (is403 && (errMsg.toLowerCase().includes('prerequisite') || !!mod.dependsOn)) ||
+          errMsg.toLowerCase().includes('prerequisite')
+        ) {
           lockedMap[mod.uuid] = true
         } else {
           hasError = true

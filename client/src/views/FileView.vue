@@ -128,7 +128,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, onErrorCaptured } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, onErrorCaptured } from 'vue'
 import { useRouter } from 'vue-router'
 import { useToast } from '@/composables/useToast'
 import VueOfficePptx from '@vue-office/pptx'
@@ -252,6 +252,12 @@ async function loadPage() {
     if (fetchedPage.fileName) {
       const blob = await getFilePreviewBlob(props.courseUuid, props.moduleUuid, props.fileUuid)
       if (!isMounted) return
+
+      if (previewBlobUrl.value) {
+        URL.revokeObjectURL(previewBlobUrl.value)
+        previewBlobUrl.value = undefined
+      }
+
       previewBlobUrl.value = URL.createObjectURL(blob)
 
       if (isPptx.value || isDocx.value) {
@@ -288,6 +294,15 @@ onMounted(() => {
   isMounted = true
   loadPage()
 })
+
+watch(
+  () => props.fileUuid,
+  (newUuid, oldUuid) => {
+    if (newUuid && newUuid !== oldUuid) {
+      loadPage()
+    }
+  },
+)
 
 onUnmounted(() => {
   isMounted = false
