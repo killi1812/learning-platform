@@ -22,7 +22,7 @@ const (
 type Grade struct {
 	gorm.Model
 	SubmissionID       uint        `json:"submissionId" gorm:"not null;uniqueIndex"`
-	Submission         *Submission `json:"submission,omitempty" gorm:"foreignKey:SubmissionID;constraint:OnDelete:CASCADE;"`
+	Submission         *Submission `json:"submission,omitempty" gorm:"foreignKey:SubmissionID"`
 	Score              float64     `json:"score" gorm:"type:decimal(5,2);not null"`
 	Feedback           string      `json:"feedback,omitempty" gorm:"type:text"`
 	IsVisibleToStudent bool        `json:"isVisibleToStudent" gorm:"not null;default:false"`

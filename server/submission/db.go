@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var (
@@ -159,6 +160,7 @@ func (s *SubmissionService) SaveFromMessage(msg SubmissionMessage) (*IndividualS
 		// Compute attempt number for this student on this assignment
 		var maxAttempt int
 		row := tx.Model(&IndividualSubmission{}).
+			Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("content_id = ? AND user_id = ?", msg.ContentID, msg.UserID).
 			Select("COALESCE(MAX(attempt), 0)").
 			Row()
@@ -186,23 +188,19 @@ func (s *SubmissionService) SaveFromMessage(msg SubmissionMessage) (*IndividualS
 			return err
 		}
 
-		var inter content.StudentInteraction
-		interErr := tx.Where("user_id = ? AND content_id = ?", msg.UserID, msg.ContentID).First(&inter).Error
-		if errors.Is(interErr, gorm.ErrRecordNotFound) {
-			inter = content.StudentInteraction{
-				UserID:      msg.UserID,
-				UserEmail:   msg.UserEmail,
-				ContentID:   msg.ContentID,
-				CompletedAt: &msg.SubmittedAt,
-			}
-			if err := tx.Create(&inter).Error; err != nil {
-				return fmt.Errorf("failed to record interaction: %w", err)
-			}
-		} else if interErr == nil && inter.CompletedAt == nil {
-			inter.CompletedAt = &msg.SubmittedAt
-			if err := tx.Save(&inter).Error; err != nil {
-				return fmt.Errorf("failed to update interaction: %w", err)
-			}
+		inter := content.StudentInteraction{
+			UserID:      msg.UserID,
+			UserEmail:   msg.UserEmail,
+			ContentID:   msg.ContentID,
+			CompletedAt: &msg.SubmittedAt,
+		}
+		if interErr := tx.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "user_id"}, {Name: "content_id"}},
+			DoUpdates: clause.Assignments(map[string]any{
+				"completed_at": gorm.Expr("COALESCE(student_interactions.completed_at, excluded.completed_at)"),
+			}),
+		}).Create(&inter).Error; interErr != nil {
+			return fmt.Errorf("failed to record interaction: %w", interErr)
 		}
 
 		return nil

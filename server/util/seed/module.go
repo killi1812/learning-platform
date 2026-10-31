@@ -31,7 +31,7 @@ func seedModules(courses []*course.Course) ([]*course.Module, error) {
 			return nil
 		}
 
-		title1 := fmt.Sprintf("Week 1 - %s Introduction", crs.Title[:6])
+		title1 := fmt.Sprintf("Week 1 - %s Introduction", safePrefix(crs.Title, 6))
 		mod1 := findMod(title1)
 		if mod1 == nil {
 			var err error
@@ -45,7 +45,7 @@ func seedModules(courses []*course.Course) ([]*course.Module, error) {
 		}
 		allModules = append(allModules, mod1)
 
-		title2 := fmt.Sprintf("Week 2 - %s Deep Dive", crs.Title[:6])
+		title2 := fmt.Sprintf("Week 2 - %s Deep Dive", safePrefix(crs.Title, 6))
 		mod2 := findMod(title2)
 		if mod2 == nil {
 			var err error

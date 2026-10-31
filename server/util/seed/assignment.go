@@ -9,6 +9,14 @@ import (
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/course"
 )
 
+func safePrefix(s string, n int) string {
+	r := []rune(s)
+	if len(r) > n {
+		return string(r[:n])
+	}
+	return s
+}
+
 // seedAssignments seeds 1 assignment per module (or retrieves existing ones) and returns them.
 func seedAssignments(modules []*course.Module) ([]*content.Content, error) {
 	var contentService content.IContentService
@@ -31,7 +39,7 @@ func seedAssignments(modules []*course.Module) ([]*content.Content, error) {
 
 		if i%2 == 0 {
 			cnt := &content.Content{
-				Title:    fmt.Sprintf("Assignment 1 - %s Setup", mod.Title[:6]),
+				Title:    fmt.Sprintf("Assignment 1 - %s Setup", safePrefix(mod.Title, 6)),
 				Position: 1,
 			}
 			asgn := &content.Assignment{
@@ -46,7 +54,7 @@ func seedAssignments(modules []*course.Module) ([]*content.Content, error) {
 			seededContents = append(seededContents, created)
 		} else {
 			cnt := &content.Content{
-				Title:    fmt.Sprintf("Assignment 2 - %s Project Part 1", mod.Title[:6]),
+				Title:    fmt.Sprintf("Assignment 2 - %s Project Part 1", safePrefix(mod.Title, 6)),
 				Position: 1,
 			}
 			asgn := &content.Assignment{
