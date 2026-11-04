@@ -2001,7 +2001,7 @@
                 "tags": [
                     "notification"
                 ],
-                "summary": "Send notification to users (dev)",
+                "summary": "Send notification to users",
                 "parameters": [
                     {
                         "description": "Recipients and content",
