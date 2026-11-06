@@ -3569,6 +3569,59 @@
                 }
             }
         },
+        "/group": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Groups"
+                ],
+                "summary": "Creates a new group",
+                "parameters": [
+                    {
+                        "description": "Data for new group",
+                        "name": "model",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/course.NewGroupDto"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Successfully created a group"
+                    },
+                    "400": {
+                        "description": "Invalid or missing user UUID",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "User or group not found",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/group/join/{uuid}": {
             "post": {
                 "security": [
@@ -3600,6 +3653,58 @@
                 "responses": {
                     "200": {
                         "description": "Successfully joined the group"
+                    },
+                    "400": {
+                        "description": "Invalid or missing user UUID",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "User or group not found",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/group/leave/{uuid}": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Groups"
+                ],
+                "summary": "Remove student from a group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Group UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successfully removed student from the group"
                     },
                     "400": {
                         "description": "Invalid or missing user UUID",
@@ -4753,6 +4858,17 @@
                 },
                 "role": {
                     "$ref": "#/definitions/course.CourseRole"
+                }
+            }
+        },
+        "course.NewGroupDto": {
+            "type": "object",
+            "properties": {
+                "courseUuid": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
                 }
             }
         },

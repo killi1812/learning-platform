@@ -230,7 +230,7 @@ func doReq(r http.Handler, method, path, auth string, body any) *httptest.Respon
 }
 
 func TestCourseCtn_HappyPaths(t *testing.T) {
-	assert.NotNil(t, NewCourseCtn(&mockCourseService{}, zap.NewNop().Sugar()))
+	assert.NotNil(t, NewCourseCtn(&mockCourseService{}, zap.NewNop().Sugar(),nil,nil))
 
 	depID := uint(50)
 	depUuid := uuid.New()

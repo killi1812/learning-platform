@@ -8,6 +8,7 @@ import (
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/notification"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/cerror"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/storage"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -60,7 +61,9 @@ type CourseService struct {
 type IGroupService interface {
 	UserJoinGroup(groupUuid uuid.UUID, user *user.User) (*Group, error)
 	GetGroup(groupUuid uuid.UUID) (*Group, error)
-	PostGroup(groupUuid uuid.UUID) (*Group, error)
+	CreateGroup(groupUuid *Group) (*Group, error)
+	PatchGroup(groupUuid uuid.UUID) (*Group, error)
+	RemoveStudentFromGroup(userUuid uuid.UUID, groupUuid uuid.UUID) error
 	DeleteGroup(groupUuid uuid.UUID) error
 }
 type GroupService struct {
@@ -641,22 +644,27 @@ func (s *CourseService) ReorderModules(courseUuid uuid.UUID, moduleUuids []uuid.
 }
 
 func (g *GroupService) UserJoinGroup(groupUuid uuid.UUID, user *user.User) (*Group, error) {
-	g.logger.Error("Testing")
+	g.logger.Debug("Inside UserJoinGroup")
 	var group Group
 
-	err := g.db.Where("uuid = ?", groupUuid).First(&group).Error
+	err := g.db.Where("uuid = ?", groupUuid).Preload("Members").First(&group).Error
 	if err != nil {
 		g.logger.Error(err)
 		return nil, err
 	}
 
+	g.logger.Debugf("User %s tries to join %s", user.Username, group.Name)
 	if slices.Contains(group.Members, *user) {
 		g.logger.Errorf("User %v is already in group %v", user, group)
 		return nil, err
 	}
 
-	g.db.Model(&group).Association("group_members").Append(&user)
-
+	g.logger.Debugf("Before: %v", group.Members)
+	err = g.db.Model(&group).Association("Members").Append(&user)
+	if err != nil {
+		g.logger.Errorf("Failed to join group %v", err)
+		return nil, err
+	}
 	return &group, nil
 }
 
@@ -672,17 +680,62 @@ func (g *GroupService) GetGroup(groupUuid uuid.UUID) (*Group, error) {
 	return &group, nil
 }
 
+func (g *GroupService) CreateGroup(group *Group) (*Group, error) {
+	g.logger.Debugf("Creating new group %v inside database", group)
 
-func (g *GroupService) PostGroup(groupUuid uuid.UUID) (*Group, error) {
+	var count int64 = 0
+
+	g.db.
+		Table("groups").
+		Joins("INNER JOIN courses ON courses.id = groups.course_id").
+		Where("courses.id = ? AND groups.name = ?", group.CourseID, group.Name).
+		Count(&count)
+
+	if count > 0 {
+		g.logger.Errorf("Group name already %s exist. Error: %v", group.Name)
+		return nil, cerror.ErrGroupNameAlreadyTaken
+	}
+
+	err := g.db.Create(group).Error
+	if err != nil {
+		g.logger.Errorf("Error creating group %v. Error: %v", group, err)
+		return nil, err
+	}
+	return group, nil
+}
+
+func (g *GroupService) PatchGroup(groupUuid uuid.UUID) (*Group, error) {
 	g.logger.Debugf("Getting group %v from database", groupUuid)
 	var group Group
 
-	err := g.db.Create(&group).Error
+	err := g.db.Where("uuid = ?", groupUuid).First(&group).Error
 	if err != nil {
-		g.logger.Errorf("Error creating group %v. Error: %v", groupUuid, err)
+		g.logger.Errorf("Error fetching group %v. Error: %v", groupUuid, err)
 		return nil, err
 	}
 	return &group, nil
+}
+
+func (g *GroupService) RemoveStudentFromGroup(userUuid uuid.UUID, groupUuid uuid.UUID) error {
+	var group Group
+	var user user.User
+
+	if err := g.db.Where("uuid = ?", groupUuid).First(&group).Error; err != nil {
+		g.logger.Error("Error finding group")
+		return err
+	}
+
+	if err := g.db.Where("uuid = ?", userUuid).First(&user).Error; err != nil {
+		g.logger.Error("Error finding user")
+		return err
+	}
+
+	err := g.db.Model(&group).Association("Members").Delete(&user)
+	if err != nil {
+		g.logger.Error("Error deleting user from group")
+		return err
+	}
+	return nil
 }
 
 func (g *GroupService) DeleteGroup(groupUuid uuid.UUID) error {

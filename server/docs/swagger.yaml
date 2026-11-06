@@ -259,6 +259,13 @@ definitions:
       role:
         $ref: '#/definitions/course.CourseRole'
     type: object
+  course.NewGroupDto:
+    properties:
+      courseUuid:
+        type: string
+      name:
+        type: string
+    type: object
   course.ReorderModulesDto:
     properties:
       moduleUuids:
@@ -3012,6 +3019,39 @@ paths:
       summary: Get current user's courses
       tags:
       - course
+  /group:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Data for new group
+        in: body
+        name: model
+        required: true
+        schema:
+          $ref: '#/definitions/course.NewGroupDto'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Successfully created a group
+        "400":
+          description: Invalid or missing user UUID
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: User or group not found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Creates a new group
+      tags:
+      - Groups
   /group/{uuid}:
     delete:
       parameters:
@@ -3075,6 +3115,39 @@ paths:
       security:
       - BearerAuth: []
       summary: Join a group
+      tags:
+      - Groups
+  /group/leave/{uuid}:
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Group UUID
+        format: uuid
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Successfully removed student from the group
+        "400":
+          description: Invalid or missing user UUID
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: User or group not found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Remove student from a group
       tags:
       - Groups
   /healthz:

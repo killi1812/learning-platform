@@ -3,6 +3,7 @@ package course
 import (
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
@@ -10,6 +11,7 @@ import (
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/ginutil"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -37,12 +39,12 @@ func (ctn *CourseCtn) RegisterEndpoints(api *gin.RouterGroup) {
 	group := api.Group("/group")
 	group.Use(authutils.Protect())
 
-
 	group.POST("/join/:uuid", ctn.AddStudentToGroup)
-	group.GET("/:uuid", ctn.GetGroup)       // TODO: read a group
-	group.POST("/:uuid", ctn.PostGroup)     // TODO: create a group
-	group.PATCH("/:uuid", ctn.PatchGroup)   // TODO: update a group
-	group.DELETE("/:uuid", ctn.DeleteGroup) // TODO: delete a group, note see soft delete on GORM
+	group.GET("/:uuid", ctn.GetGroup)                  // TODO: read a group
+	group.POST("", ctn.CreateGroup)                    // TODO: create a group
+	group.PATCH("/:uuid", ctn.PatchGroup)              // TODO: update a group
+	group.PATCH("leave/:uuid", ctn.StudentLeavesGroup) // TODO: update a group
+	group.DELETE("/:uuid", ctn.DeleteGroup)            // TODO: delete a group, note see soft delete on GORM
 
 	// Course catalog routes (match both /course and /course/)
 	courses.GET("", ctn.list)
@@ -112,47 +114,130 @@ func (ctn *CourseCtn) GetGroup(c *gin.Context) {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
-	dto := GroupDto{}
+	dto := NewGroupDto{}
 	dto = dto.FromModel(group)
-	c.AbortWithStatusJSON(http.StatusNoContent, dto)
+	c.AbortWithStatusJSON(http.StatusOK, dto)
 }
-
 
 // PostGroup godoc
 //
-//	@Summary		Creates a new group
-//	@Tags			Groups
-//	@Accept			json
-//	@Produce		json
-//	@Param			uuid	path	string	true	"Group UUID"	format(uuid)
-//	@Security		BearerAuth
-//	@Success		200	"Successfully created a group"
-//	@Failure		400	{object}	ginutil.ErrorResponse	"Invalid or missing user UUID"
-//	@Failure		404	{object}	ginutil.ErrorResponse	"User or group not found"
-//	@Failure		500	{object}	ginutil.ErrorResponse	"Internal server error"
-//	@Router			/group/{uuid} [post]
-func (ctn *CourseCtn) PostGroup(c *gin.Context) {
-	ctn.logger.Debugf("Inside PostGroup")
+//	@Summary	Creates a new group
+//	@Tags		Groups
+//	@Accept		json
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Success	201		"Successfully created a group"
+//	@Failure	400		{object}	ginutil.ErrorResponse	"Invalid or missing user UUID"
+//	@Failure	404		{object}	ginutil.ErrorResponse	"User or group not found"
+//	@Failure	500		{object}	ginutil.ErrorResponse	"Internal server error"
+//	@Param		model	body		NewGroupDto				true	"Data for new group"
+//	@Router		/group [post]
+func (ctn *CourseCtn) CreateGroup(c *gin.Context) {
+	ctn.logger.Debugf("Inside CreateGroup")
+
+	var inputDto NewGroupDto
+	if err := c.ShouldBindJSON(&inputDto); err != nil {
+		ctn.logger.Errorf("Failed to bind error = %+v", err)
+		ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid request payload: "+err.Error())
+		return
+	}
+
+	newGroup, err := inputDto.ToModel()
+	if err != nil {
+		ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	var courseUuid uuid.UUID
+	if inputDto.CourseUuid != "" {
+		courseUuid, err = uuid.Parse(inputDto.CourseUuid)
+		if err != nil {
+			zap.S().Errorf("Failed to parse uuid = %s, parsed = %s, err = %+v", inputDto.CourseUuid, courseUuid, err)
+			ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid request payload: "+err.Error())
+			return
+		}
+	}
+
+	course, err := ctn.CourseService.GetCourse(courseUuid)
+	newGroup.Course = course
+
+	ctn.groupService.CreateGroup(newGroup)
+
+	// Log the response for debugging
+	responseDto := inputDto.FromModel(newGroup)
+	ctn.logger.Infof("Response DTO: %+v", responseDto)
+
+	c.JSON(http.StatusCreated, responseDto)
+}
+
+func (ctn *CourseCtn) PatchGroup(c *gin.Context) {
+	ctn.logger.Debugf("Inside PatchGroup")
 
 	groupUuid, found := ginutil.ParseUUIDParam(c, "uuid")
 	if found {
-		ctn.logger.Errorf("The uuid value = %s already exists", c.Param("uuid"))
+		ctn.logger.Errorf("error parsing uuid value = %s", c.Param("uuid"))
 		c.Status(http.StatusInternalServerError)
 		return
 	}
 
-	group, err := ctn.groupService.PostGroup(groupUuid)
+	group, err := ctn.groupService.PatchGroup(groupUuid)
 	if err != nil {
-		ctn.logger.Errorf("Can't create group, %v", err)
+		ctn.logger.Errorf("Can't patch group, %v", err)
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
-	dto := GroupDto{}
+	dto := NewGroupDto{}
 	dto = dto.FromModel(group)
 	c.AbortWithStatusJSON(http.StatusNoContent, dto)
 }
 
-func (ctn *CourseCtn) PatchGroup(c *gin.Context) {
+// StudentLeavesGroup godoc
+//
+//	@Summary	Remove student from a group
+//	@Tags		Groups
+//	@Accept		json
+//	@Produce	json
+//	@Param		uuid	path	string	true	"Group UUID"	format(uuid)
+//	@Security	BearerAuth
+//	@Success	200	"Successfully removed student from the group"
+//	@Failure	400	{object}	ginutil.ErrorResponse	"Invalid or missing user UUID"
+//	@Failure	404	{object}	ginutil.ErrorResponse	"User or group not found"
+//	@Failure	500	{object}	ginutil.ErrorResponse	"Internal server error"
+//	@Router		/group/leave/{uuid} [patch]
+func (ctn *CourseCtn) StudentLeavesGroup(c *gin.Context) {
+	ctn.logger.Debugf("Inside StudentLeavesGroup")
+
+	var groupUuid uuid.UUID
+	groupUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
+	if !ok {
+		ctn.logger.Errorf("error parsing uuid value = %s", c.Param("uuid"))
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+
+	userUuid, err := authutils.GetUserUUID(c)
+	if err != nil {
+		ctn.logger.Errorf("Can't get user UUID, %v", err)
+		c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	group, err := ctn.groupService.GetGroup(groupUuid)
+	if err != nil {
+		ctn.logger.Errorf("Can't find group, %v", err)
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	group.Members = slices.DeleteFunc(group.Members, func(user user.User) bool {
+		if user.Uuid == userUuid {
+			return true
+		}
+		return false
+	})
+
+	ctn.groupService.RemoveStudentFromGroup(userUuid, groupUuid)
+	c.AbortWithStatus(http.StatusNoContent)
 }
 
 // DeleteGroup godoc

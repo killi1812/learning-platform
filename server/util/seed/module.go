@@ -5,6 +5,7 @@ import (
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/course"
+	"github.com/google/uuid"
 )
 
 // seedModules seeds 2 modules per course (or retrieves existing ones) and returns them.
@@ -12,6 +13,10 @@ func seedModules(courses []*course.Course) ([]*course.Module, error) {
 	var courseService course.ICourseService
 	app.Invoke(func(c course.ICourseService) {
 		courseService = c
+	})
+	var groupService course.IGroupService
+	app.Invoke(func(g course.IGroupService) {
+		groupService = g
 	})
 
 	allModules := make([]*course.Module, 0, len(courses)*2)
@@ -39,6 +44,22 @@ func seedModules(courses []*course.Course) ([]*course.Module, error) {
 				Title:    title1,
 				Position: 1,
 			})
+
+			// Create groups in database
+			for _, crs := range courses {
+				group := course.Group{
+					Uuid:     uuid.New(),
+					CourseID: crs.ID,
+					Course:   crs,
+					Name:     "Test Group 1",
+					Members:  nil,
+				}
+				_, err := groupService.CreateGroup(&group)
+				if err != nil {
+					return nil, err
+				}
+			}
+
 			if err != nil {
 				return nil, fmt.Errorf("failed to create module 1 for course %s: %w", crs.Title, err)
 			}
