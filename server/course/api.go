@@ -161,7 +161,12 @@ func (ctn *CourseCtn) CreateGroup(c *gin.Context) {
 	course, err := ctn.CourseService.GetCourse(courseUuid)
 	newGroup.Course = course
 
-	ctn.groupService.CreateGroup(newGroup)
+	_, err = ctn.groupService.CreateGroup(newGroup)
+	if err != nil {
+		zap.S().Errorf("Error while creating group, err = %+v", err)
+		ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid request payload: "+err.Error())
+		return
+	}
 
 	// Log the response for debugging
 	responseDto := inputDto.FromModel(newGroup)
@@ -310,6 +315,8 @@ func (ctn *CourseCtn) AddStudentToGroup(c *gin.Context) {
 	// TODO: service layer look at the user/db.go
 
 	group, err := ctn.groupService.UserJoinGroup(groupUuid, user)
+	ctn.logger.Debugf("Exited UserJoinGroup")
+
 	if ginutil.HandleServiceError(c, err, gorm.ErrRecordNotFound) {
 		ctn.logger.Errorf("User %v could not join group %v, %v", user, groupUuid, err)
 		return

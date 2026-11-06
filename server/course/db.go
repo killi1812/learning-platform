@@ -27,6 +27,7 @@ var (
 	ErrCrossCoursePrerequisite = errors.New("prerequisite module belongs to a different course")
 	ErrCircularPrerequisite    = errors.New("circular module prerequisite dependency detected")
 	ErrInvalidReorderList      = errors.New("reorder list must contain all modules of the course without duplicates")
+	ErrUserAlreadyInGroupError = errors.New("user is already in the group")
 )
 
 type ICourseService interface {
@@ -392,7 +393,6 @@ func (s *CourseService) GetCourseEnrollments(courseUuid uuid.UUID) ([]Enrollment
 	if err != nil {
 		return nil, err
 	}
-
 	var enrollments []Enrollment
 	if err := s.db.Preload("Course").Preload("User").Where("course_id = ?", c.ID).Find(&enrollments).Error; err != nil {
 		return nil, err
@@ -655,16 +655,19 @@ func (g *GroupService) UserJoinGroup(groupUuid uuid.UUID, user *user.User) (*Gro
 
 	g.logger.Debugf("User %s tries to join %s", user.Username, group.Name)
 	if slices.Contains(group.Members, *user) {
-		g.logger.Errorf("User %v is already in group %v", user, group)
-		return nil, err
+		g.logger.Errorf("User %v is already in group %v", user.Username, group.Name)
+		return nil, ErrUserAlreadyInGroupError
 	}
 
 	g.logger.Debugf("Before: %v", group.Members)
-	err = g.db.Model(&group).Association("Members").Append(&user)
+
+	err = g.db.Model(&group).Association("Members").Append(user)
+
 	if err != nil {
 		g.logger.Errorf("Failed to join group %v", err)
 		return nil, err
 	}
+	g.logger.Debugf("%s successfully joined group %v", user.Username, group.Name)
 	return &group, nil
 }
 
@@ -725,12 +728,14 @@ func (g *GroupService) RemoveStudentFromGroup(userUuid uuid.UUID, groupUuid uuid
 		return err
 	}
 
+	// TODO: User does not get removed from group.
+
 	if err := g.db.Where("uuid = ?", userUuid).First(&user).Error; err != nil {
 		g.logger.Error("Error finding user")
 		return err
 	}
 
-	err := g.db.Model(&group).Association("Members").Delete(&user)
+	err := g.db.Model(&group).Association("Members").Delete(user)
 	if err != nil {
 		g.logger.Error("Error deleting user from group")
 		return err
