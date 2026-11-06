@@ -179,8 +179,6 @@ func TestSubmissionService_CheckDeadlineReminders(t *testing.T) {
 			nilNotifSvc.NotifySubmitted(nil)
 			nilNotifSvc.NotifySubmitted(&submission.SubmissionTarget{})
 			nilNotifSvc.NotifySubmissionFailed(uuid.Nil, uuid.Nil, "")
-			nilNotifSvc.NotifySubmissionFailedByContent(0, 0)
-			nilNotifSvc.NotifySubmissionFailedByContent(999999, 999999)
 		})
 	})
 }

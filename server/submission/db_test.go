@@ -476,12 +476,13 @@ func TestSubmissionService_SaveFromMessage(t *testing.T) {
 		assert.Contains(t, notifs[len(notifs)-1].Body, "could not process your submission")
 	})
 
-	t.Run("NotifySubmissionFailedByContent resolves content and user and notifies", func(t *testing.T) {
-		svc.NotifySubmissionFailedByContent(u.ID, cnt.ID)
+	t.Run("NotifySubmissionFailed with empty title and empty courseUuid falls back safely", func(t *testing.T) {
+		svc.NotifySubmissionFailed(u.Uuid, uuid.Nil, "")
 
 		var notifs []notification.Notification
 		assert.NoError(t, db.Where("user_id = ? AND title = ?", u.ID, "Assignment Submission Failed").Find(&notifs).Error)
 		assert.NotEmpty(t, notifs)
+		assert.Equal(t, "/courses", notifs[len(notifs)-1].URL)
 	})
 
 	t.Run("Fails when assignment for content does not exist", func(t *testing.T) {

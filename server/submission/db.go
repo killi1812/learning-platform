@@ -41,7 +41,6 @@ type ISubmissionService interface {
 	SaveFromMessage(msg SubmissionMessage) (*IndividualSubmission, error)
 	NotifySubmitted(target *SubmissionTarget)
 	NotifySubmissionFailed(userUuid, courseUuid uuid.UUID, contentTitle string)
-	NotifySubmissionFailedByContent(userID, contentID uint)
 	CheckDeadlineReminders(now time.Time) (int, error)
 }
 
@@ -209,16 +208,26 @@ func (s *SubmissionService) SaveFromMessage(msg SubmissionMessage) (*IndividualS
 		}
 		created = true
 
-		var cnt content.Content
-		if err := tx.Preload("Module.Course").Where("id = ?", msg.ContentID).First(&cnt).Error; err == nil {
-			contentTitle = cnt.Title
-			if cnt.Module != nil && cnt.Module.Course != nil {
-				courseUuid = cnt.Module.Course.Uuid
+		studentUserUuid = msg.UserUuid
+		courseUuid = msg.CourseUuid
+		contentTitle = msg.ContentTitle
+
+		if studentUserUuid == uuid.Nil && msg.UserID != 0 {
+			var u user.User
+			if err := tx.Select("uuid").Where("id = ?", msg.UserID).First(&u).Error; err == nil {
+				studentUserUuid = u.Uuid
 			}
 		}
-		var u user.User
-		if err := tx.Select("uuid").Where("id = ?", msg.UserID).First(&u).Error; err == nil {
-			studentUserUuid = u.Uuid
+		if (courseUuid == uuid.Nil || contentTitle == "") && msg.ContentID != 0 {
+			var cnt content.Content
+			if err := tx.Preload("Module.Course").Where("id = ?", msg.ContentID).First(&cnt).Error; err == nil {
+				if contentTitle == "" {
+					contentTitle = cnt.Title
+				}
+				if courseUuid == uuid.Nil && cnt.Module != nil && cnt.Module.Course != nil {
+					courseUuid = cnt.Module.Course.Uuid
+				}
+			}
 		}
 
 		inter := content.StudentInteraction{
@@ -271,33 +280,19 @@ func (s *SubmissionService) NotifySubmissionFailed(userUuid, courseUuid uuid.UUI
 	if s.notifications == nil || userUuid == uuid.Nil {
 		return
 	}
+	if contentTitle == "" {
+		contentTitle = "Assignment"
+	}
+	url := "/courses"
+	if courseUuid != uuid.Nil {
+		url = fmt.Sprintf("/courses/%s", courseUuid)
+	}
 	_, err := s.notifications.NotifySystem(userUuid, notification.NotificationContent{
 		Title: "Assignment Submission Failed",
 		Body:  fmt.Sprintf("We could not process your submission for %q. Please try submitting again.", contentTitle),
-		URL:   fmt.Sprintf("/courses/%s", courseUuid),
+		URL:   url,
 	})
 	if err != nil {
 		s.logger.Errorf("Failed to send submission failed notification: %v", err)
 	}
-}
-
-func (s *SubmissionService) NotifySubmissionFailedByContent(userID, contentID uint) {
-	if s.notifications == nil || userID == 0 {
-		return
-	}
-	var u user.User
-	if err := s.db.Select("uuid").Where("id = ?", userID).First(&u).Error; err != nil {
-		s.logger.Errorf("Failed to find user %d for failed submission notification: %v", userID, err)
-		return
-	}
-	var cnt content.Content
-	var courseUuid uuid.UUID
-	contentTitle := "Assignment"
-	if err := s.db.Preload("Module.Course").Where("id = ?", contentID).First(&cnt).Error; err == nil {
-		contentTitle = cnt.Title
-		if cnt.Module != nil && cnt.Module.Course != nil {
-			courseUuid = cnt.Module.Course.Uuid
-		}
-	}
-	s.NotifySubmissionFailed(u.Uuid, courseUuid, contentTitle)
 }

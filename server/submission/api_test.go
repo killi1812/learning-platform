@@ -22,10 +22,9 @@ import (
 type mockSubmissionService struct {
 	resolveTargetFunc                 func(courseUuid, contentUuid, userUuid uuid.UUID, submittedAt time.Time) (*submission.SubmissionTarget, error)
 	saveFromMessageFunc               func(msg submission.SubmissionMessage) (*submission.IndividualSubmission, error)
-	notifySubmittedFunc               func(target *submission.SubmissionTarget)
-	notifySubmissionFailedFunc        func(userUuid, courseUuid uuid.UUID, contentTitle string)
-	notifySubmissionFailedByContentFunc func(userID, contentID uint)
-	checkDeadlineRemindersFunc        func(now time.Time) (int, error)
+	notifySubmittedFunc        func(target *submission.SubmissionTarget)
+	notifySubmissionFailedFunc func(userUuid, courseUuid uuid.UUID, contentTitle string)
+	checkDeadlineRemindersFunc func(now time.Time) (int, error)
 }
 
 func (m *mockSubmissionService) ResolveTarget(courseUuid, contentUuid, userUuid uuid.UUID, submittedAt time.Time) (*submission.SubmissionTarget, error) {
@@ -63,12 +62,6 @@ func (m *mockSubmissionService) NotifySubmitted(target *submission.SubmissionTar
 func (m *mockSubmissionService) NotifySubmissionFailed(userUuid, courseUuid uuid.UUID, contentTitle string) {
 	if m.notifySubmissionFailedFunc != nil {
 		m.notifySubmissionFailedFunc(userUuid, courseUuid, contentTitle)
-	}
-}
-
-func (m *mockSubmissionService) NotifySubmissionFailedByContent(userID, contentID uint) {
-	if m.notifySubmissionFailedByContentFunc != nil {
-		m.notifySubmissionFailedByContentFunc(userID, contentID)
 	}
 }
 
@@ -164,6 +157,9 @@ func TestSubmissionCtn_Submit(t *testing.T) {
 		assert.Equal(t, resp.Uuid, mockPub.lastMsg.Uuid)
 		assert.Equal(t, uint(1), mockPub.lastMsg.ContentID)
 		assert.Equal(t, uint(1), mockPub.lastMsg.UserID)
+		assert.Equal(t, studentUuid, mockPub.lastMsg.UserUuid)
+		assert.Equal(t, courseUuid, mockPub.lastMsg.CourseUuid)
+		assert.Equal(t, "Assignment", mockPub.lastMsg.ContentTitle)
 		assert.Equal(t, "https://git.app.uib.no/student/task1.git", mockPub.lastMsg.PayloadURL)
 	})
 

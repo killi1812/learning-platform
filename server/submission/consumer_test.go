@@ -145,14 +145,19 @@ func TestSubmissionConsumer_Process(t *testing.T) {
 func TestSubmissionConsumer_RunAndHandle(t *testing.T) {
 	logger := zap.NewNop().Sugar()
 
+	userUuid := uuid.New()
+	courseUuid := uuid.New()
 	validMsg := submission.SubmissionMessage{
-		Uuid:        uuid.New(),
-		ContentID:   1,
-		UserID:      1,
-		UserEmail:   "student@example.com",
-		PayloadType: submission.PayloadTypeURL,
-		PayloadURL:  "https://git.app.uib.no/repo.git",
-		SubmittedAt: time.Now(),
+		Uuid:         uuid.New(),
+		ContentID:    1,
+		ContentTitle: "Assignment 1",
+		CourseUuid:   courseUuid,
+		UserID:       1,
+		UserUuid:     userUuid,
+		UserEmail:    "student@example.com",
+		PayloadType:  submission.PayloadTypeURL,
+		PayloadURL:   "https://git.app.uib.no/repo.git",
+		SubmittedAt:  time.Now(),
 	}
 	validBody, _ := json.Marshal(validMsg)
 
@@ -210,7 +215,10 @@ func TestSubmissionConsumer_RunAndHandle(t *testing.T) {
 			saveFromMessageFunc: func(msg submission.SubmissionMessage) (*submission.IndividualSubmission, error) {
 				return nil, errors.New("transient db timeout")
 			},
-			notifySubmissionFailedByContentFunc: func(userID, contentID uint) {
+			notifySubmissionFailedFunc: func(u, c uuid.UUID, title string) {
+				assert.Equal(t, userUuid, u)
+				assert.Equal(t, courseUuid, c)
+				assert.Equal(t, "Assignment 1", title)
 				notifiedDLQ = true
 			},
 		}
@@ -224,5 +232,38 @@ func TestSubmissionConsumer_RunAndHandle(t *testing.T) {
 		assert.True(t, secondTry.nacked)
 		assert.False(t, secondTry.requeue)
 		assert.True(t, notifiedDLQ)
+	})
+
+	t.Run("Dead-letters invalid message with UserUuid and notifies failure", func(t *testing.T) {
+		ack := &mockAcknowledger{}
+		invalidMsg := submission.SubmissionMessage{
+			Uuid:         uuid.Nil,
+			UserUuid:     userUuid,
+			CourseUuid:   courseUuid,
+			ContentTitle: "Assignment 1",
+		}
+		invalidBody, _ := json.Marshal(invalidMsg)
+		client := &mockRabbitClient{
+			consumeFunc: func(ctx context.Context, queue string, prefetch int, handler func(d amqp.Delivery)) error {
+				handler(amqp.Delivery{Acknowledger: ack, Body: invalidBody})
+				return nil
+			},
+		}
+
+		notified := false
+		mockSvc := &mockSubmissionService{
+			notifySubmissionFailedFunc: func(u, c uuid.UUID, title string) {
+				assert.Equal(t, userUuid, u)
+				assert.Equal(t, courseUuid, c)
+				assert.Equal(t, "Assignment 1", title)
+				notified = true
+			},
+		}
+		worker := submission.NewSubmissionConsumer(client, mockSvc, logger)
+		worker.Run(context.Background())
+
+		assert.True(t, ack.nacked)
+		assert.False(t, ack.requeue)
+		assert.True(t, notified)
 	})
 }

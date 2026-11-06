@@ -115,13 +115,16 @@ func (ctn *SubmissionCtn) submit(c *gin.Context) {
 
 	subUuid := uuid.New()
 	msg := SubmissionMessage{
-		Uuid:        subUuid,
-		ContentID:   target.ContentID,
-		UserID:      target.UserID,
-		UserEmail:   target.UserEmail,
-		PayloadType: dto.PayloadType,
-		PayloadURL:  dto.PayloadURL,
-		SubmittedAt: submittedAt,
+		Uuid:         subUuid,
+		ContentID:    target.ContentID,
+		ContentTitle: target.ContentTitle,
+		CourseUuid:   target.CourseUuid,
+		UserID:       target.UserID,
+		UserUuid:     target.UserUuid,
+		UserEmail:    target.UserEmail,
+		PayloadType:  dto.PayloadType,
+		PayloadURL:   dto.PayloadURL,
+		SubmittedAt:  submittedAt,
 	}
 
 	if err := ctn.Publisher.Publish(c.Request.Context(), msg); err != nil {
