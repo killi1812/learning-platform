@@ -73,6 +73,20 @@ definitions:
       uuid:
         type: string
     type: object
+  content.QuestionType:
+    enum:
+    - MULTIPLE_CHOICE
+    - TRUE_FALSE
+    - ORDERING
+    - MATCHING
+    - FILL_IN_THE_BLANKS
+    type: string
+    x-enum-varnames:
+    - TypeMultipleChoice
+    - TypeTrueFalse
+    - TypeOrdering
+    - TypeMatching
+    - TypeFillInTheBlanks
   content.UpdateFileDto:
     properties:
       description:
@@ -312,6 +326,195 @@ definitions:
     properties:
       count:
         type: integer
+    type: object
+  quiz.AssignmentDto:
+    properties:
+      attemptsUsed:
+        type: integer
+      maxAttempts:
+        type: integer
+      moduleTitle:
+        type: string
+      moduleUuid:
+        type: string
+      myResult:
+        $ref: '#/definitions/quiz.ResultDto'
+      passPercent:
+        type: integer
+      published:
+        type: boolean
+      title:
+        type: string
+      type:
+        type: string
+      uuid:
+        type: string
+      visibleFrom:
+        type: string
+      visibleUntil:
+        type: string
+    type: object
+  quiz.AttemptDto:
+    properties:
+      answers:
+        additionalProperties:
+          items:
+            type: integer
+          type: array
+        description: question uuid -> selected option indices
+        type: object
+      questions:
+        items:
+          $ref: '#/definitions/quiz.StudentQuestionDto'
+        type: array
+      startedAt:
+        type: string
+    type: object
+  quiz.CreateQuizRequest:
+    properties:
+      title:
+        maxLength: 255
+        minLength: 2
+        type: string
+    required:
+    - title
+    type: object
+  quiz.EditQuestionDto:
+    properties:
+      correct:
+        items:
+          type: integer
+        type: array
+      options:
+        items:
+          type: string
+        type: array
+      prompt:
+        type: string
+      type:
+        $ref: '#/definitions/content.QuestionType'
+      uuid:
+        type: string
+    type: object
+  quiz.EditQuizDto:
+    properties:
+      maxAttempts:
+        type: integer
+      moduleUuid:
+        type: string
+      passPercent:
+        type: integer
+      published:
+        type: boolean
+      questions:
+        items:
+          $ref: '#/definitions/quiz.EditQuestionDto'
+        type: array
+      title:
+        type: string
+      uuid:
+        type: string
+      visibleFrom:
+        type: string
+      visibleUntil:
+        type: string
+    type: object
+  quiz.QuestionInput:
+    properties:
+      correct:
+        items:
+          type: integer
+        type: array
+      options:
+        items:
+          type: string
+        type: array
+      prompt:
+        maxLength: 1000
+        minLength: 1
+        type: string
+      type:
+        $ref: '#/definitions/content.QuestionType'
+    required:
+    - prompt
+    - type
+    type: object
+  quiz.ReplaceQuestionsRequest:
+    properties:
+      questions:
+        items:
+          $ref: '#/definitions/quiz.QuestionInput'
+        maxItems: 100
+        type: array
+    required:
+    - questions
+    type: object
+  quiz.ResultDto:
+    properties:
+      attemptsUsed:
+        type: integer
+      maxAttempts:
+        type: integer
+      passed:
+        type: boolean
+      percent:
+        type: number
+    type: object
+  quiz.SaveAnswerRequest:
+    properties:
+      selected:
+        items:
+          type: integer
+        type: array
+    required:
+    - selected
+    type: object
+  quiz.StudentQuestionDto:
+    properties:
+      options:
+        items:
+          type: string
+        type: array
+      prompt:
+        type: string
+      type:
+        $ref: '#/definitions/content.QuestionType'
+      uuid:
+        type: string
+    type: object
+  quiz.StudentResultRowDto:
+    properties:
+      attempts:
+        type: integer
+      email:
+        type: string
+      passed:
+        type: boolean
+      percent:
+        type: number
+      username:
+        type: string
+    type: object
+  quiz.UpdateQuizRequest:
+    properties:
+      maxAttempts:
+        maximum: 100
+        minimum: 1
+        type: integer
+      passPercent:
+        maximum: 100
+        minimum: 0
+        type: integer
+      title:
+        maxLength: 255
+        minLength: 2
+        type: string
+      visibleFrom:
+        type: string
+      visibleUntil:
+        type: string
+    required:
+    - title
     type: object
   submission.CreateSubmissionDto:
     properties:
@@ -768,6 +971,46 @@ paths:
       summary: Update course
       tags:
       - course
+  /course/{uuid}/assignment:
+    get:
+      description: Quizzes in the course ordered by module. Students see published
+        quizzes and their own best result. Teachers also see drafts.
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/quiz.AssignmentDto'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List course assignments
+      tags:
+      - quiz
   /course/{uuid}/content/{contentUuid}/submission:
     post:
       consumes:
@@ -1583,6 +1826,60 @@ paths:
       summary: Preview or stream file material
       tags:
       - content
+  /course/{uuid}/module/{moduleUuid}/quiz:
+    post:
+      consumes:
+      - application/json
+      description: Teacher or Admin only. Quiz is a draft until published.
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Module UUID
+        in: path
+        name: moduleUuid
+        required: true
+        type: string
+      - description: Quiz title
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/quiz.CreateQuizRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/quiz.EditQuizDto'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create draft quiz in a module
+      tags:
+      - quiz
   /course/{uuid}/module/reorder:
     put:
       consumes:
@@ -1631,6 +1928,477 @@ paths:
       summary: Reorder modules
       tags:
       - module
+  /course/{uuid}/quiz/{contentUuid}:
+    delete:
+      description: Teacher or Admin only. Deletes questions and all attempts.
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Quiz UUID
+        in: path
+        name: contentUuid
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete quiz
+      tags:
+      - quiz
+    get:
+      description: Teacher or Admin only.
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Quiz UUID
+        in: path
+        name: contentUuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/quiz.EditQuizDto'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get full quiz including answer key
+      tags:
+      - quiz
+    put:
+      consumes:
+      - application/json
+      description: Teacher or Admin only. Resets every attempt so students must retake.
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Quiz UUID
+        in: path
+        name: contentUuid
+        required: true
+        type: string
+      - description: Quiz settings
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/quiz.UpdateQuizRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/quiz.EditQuizDto'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update quiz settings
+      tags:
+      - quiz
+  /course/{uuid}/quiz/{contentUuid}/attempt:
+    get:
+      description: Questions without answer key plus the answers saved so far.
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Quiz UUID
+        in: path
+        name: contentUuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/quiz.AttemptDto'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get attempt in progress
+      tags:
+      - quiz
+    post:
+      description: Returns the in-progress attempt, or creates one. Questions never
+        include the answer key.
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Quiz UUID
+        in: path
+        name: contentUuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/quiz.AttemptDto'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Start or resume attempt
+      tags:
+      - quiz
+  /course/{uuid}/quiz/{contentUuid}/attempt/answers/{questionUuid}:
+    put:
+      consumes:
+      - application/json
+      description: Selected holds the marked option indices. Overwrites an earlier
+        answer.
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Quiz UUID
+        in: path
+        name: contentUuid
+        required: true
+        type: string
+      - description: Question UUID
+        in: path
+        name: questionUuid
+        required: true
+        type: string
+      - description: Selected option indices
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/quiz.SaveAnswerRequest'
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Save answer to one question
+      tags:
+      - quiz
+  /course/{uuid}/quiz/{contentUuid}/attempt/submit:
+    post:
+      description: Grades on the server. Unanswered questions score 0. Returns the
+        percent and pass/fail of the attempt just submitted, never which answers were
+        right. The best attempt still counts in the assignment list.
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Quiz UUID
+        in: path
+        name: contentUuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/quiz.ResultDto'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Submit attempt
+      tags:
+      - quiz
+  /course/{uuid}/quiz/{contentUuid}/publish:
+    post:
+      description: Teacher or Admin only. Makes quiz visible to students inside its
+        date window.
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Quiz UUID
+        in: path
+        name: contentUuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/quiz.EditQuizDto'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Publish quiz
+      tags:
+      - quiz
+  /course/{uuid}/quiz/{contentUuid}/questions:
+    put:
+      consumes:
+      - application/json
+      description: Teacher or Admin only. Array order is question order. Resets every
+        attempt.
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Quiz UUID
+        in: path
+        name: contentUuid
+        required: true
+        type: string
+      - description: Questions
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/quiz.ReplaceQuestionsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/quiz.EditQuizDto'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Replace ordered question list
+      tags:
+      - quiz
+  /course/{uuid}/quiz/{contentUuid}/results:
+    get:
+      description: Teacher or Admin only. Best percent and pass/fail per enrolled
+        student.
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Quiz UUID
+        in: path
+        name: contentUuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/quiz.StudentResultRowDto'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Student results for a quiz
+      tags:
+      - quiz
   /course/my-course:
     get:
       description: Returns all courses the authenticated user is enrolled in with

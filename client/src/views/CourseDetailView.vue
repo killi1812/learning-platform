@@ -240,7 +240,7 @@
                   <v-list-item
                     prepend-icon="mdi-help-circle-outline"
                     title="Quiz"
-                    @click="handleComingSoon('Quiz')"
+                    @click="handleAddQuiz(mod.uuid)"
                   />
                 </v-list>
               </v-menu>
@@ -321,6 +321,26 @@
             <div v-else class="text-caption text-medium-emphasis py-1 font-italic">
               No materials uploaded for this module yet.
             </div>
+
+            <!-- Quizzes -->
+            <div
+              v-if="!lockedModules[mod.uuid] && quizzesIn(mod.uuid).length > 0"
+              class="d-flex flex-column ga-2 mt-3"
+            >
+              <span class="text-caption font-weight-bold text-medium-emphasis">
+                Quizzes ({{ quizzesIn(mod.uuid).length }})
+              </span>
+              <QuizListItem
+                v-for="quiz in quizzesIn(mod.uuid)"
+                :key="quiz.uuid"
+                :assignment="quiz"
+                :is-teacher="isTeacher"
+                @edit="editQuiz(quiz)"
+                @results="openQuizResults(quiz)"
+                @delete="handleDeleteQuiz(quiz)"
+                @take="takeQuiz(quiz)"
+              />
+            </div>
           </v-card>
         </div>
       </div>
@@ -384,9 +404,22 @@
 
       <!-- TAB: ASSIGNMENTS -->
       <div v-if="activeTab === 'assignments' && isEnrolled">
-        <v-card class="pa-6 bg-surface mb-6 text-center" elevation="1" rounded="lg">
+        <h2 class="text-h5 font-weight-bold text-high-emphasis mb-4">Assignments</h2>
+        <div v-if="assignments.length > 0" class="d-flex flex-column ga-2">
+          <QuizListItem
+            v-for="quiz in assignments"
+            :key="quiz.uuid"
+            :assignment="quiz"
+            :is-teacher="isTeacher"
+            show-module
+            @edit="editQuiz(quiz)"
+            @results="openQuizResults(quiz)"
+            @delete="handleDeleteQuiz(quiz)"
+            @take="takeQuiz(quiz)"
+          />
+        </div>
+        <v-card v-else class="pa-6 bg-surface mb-6 text-center" elevation="1" rounded="lg">
           <v-icon class="mb-3 text-medium-emphasis" icon="mdi-clipboard-text-outline" size="48" />
-          <h2 class="text-h5 font-weight-bold text-high-emphasis mb-2">Assignments</h2>
           <p class="text-body-1 text-medium-emphasis mb-0">
             Assignments will be available here once published.
           </p>
@@ -706,10 +739,13 @@ import {
   deleteCourse,
 } from '@/api/course'
 import { listFiles, uploadFile, updateFile, deleteFile } from '@/api/content'
+import { createQuiz, deleteQuiz, listAssignments } from '@/api/quiz'
+import QuizListItem from '@/components/QuizListItem.vue'
 import { isAxiosError } from 'axios'
 import { getApiErrorMessage } from '@/api/client'
 import type { Course, Module, Enrollment, UpdateCoursePayload } from '@/types/course'
 import type { FileUpload } from '@/types/content'
+import type { Assignment } from '@/types/quiz'
 
 const props = defineProps<{
   courseUuid?: string
@@ -777,6 +813,7 @@ const deletingEnrollmentUserUuid = ref<string | undefined>(undefined)
 // Course materials state
 const modulePages = ref<Record<string, FileUpload[]>>({})
 const lockedModules = ref<Record<string, boolean>>({})
+const assignments = ref<Assignment[]>([])
 const uploadDialogOpen = ref(false)
 const targetModuleUuid = ref<string>('')
 const uploadFileInput = ref<File | File[] | undefined>(undefined)
@@ -811,8 +848,57 @@ const availablePrerequisites = computed(() => {
   return modules.value.filter(m => !disallowed.has(m.uuid))
 })
 
+async function loadAssignments() {
+  try {
+    assignments.value = await listAssignments(resolvedCourseUuid.value)
+  } catch (err: unknown) {
+    toast.error(err instanceof Error ? err.message : 'Failed to load assignments.')
+  }
+}
+
+function quizzesIn(moduleUuid: string): Assignment[] {
+  return assignments.value.filter(a => a.moduleUuid === moduleUuid)
+}
+
+async function handleAddQuiz(moduleUuid: string) {
+  try {
+    const quiz = await createQuiz(resolvedCourseUuid.value, moduleUuid, 'New quiz')
+    editQuiz({ uuid: quiz.uuid, moduleUuid })
+  } catch (err: unknown) {
+    toast.error(err instanceof Error ? err.message : 'Failed to create quiz.')
+  }
+}
+
+function quizRoute(quiz: Pick<Assignment, 'uuid' | 'moduleUuid'>, page: string): string {
+  return `/courses/${resolvedCourseUuid.value}/modules/${quiz.moduleUuid}/quizzes/${quiz.uuid}/${page}`
+}
+
+function editQuiz(quiz: Pick<Assignment, 'uuid' | 'moduleUuid'>) {
+  router.push(quizRoute(quiz, 'edit'))
+}
+
+function openQuizResults(quiz: Assignment) {
+  router.push(quizRoute(quiz, 'results'))
+}
+
+function takeQuiz(quiz: Assignment) {
+  router.push(quizRoute(quiz, 'take'))
+}
+
+async function handleDeleteQuiz(quiz: Assignment) {
+  if (!confirm(`Delete quiz "${quiz.title}" and all student attempts?`)) return
+  try {
+    await deleteQuiz(resolvedCourseUuid.value, quiz.uuid)
+    toast.success('Quiz deleted.')
+    await loadAssignments()
+  } catch (err: unknown) {
+    toast.error(err instanceof Error ? err.message : 'Failed to delete quiz.')
+  }
+}
+
 async function loadAllModulePages() {
   if (!resolvedCourseUuid.value || modules.value.length === 0) return
+  await loadAssignments()
   const pagesMap: Record<string, FileUpload[]> = {}
   const lockedMap: Record<string, boolean> = {}
   let hasError = false
@@ -939,10 +1025,6 @@ async function handleDeleteMaterial(moduleUuid: string, pageUuid: string) {
 
 function viewMaterial(moduleUuid: string, pageUuid: string) {
   router.push(`/courses/${resolvedCourseUuid.value}/modules/${moduleUuid}/files/${pageUuid}`)
-}
-
-function handleComingSoon(item: string) {
-  toast.info(`${item} feature coming soon`)
 }
 
 function getPageFormatIcon(page: FileUpload): string {

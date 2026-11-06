@@ -31,6 +31,7 @@ type QuestionType string
 
 const (
 	TypeMultipleChoice  QuestionType = "MULTIPLE_CHOICE"
+	TypeTrueFalse       QuestionType = "TRUE_FALSE"
 	TypeOrdering        QuestionType = "ORDERING"
 	TypeMatching        QuestionType = "MATCHING"
 	TypeFillInTheBlanks QuestionType = "FILL_IN_THE_BLANKS"
@@ -88,14 +89,21 @@ type Assignment struct {
 
 // Quiz is an Assignment subtype: an interactive knowledge check with configurable attempts and questions.
 type Quiz struct {
-	ContentID   uint       `json:"contentId" gorm:"primaryKey;autoIncrement:false"`
-	MaxAttempts int        `json:"maxAttempts" gorm:"not null;default:1"`
-	Questions   []Question `json:"questions,omitempty" gorm:"foreignKey:QuizID;references:ContentID;constraint:OnDelete:CASCADE;"`
+	ContentID   uint `json:"contentId" gorm:"primaryKey;autoIncrement:false"`
+	MaxAttempts int  `json:"maxAttempts" gorm:"not null;default:1"`
+	PassPercent int  `json:"passPercent" gorm:"not null;default:50"`
+	Published   bool `json:"published" gorm:"not null;default:false"`
+	// NotifiedAt is set when students were told the quiz is open. Publish clears it so a republish notifies again.
+	NotifiedAt *time.Time `json:"-"`
+	// NotifyUpdate selects the wording of the next announcement: true means "quiz updated", false "new quiz".
+	NotifyUpdate bool       `json:"-" gorm:"not null;default:false"`
+	Questions    []Question `json:"questions,omitempty" gorm:"foreignKey:QuizID;references:ContentID;constraint:OnDelete:CASCADE;"`
 }
 
 // Question represents an individual quiz prompt supporting hints and automated grading criteria.
 type Question struct {
 	gorm.Model
+	Uuid      uuid.UUID    `json:"uuid" gorm:"type:uuid;index"`
 	QuizID    uint         `json:"quizId" gorm:"not null;index"`
 	Quiz      *Quiz        `json:"quiz,omitempty" gorm:"foreignKey:QuizID;references:ContentID;constraint:OnDelete:CASCADE;"`
 	Position  int          `json:"position" gorm:"not null;default:0"`
@@ -105,6 +113,13 @@ type Question struct {
 	Options   string       `json:"options,omitempty" gorm:"type:text"`   // JSON-encoded options / choices
 	AnswerKey string       `json:"answerKey,omitempty" gorm:"type:text"` // Expected answer for automated grading
 	Points    float64      `json:"points" gorm:"type:decimal(5,2);not null;default:1.0"`
+}
+
+func (q *Question) BeforeCreate(tx *gorm.DB) error {
+	if q.Uuid == uuid.Nil {
+		q.Uuid = uuid.New()
+	}
+	return nil
 }
 
 // CodingExercise is an Assignment subtype: an automated coding task with starter code repo and test suites.

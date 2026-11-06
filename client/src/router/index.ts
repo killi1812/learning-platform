@@ -99,6 +99,48 @@ export const routes: RouteRecordRaw[] = [
     },
   },
   {
+    path: '/courses/:uuid/modules/:moduleUuid/quizzes/:quizUuid/edit',
+    name: 'QuizEdit',
+    component: () => import('@/views/QuizEditorView.vue'),
+    props: route => ({
+      courseUuid: String(route.params.uuid),
+      moduleUuid: String(route.params.moduleUuid),
+      quizUuid: String(route.params.quizUuid),
+    }),
+    meta: {
+      requiresAuth: true,
+      title: 'Edit Quiz',
+    },
+  },
+  {
+    path: '/courses/:uuid/modules/:moduleUuid/quizzes/:quizUuid/take',
+    name: 'QuizTake',
+    component: () => import('@/views/QuizTakeView.vue'),
+    props: route => ({
+      courseUuid: String(route.params.uuid),
+      moduleUuid: String(route.params.moduleUuid),
+      quizUuid: String(route.params.quizUuid),
+    }),
+    meta: {
+      requiresAuth: true,
+      title: 'Quiz',
+    },
+  },
+  {
+    path: '/courses/:uuid/modules/:moduleUuid/quizzes/:quizUuid/results',
+    name: 'QuizResults',
+    component: () => import('@/views/QuizResultsView.vue'),
+    props: route => ({
+      courseUuid: String(route.params.uuid),
+      moduleUuid: String(route.params.moduleUuid),
+      quizUuid: String(route.params.quizUuid),
+    }),
+    meta: {
+      requiresAuth: true,
+      title: 'Quiz Results',
+    },
+  },
+  {
     path: '/groups',
     name: 'Groups',
     component: GenericView,
