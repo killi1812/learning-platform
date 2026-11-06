@@ -35,6 +35,11 @@ type IContentService interface {
 	CreateAssignment(moduleUuid uuid.UUID, cnt *Content, asgn *Assignment) (*Content, error)
 	GetContent(contentUuid uuid.UUID) (*Content, error)
 	GetAssignmentByModule(moduleUuid uuid.UUID) (*Content, error)
+	CreateHandin(courseUuid, moduleUuid uuid.UUID, title string, deadline *time.Time, lateAllowed bool) (*Content, error)
+	UpdateHandin(courseUuid, moduleUuid, assignmentUuid uuid.UUID, title string, deadline *time.Time, lateAllowed bool) (*Content, error)
+	GetHandin(courseUuid, moduleUuid, assignmentUuid uuid.UUID) (*Content, error)
+	DeleteHandin(courseUuid, moduleUuid, assignmentUuid uuid.UUID) error
+	ListHandins(courseUuid, moduleUuid uuid.UUID) ([]Content, error)
 }
 
 type ContentService struct {
@@ -479,4 +484,139 @@ func (s *ContentService) GetAssignmentByModule(moduleUuid uuid.UUID) (*Content, 
 		return nil, err
 	}
 	return &cnt, nil
+}
+
+// CreateHandin creates a new hand-in assignment in the specified module.
+func (s *ContentService) CreateHandin(courseUuid, moduleUuid uuid.UUID, title string, deadline *time.Time, lateAllowed bool) (*Content, error) {
+	_, module, err := s.findCourseAndModule(courseUuid, moduleUuid)
+	if err != nil {
+		return nil, err
+	}
+
+	cnt := &Content{
+		Title:    title,
+		ModuleID: module.ID,
+		Type:     TypeAssignment,
+	}
+
+	asgn := &Assignment{
+		Type:                   AssignmentHandIn,
+		Deadline:               deadline,
+		AcceptsLateSubmissions: lateAllowed,
+	}
+
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		var maxPos int
+		row := tx.Model(&Content{}).Where("module_id = ?", module.ID).Select("COALESCE(MAX(position), 0)").Row()
+		if err := row.Scan(&maxPos); err != nil {
+			return err
+		}
+		cnt.Position = maxPos + 1
+
+		if err := tx.Create(cnt).Error; err != nil {
+			return err
+		}
+		asgn.ContentID = cnt.ID
+		if err := tx.Create(asgn).Error; err != nil {
+			return err
+		}
+		cnt.Assignment = asgn
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	cnt.Module = module
+	return cnt, nil
+}
+
+// UpdateHandin updates title, deadline, and acceptsLateSubmissions for a hand-in assignment.
+func (s *ContentService) UpdateHandin(courseUuid, moduleUuid, assignmentUuid uuid.UUID, title string, deadline *time.Time, lateAllowed bool) (*Content, error) {
+	cnt, err := s.GetHandin(courseUuid, moduleUuid, assignmentUuid)
+	if err != nil {
+		return nil, err
+	}
+
+	cnt.Title = title
+	if cnt.Assignment != nil {
+		cnt.Assignment.Deadline = deadline
+		cnt.Assignment.AcceptsLateSubmissions = lateAllowed
+	}
+
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(cnt).Error; err != nil {
+			return err
+		}
+		if cnt.Assignment != nil {
+			if err := tx.Save(cnt.Assignment).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return cnt, nil
+}
+
+// GetHandin retrieves a hand-in assignment within a course and module.
+func (s *ContentService) GetHandin(courseUuid, moduleUuid, assignmentUuid uuid.UUID) (*Content, error) {
+	_, module, err := s.findCourseAndModule(courseUuid, moduleUuid)
+	if err != nil {
+		return nil, err
+	}
+
+	var cnt Content
+	err = s.db.
+		Where("uuid = ? AND module_id = ? AND type = ?", assignmentUuid, module.ID, TypeAssignment).
+		Preload("Assignment").
+		Preload("Module.Course").
+		First(&cnt).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrContentNotFound
+		}
+		return nil, err
+	}
+	if cnt.Assignment == nil || cnt.Assignment.Type != AssignmentHandIn {
+		return nil, ErrContentNotFound
+	}
+	return &cnt, nil
+}
+
+// DeleteHandin deletes a hand-in assignment.
+func (s *ContentService) DeleteHandin(courseUuid, moduleUuid, assignmentUuid uuid.UUID) error {
+	cnt, err := s.GetHandin(courseUuid, moduleUuid, assignmentUuid)
+	if err != nil {
+		return err
+	}
+
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Unscoped().Delete(&Assignment{}, "content_id = ?", cnt.ID).Error; err != nil {
+			return err
+		}
+		return tx.Unscoped().Delete(&Content{}, "id = ?", cnt.ID).Error
+	})
+}
+
+// ListHandins retrieves all hand-in assignments within a module.
+func (s *ContentService) ListHandins(courseUuid, moduleUuid uuid.UUID) ([]Content, error) {
+	_, module, err := s.findCourseAndModule(courseUuid, moduleUuid)
+	if err != nil {
+		return nil, err
+	}
+
+	var cnts []Content
+	err = s.db.
+		Joins("JOIN assignments ON assignments.content_id = contents.id").
+		Where("contents.module_id = ? AND contents.type = ? AND assignments.type = ?", module.ID, TypeAssignment, AssignmentHandIn).
+		Preload("Assignment").
+		Preload("Module.Course").
+		Order("position ASC, id ASC").
+		Find(&cnts).Error
+	if err != nil {
+		return nil, err
+	}
+	return cnts, nil
 }

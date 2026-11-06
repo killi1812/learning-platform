@@ -18,3 +18,24 @@ type SubmissionAcceptedDto struct {
 	SubmittedAt time.Time `json:"submittedAt"`
 	Status      string    `json:"status" example:"QUEUED"`
 }
+
+// UploadTicketDto is returned when initiating a two-phase file submission.
+type UploadTicketDto struct {
+	TicketUuid  uuid.UUID `json:"ticketUuid"`
+	SubmittedAt time.Time `json:"submittedAt"`
+	ExpiresAt   time.Time `json:"expiresAt"`
+}
+
+// SubmissionDto represents an individual submission returned in student/teacher listings.
+type SubmissionDto struct {
+	Uuid        uuid.UUID   `json:"uuid"`
+	Attempt     int         `json:"attempt"`
+	IsLate      bool        `json:"isLate"`
+	PayloadType PayloadType `json:"payloadType"`
+	PayloadURL  string      `json:"payloadUrl,omitempty"`
+	FileName    string      `json:"fileName,omitempty"`
+	FileSize    int64       `json:"fileSize,omitempty"`
+	ContentType string      `json:"contentType,omitempty"`
+	SubmittedAt time.Time   `json:"submittedAt"`
+	UserEmail   string      `json:"userEmail,omitempty"`
+}

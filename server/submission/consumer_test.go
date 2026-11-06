@@ -114,6 +114,65 @@ func TestSubmissionConsumer_Process(t *testing.T) {
 		dataNil, _ := json.Marshal(msgNilUuid)
 		errNil := consumer.Process(dataNil)
 		assert.ErrorIs(t, errNil, submission.ErrInvalidMessage)
+
+		// Missing StorageKey for file payload
+		msgMissingStorage := submission.SubmissionMessage{
+			Uuid:        uuid.New(),
+			ContentID:   1,
+			UserID:      1,
+			PayloadType: submission.PayloadTypeFile,
+		}
+		dataMissingStorage, _ := json.Marshal(msgMissingStorage)
+		assert.ErrorIs(t, consumer.Process(dataMissingStorage), submission.ErrInvalidMessage)
+
+		// Missing PayloadURL for url payload
+		msgMissingURL := submission.SubmissionMessage{
+			Uuid:        uuid.New(),
+			ContentID:   1,
+			UserID:      1,
+			PayloadType: submission.PayloadTypeURL,
+		}
+		dataMissingURL, _ := json.Marshal(msgMissingURL)
+		assert.ErrorIs(t, consumer.Process(dataMissingURL), submission.ErrInvalidMessage)
+	})
+
+	t.Run("Valid file message processes successfully", func(t *testing.T) {
+		called := false
+		subUUID := uuid.New()
+		mockSvc := &mockSubmissionService{
+			saveFromMessageFunc: func(msg submission.SubmissionMessage) (*submission.IndividualSubmission, error) {
+				called = true
+				assert.Equal(t, submission.PayloadTypeFile, msg.PayloadType)
+				assert.Equal(t, "submissions/test.pdf", msg.StorageKey)
+				return &submission.IndividualSubmission{
+					Submission: submission.Submission{
+						Uuid:        subUUID,
+						Attempt:     1,
+						PayloadType: submission.PayloadTypeFile,
+						StorageKey:  msg.StorageKey,
+					},
+				}, nil
+			},
+		}
+
+		consumerWorker := submission.NewSubmissionConsumer(nil, mockSvc, logger)
+		consumer := consumerWorker.(*submission.SubmissionConsumer)
+
+		msg := submission.SubmissionMessage{
+			Uuid:        subUUID,
+			ContentID:   10,
+			UserID:      20,
+			UserEmail:   "student@hvl.no",
+			PayloadType: submission.PayloadTypeFile,
+			StorageKey:  "submissions/test.pdf",
+			FileName:    "test.pdf",
+			SubmittedAt: time.Now(),
+		}
+		data, _ := json.Marshal(msg)
+
+		err := consumer.Process(data)
+		assert.NoError(t, err)
+		assert.True(t, called)
 	})
 
 	t.Run("Service failure returns error", func(t *testing.T) {

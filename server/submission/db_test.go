@@ -33,6 +33,7 @@ func TestSubmissionService_ResolveTarget(t *testing.T) {
 		&submission.IndividualSubmission{},
 		&submission.DeadlineReminder{},
 		&notification.Notification{},
+		&submission.UploadTicket{},
 	)
 
 	notifSvc := notification.NewNotificationService(db, notification.NewHub(), zap.NewNop().Sugar())
@@ -308,6 +309,7 @@ func TestSubmissionService_SaveFromMessage(t *testing.T) {
 		&submission.IndividualSubmission{},
 		&submission.DeadlineReminder{},
 		&notification.Notification{},
+		&submission.UploadTicket{},
 	)
 
 	notifSvc := notification.NewNotificationService(db, notification.NewHub(), zap.NewNop().Sugar())
@@ -505,4 +507,230 @@ func TestSubmissionService_SaveFromMessage(t *testing.T) {
 		assert.Nil(t, saved)
 		assert.Contains(t, err.Error(), "not found")
 	})
+}
+
+func TestSubmissionService_FileSubmissionWorkflow(t *testing.T) {
+	db := testutil.NewSqliteTestDb(t,
+		&user.User{},
+		&course.Course{},
+		&course.Enrollment{},
+		&course.Group{},
+		&course.Module{},
+		&content.Content{},
+		&content.File{},
+		&content.Assignment{},
+		&content.StudentInteraction{},
+		&submission.Submission{},
+		&submission.IndividualSubmission{},
+		&submission.DeadlineReminder{},
+		&notification.Notification{},
+		&submission.UploadTicket{},
+	)
+
+	notifSvc := notification.NewNotificationService(db, notification.NewHub(), zap.NewNop().Sugar())
+	svc := submission.NewSubmissionService(db, notifSvc, zap.NewNop().Sugar())
+
+	c := &course.Course{Title: "DAT250", Term: course.TermAutumn, Year: 2026}
+	assert.NoError(t, db.Create(c).Error)
+
+	m := &course.Module{CourseID: c.ID, Title: "Module 1", Position: 1}
+	assert.NoError(t, db.Create(m).Error)
+
+	deadline := time.Now().Add(24 * time.Hour)
+	cnt := &content.Content{
+		ModuleID: m.ID,
+		Title:    "Lab 1",
+		Position: 1,
+		Type:     content.TypeAssignment,
+	}
+	assert.NoError(t, db.Create(cnt).Error)
+	asgn := &content.Assignment{
+		ContentID:              cnt.ID,
+		Type:                   content.AssignmentHandIn,
+		Deadline:               &deadline,
+		AcceptsLateSubmissions: false,
+	}
+	assert.NoError(t, db.Create(asgn).Error)
+
+	student := &user.User{
+		Uuid:         uuid.New(),
+		Username:     "student_file",
+		Email:        "student_file@hvl.no",
+		PasswordHash: "pass",
+		Role:         authutils.ROLE_USER,
+	}
+	otherStudent := &user.User{
+		Uuid:         uuid.New(),
+		Username:     "student_other",
+		Email:        "student_other@hvl.no",
+		PasswordHash: "pass",
+		Role:         authutils.ROLE_USER,
+	}
+	assert.NoError(t, db.Create(student).Error)
+	assert.NoError(t, db.Create(otherStudent).Error)
+
+	assert.NoError(t, db.Create(&course.Enrollment{
+		UserID:     student.ID,
+		CourseID:   c.ID,
+		Role:       course.RoleStudent,
+		EnrolledAt: time.Now(),
+	}).Error)
+
+	now := time.Now()
+
+	// 1. InitFileSubmission
+	ticket, err := svc.InitFileSubmission(c.Uuid, cnt.Uuid, student.Uuid, now)
+	assert.NoError(t, err)
+	assert.NotNil(t, ticket)
+	assert.Equal(t, student.ID, ticket.UserID)
+	assert.False(t, ticket.Consumed)
+	assert.True(t, ticket.ExpiresAt.After(now))
+
+	// 2. ValidateAndExtendTicket success
+	validated, err := svc.ValidateAndExtendTicket(ticket.Uuid, c.Uuid, cnt.Uuid, student.Uuid, now)
+	assert.NoError(t, err)
+	assert.Equal(t, ticket.Uuid, validated.Uuid)
+
+	// Validate with non-existent ticket
+	_, err = svc.ValidateAndExtendTicket(uuid.New(), c.Uuid, cnt.Uuid, student.Uuid, now)
+	assert.ErrorIs(t, err, submission.ErrTicketNotFound)
+
+	// Validate expired ticket
+	expiredTicket := &submission.UploadTicket{
+		Uuid:        uuid.New(),
+		CourseID:    c.ID,
+		ContentID:   cnt.ID,
+		UserID:      student.ID,
+		UserEmail:   student.Email,
+		SubmittedAt: now.Add(-2 * time.Hour),
+		ExpiresAt:   now.Add(-1 * time.Hour),
+		Consumed:    false,
+	}
+	assert.NoError(t, db.Create(expiredTicket).Error)
+	_, err = svc.ValidateAndExtendTicket(expiredTicket.Uuid, c.Uuid, cnt.Uuid, student.Uuid, now)
+	assert.ErrorIs(t, err, submission.ErrTicketExpired)
+
+	// Validate ticket expiring soon extends expiration
+	expiringSoonTicket := &submission.UploadTicket{
+		Uuid:        uuid.New(),
+		CourseID:    c.ID,
+		ContentID:   cnt.ID,
+		UserID:      student.ID,
+		UserEmail:   student.Email,
+		SubmittedAt: now,
+		ExpiresAt:   now.Add(5 * time.Minute),
+		Consumed:    false,
+	}
+	assert.NoError(t, db.Create(expiringSoonTicket).Error)
+	extendedTicket, err := svc.ValidateAndExtendTicket(expiringSoonTicket.Uuid, c.Uuid, cnt.Uuid, student.Uuid, now)
+	assert.NoError(t, err)
+	assert.True(t, extendedTicket.ExpiresAt.After(now.Add(10*time.Minute)))
+
+	// 3. ConsumeUploadTicket
+	assert.NoError(t, svc.ConsumeUploadTicket(ticket.Uuid))
+	_, err = svc.ValidateAndExtendTicket(ticket.Uuid, c.Uuid, cnt.Uuid, student.Uuid, now)
+	assert.ErrorIs(t, err, submission.ErrTicketConsumed)
+
+	// 4. SaveFromMessage with PayloadTypeFile
+	fileMsg := submission.SubmissionMessage{
+		Uuid:        ticket.Uuid,
+		ContentID:   cnt.ID,
+		UserID:      student.ID,
+		UserEmail:   student.Email,
+		PayloadType: submission.PayloadTypeFile,
+		FileName:    "lab1.pdf",
+		FileSize:    2048,
+		ContentType: "application/pdf",
+		StorageKey:  "submissions/test/lab1.pdf",
+		SubmittedAt: now,
+	}
+	savedSub, err := svc.SaveFromMessage(fileMsg)
+	assert.NoError(t, err)
+	assert.NotNil(t, savedSub)
+	assert.Equal(t, "lab1.pdf", savedSub.FileName)
+	assert.Equal(t, int64(2048), savedSub.FileSize)
+	assert.Equal(t, "application/pdf", savedSub.ContentType)
+	assert.Equal(t, "submissions/test/lab1.pdf", savedSub.StorageKey)
+	assert.Equal(t, 1, savedSub.Attempt)
+	assert.False(t, savedSub.IsLate)
+
+	// 5. ListMySubmissions
+	mySubs, err := svc.ListMySubmissions(c.Uuid, cnt.Uuid, student.Uuid)
+	assert.NoError(t, err)
+	assert.Len(t, mySubs, 1)
+	assert.Equal(t, "lab1.pdf", mySubs[0].FileName)
+
+	// ListMySubmissions for not enrolled user
+	_, err = svc.ListMySubmissions(c.Uuid, cnt.Uuid, uuid.New())
+	assert.Error(t, err)
+
+	// ListMySubmissions for missing content
+	_, err = svc.ListMySubmissions(c.Uuid, uuid.New(), student.Uuid)
+	assert.ErrorIs(t, err, submission.ErrContentNotFound)
+
+	// 6. ListCourseAssignmentSubmissions
+	allSubs, err := svc.ListCourseAssignmentSubmissions(c.Uuid, cnt.Uuid)
+	assert.NoError(t, err)
+	assert.Len(t, allSubs, 1)
+
+	// 7. GetSubmissionForDownload
+	// Owner can download
+	dl, err := svc.GetSubmissionForDownload(c.Uuid, cnt.Uuid, savedSub.Uuid, student.Uuid, false)
+	assert.NoError(t, err)
+	assert.Equal(t, savedSub.Uuid, dl.Uuid)
+
+	// Privileged user (teacher) can download
+	dlTeacher, err := svc.GetSubmissionForDownload(c.Uuid, cnt.Uuid, savedSub.Uuid, uuid.New(), true)
+	assert.NoError(t, err)
+	assert.Equal(t, savedSub.Uuid, dlTeacher.Uuid)
+
+	// Another student cannot download
+	_, err = svc.GetSubmissionForDownload(c.Uuid, cnt.Uuid, savedSub.Uuid, otherStudent.Uuid, false)
+	assert.ErrorIs(t, err, submission.ErrUnauthorizedSubmission)
+
+	// Non-existent user cannot download
+	_, err = svc.GetSubmissionForDownload(c.Uuid, cnt.Uuid, savedSub.Uuid, uuid.New(), false)
+	assert.ErrorIs(t, err, submission.ErrUnauthorizedSubmission)
+
+	// Unknown submission
+	_, err = svc.GetSubmissionForDownload(c.Uuid, cnt.Uuid, uuid.New(), student.Uuid, false)
+	assert.ErrorIs(t, err, submission.ErrSubmissionNotFound)
+
+	// Content not found
+	_, err = svc.GetSubmissionForDownload(uuid.New(), cnt.Uuid, savedSub.Uuid, student.Uuid, false)
+	assert.ErrorIs(t, err, submission.ErrContentNotFound)
+
+	// ListCourseAssignmentSubmissions with unknown course
+	_, err = svc.ListCourseAssignmentSubmissions(uuid.New(), cnt.Uuid)
+	assert.ErrorIs(t, err, submission.ErrContentNotFound)
+
+	// InitFileSubmission with unknown content
+	_, err = svc.InitFileSubmission(uuid.New(), cnt.Uuid, student.Uuid, now)
+	assert.ErrorIs(t, err, submission.ErrContentNotFound)
+
+	// 8. Model BeforeCreate checks
+	ticketNilUuid := &submission.UploadTicket{
+		CourseID:    c.ID,
+		ContentID:   cnt.ID,
+		UserID:      student.ID,
+		UserEmail:   student.Email,
+		SubmittedAt: now,
+		ExpiresAt:   now.Add(30 * time.Minute),
+	}
+	assert.NoError(t, db.Create(ticketNilUuid).Error)
+	assert.NotEqual(t, uuid.Nil, ticketNilUuid.Uuid)
+
+	customUuid := uuid.New()
+	subCustom := &submission.IndividualSubmission{
+		Submission: submission.Submission{
+			Uuid:        customUuid,
+			ContentID:   cnt.ID,
+			Attempt:     2,
+			SubmittedAt: now,
+		},
+		UserID:    &student.ID,
+		UserEmail: student.Email,
+	}
+	assert.NoError(t, db.Create(subCustom).Error)
+	assert.Equal(t, customUuid, subCustom.Uuid)
 }

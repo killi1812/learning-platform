@@ -83,6 +83,7 @@ func main() {
 	app.RegisterModel(&submission.IndividualSubmission{})
 	app.RegisterModel(&submission.Grade{})
 	app.RegisterModel(&submission.DeadlineReminder{})
+	app.RegisterModel(&submission.UploadTicket{})
 
 	app.Migrate()
 

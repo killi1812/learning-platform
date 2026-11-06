@@ -93,8 +93,18 @@ func (c *SubmissionConsumer) Process(body []byte) error {
 		return fmt.Errorf("%w: failed to parse JSON: %v", ErrInvalidMessage, err)
 	}
 
-	if msg.Uuid == uuid.Nil || msg.ContentID == 0 || msg.UserID == 0 || msg.PayloadURL == "" {
+	if msg.Uuid == uuid.Nil || msg.ContentID == 0 || msg.UserID == 0 {
 		return fmt.Errorf("%w: missing required fields", ErrInvalidMessage)
+	}
+
+	if msg.PayloadType == PayloadTypeFile {
+		if msg.StorageKey == "" {
+			return fmt.Errorf("%w: missing storageKey for file submission", ErrInvalidMessage)
+		}
+	} else {
+		if msg.PayloadURL == "" {
+			return fmt.Errorf("%w: missing payloadUrl for url submission", ErrInvalidMessage)
+		}
 	}
 
 	saved, err := c.service.SaveFromMessage(msg)

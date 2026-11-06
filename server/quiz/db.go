@@ -481,9 +481,14 @@ func (s *QuizService) ListAssignments(courseUuid, userUuid uuid.UUID, isTeacher 
 	}
 
 	var quizIDs []uint
+	var handinIDs []uint
 	for _, cnt := range cnts {
-		if cnt.Assignment != nil && cnt.Assignment.Quiz != nil {
-			quizIDs = append(quizIDs, cnt.ID)
+		if cnt.Assignment != nil {
+			if cnt.Assignment.Type == content.AssignmentQuiz && cnt.Assignment.Quiz != nil {
+				quizIDs = append(quizIDs, cnt.ID)
+			} else if cnt.Assignment.Type == content.AssignmentHandIn {
+				handinIDs = append(handinIDs, cnt.ID)
+			}
 		}
 	}
 	byQuiz, err := s.submittedAttempts(quizIDs)
@@ -491,9 +496,50 @@ func (s *QuizService) ListAssignments(courseUuid, userUuid uuid.UUID, isTeacher 
 		return nil, err
 	}
 
+	type handinAttemptCount struct {
+		ContentID uint
+		Count     int
+	}
+	var handinCounts []handinAttemptCount
+	if len(handinIDs) > 0 {
+		_ = s.db.Table("individual_submissions").
+			Select("content_id, count(*) as count").
+			Where("content_id IN ? AND user_id = ?", handinIDs, u.ID).
+			Group("content_id").
+			Scan(&handinCounts).Error
+	}
+	handinAttemptMap := make(map[uint]int, len(handinCounts))
+	for _, hc := range handinCounts {
+		handinAttemptMap[hc.ContentID] = hc.Count
+	}
+
 	list := make([]AssignmentDto, 0, len(cnts))
 	for _, cnt := range cnts {
-		if cnt.Assignment == nil || cnt.Assignment.Type != content.AssignmentQuiz || cnt.Assignment.Quiz == nil {
+		if cnt.Assignment == nil {
+			continue
+		}
+
+		if cnt.Assignment.Type == content.AssignmentHandIn {
+			dto := AssignmentDto{
+				Uuid:                   cnt.Uuid.String(),
+				Type:                   string(content.AssignmentHandIn),
+				Title:                  cnt.Title,
+				Published:              true,
+				VisibleFrom:            cnt.VisibleFrom,
+				VisibleUntil:           cnt.VisibleUntil,
+				Deadline:               cnt.Assignment.Deadline,
+				AcceptsLateSubmissions: cnt.Assignment.AcceptsLateSubmissions,
+				AttemptsUsed:           handinAttemptMap[cnt.ID],
+			}
+			if cnt.Module != nil {
+				dto.ModuleUuid = cnt.Module.Uuid.String()
+				dto.ModuleTitle = cnt.Module.Title
+			}
+			list = append(list, dto)
+			continue
+		}
+
+		if cnt.Assignment.Type != content.AssignmentQuiz || cnt.Assignment.Quiz == nil {
 			continue
 		}
 		quiz := cnt.Assignment.Quiz

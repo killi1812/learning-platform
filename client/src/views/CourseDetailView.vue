@@ -238,6 +238,11 @@
                     @click="openUploadDialog(mod.uuid)"
                   />
                   <v-list-item
+                    prepend-icon="mdi-clipboard-text-outline"
+                    title="Assignment"
+                    @click="openCreateHandinDialog(mod.uuid)"
+                  />
+                  <v-list-item
                     prepend-icon="mdi-help-circle-outline"
                     title="Quiz"
                     @click="handleAddQuiz(mod.uuid)"
@@ -341,6 +346,26 @@
                 @take="takeQuiz(quiz)"
               />
             </div>
+
+            <!-- Hand-in Assignments -->
+            <div
+              v-if="!lockedModules[mod.uuid] && handinsIn(mod.uuid).length > 0"
+              class="d-flex flex-column ga-2 mt-3"
+            >
+              <span class="text-caption font-weight-bold text-medium-emphasis">
+                Assignments ({{ handinsIn(mod.uuid).length }})
+              </span>
+              <HandinAssignmentItem
+                v-for="asgn in handinsIn(mod.uuid)"
+                :key="asgn.uuid"
+                :assignment="asgn"
+                :is-teacher="isTeacher"
+                @edit="openEditHandinDialog(asgn)"
+                @submissions="openTeacherSubmissions(asgn)"
+                @delete="handleDeleteHandin(asgn)"
+                @submit="openStudentSubmit(asgn)"
+              />
+            </div>
           </v-card>
         </div>
       </div>
@@ -406,17 +431,28 @@
       <div v-if="activeTab === 'assignments' && isEnrolled">
         <h2 class="text-h5 font-weight-bold text-high-emphasis mb-4">Assignments</h2>
         <div v-if="assignments.length > 0" class="d-flex flex-column ga-2">
-          <QuizListItem
-            v-for="quiz in assignments"
-            :key="quiz.uuid"
-            :assignment="quiz"
-            :is-teacher="isTeacher"
-            show-module
-            @edit="editQuiz(quiz)"
-            @results="openQuizResults(quiz)"
-            @delete="handleDeleteQuiz(quiz)"
-            @take="takeQuiz(quiz)"
-          />
+          <template v-for="asgn in assignments" :key="asgn.uuid">
+            <HandinAssignmentItem
+              v-if="asgn.type === 'HANDIN'"
+              :assignment="asgn"
+              :is-teacher="isTeacher"
+              show-module
+              @edit="openEditHandinDialog(asgn)"
+              @submissions="openTeacherSubmissions(asgn)"
+              @delete="handleDeleteHandin(asgn)"
+              @submit="openStudentSubmit(asgn)"
+            />
+            <QuizListItem
+              v-else
+              :assignment="asgn"
+              :is-teacher="isTeacher"
+              show-module
+              @edit="editQuiz(asgn)"
+              @results="openQuizResults(asgn)"
+              @delete="handleDeleteQuiz(asgn)"
+              @take="takeQuiz(asgn)"
+            />
+          </template>
         </div>
         <v-card v-else class="pa-6 bg-surface mb-6 text-center" elevation="1" rounded="lg">
           <v-icon class="mb-3 text-medium-emphasis" icon="mdi-clipboard-text-outline" size="48" />
@@ -715,6 +751,67 @@
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <!-- Create/Edit Hand-in Assignment Dialog -->
+    <v-dialog v-model="handinDialogOpen" max-width="500" persistent>
+      <v-card class="bg-surface pa-2" rounded="lg">
+        <v-card-title class="text-h5 font-weight-bold pt-4 px-4 text-high-emphasis">
+          {{ isEditingHandin ? 'Edit Assignment' : 'Create Assignment' }}
+        </v-card-title>
+
+        <v-card-text class="px-4 pt-4">
+          <v-text-field
+            v-model="handinTitle"
+            class="mb-3"
+            label="Assignment Title"
+            placeholder="e.g. Lab 1: Storage & Queues"
+            required
+            variant="outlined"
+          />
+
+          <v-text-field
+            v-model="handinDeadline"
+            class="mb-3"
+            label="Deadline (Optional)"
+            type="datetime-local"
+            variant="outlined"
+          />
+
+          <v-switch v-model="handinLateAllowed" color="primary" label="Accept late submissions" />
+        </v-card-text>
+
+        <v-card-actions class="pa-4 bg-surface-variant">
+          <v-spacer />
+          <v-btn color="medium-emphasis" variant="text" @click="handinDialogOpen = false">
+            Cancel
+          </v-btn>
+          <v-btn
+            color="primary"
+            :disabled="!handinTitle.trim()"
+            :loading="savingHandin"
+            variant="elevated"
+            @click="handleSaveHandin"
+          >
+            {{ isEditingHandin ? 'Save' : 'Create' }}
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- Student Submission Dialog -->
+    <HandinSubmissionDialog
+      v-model="studentSubmitDialogOpen"
+      :course-uuid="resolvedCourseUuid"
+      :assignment="selectedHandinForSubmit"
+      @submitted="loadAssignments"
+    />
+
+    <!-- Teacher Submissions Dialog -->
+    <TeacherSubmissionsDialog
+      v-model="teacherSubmissionsDialogOpen"
+      :course-uuid="resolvedCourseUuid"
+      :assignment="selectedHandinForTeacher"
+    />
   </v-container>
 </template>
 
@@ -740,7 +837,11 @@ import {
 } from '@/api/course'
 import { listFiles, uploadFile, updateFile, deleteFile } from '@/api/content'
 import { createQuiz, deleteQuiz, listAssignments } from '@/api/quiz'
+import { createHandin, updateHandin, deleteHandin } from '@/api/submission'
 import QuizListItem from '@/components/QuizListItem.vue'
+import HandinAssignmentItem from '@/components/HandinAssignmentItem.vue'
+import HandinSubmissionDialog from '@/components/HandinSubmissionDialog.vue'
+import TeacherSubmissionsDialog from '@/components/TeacherSubmissionsDialog.vue'
 import { isAxiosError } from 'axios'
 import { getApiErrorMessage } from '@/api/client'
 import type { Course, Module, Enrollment, UpdateCoursePayload } from '@/types/course'
@@ -830,6 +931,24 @@ const editMaterialTitle = ref('')
 const editMaterialDescription = ref('')
 const savingMaterial = ref(false)
 
+// Hand-in assignment create/edit state
+const handinDialogOpen = ref(false)
+const isEditingHandin = ref(false)
+const targetHandinModUuid = ref('')
+const targetHandinUuid = ref('')
+const handinTitle = ref('')
+const handinDeadline = ref('')
+const handinLateAllowed = ref(false)
+const savingHandin = ref(false)
+
+// Student submit dialog state
+const studentSubmitDialogOpen = ref(false)
+const selectedHandinForSubmit = ref<Assignment | undefined>(undefined)
+
+// Teacher submissions dialog state
+const teacherSubmissionsDialogOpen = ref(false)
+const selectedHandinForTeacher = ref<Assignment | undefined>(undefined)
+
 const availablePrerequisites = computed(() => {
   const disallowed = new Set<string>()
   if (isEditingModule.value && editingModuleUuid.value) {
@@ -857,7 +976,11 @@ async function loadAssignments() {
 }
 
 function quizzesIn(moduleUuid: string): Assignment[] {
-  return assignments.value.filter(a => a.moduleUuid === moduleUuid)
+  return assignments.value.filter(a => a.moduleUuid === moduleUuid && a.type !== 'HANDIN')
+}
+
+function handinsIn(moduleUuid: string): Assignment[] {
+  return assignments.value.filter(a => a.moduleUuid === moduleUuid && a.type === 'HANDIN')
 }
 
 async function handleAddQuiz(moduleUuid: string) {
@@ -894,6 +1017,83 @@ async function handleDeleteQuiz(quiz: Assignment) {
   } catch (err: unknown) {
     toast.error(err instanceof Error ? err.message : 'Failed to delete quiz.')
   }
+}
+
+function openCreateHandinDialog(moduleUuid: string) {
+  isEditingHandin.value = false
+  targetHandinModUuid.value = moduleUuid
+  targetHandinUuid.value = ''
+  handinTitle.value = ''
+  handinDeadline.value = ''
+  handinLateAllowed.value = false
+  handinDialogOpen.value = true
+}
+
+function openEditHandinDialog(asgn: Assignment) {
+  isEditingHandin.value = true
+  targetHandinModUuid.value = asgn.moduleUuid
+  targetHandinUuid.value = asgn.uuid
+  handinTitle.value = asgn.title
+  handinDeadline.value = asgn.deadline ? asgn.deadline.slice(0, 16) : ''
+  handinLateAllowed.value = asgn.acceptsLateSubmissions || false
+  handinDialogOpen.value = true
+}
+
+async function handleSaveHandin() {
+  if (!handinTitle.value.trim() || !resolvedCourseUuid.value) return
+  savingHandin.value = true
+  try {
+    const deadlineIso = handinDeadline.value
+      ? new Date(handinDeadline.value).toISOString()
+      : undefined
+    if (isEditingHandin.value && targetHandinUuid.value) {
+      await updateHandin(
+        resolvedCourseUuid.value,
+        targetHandinModUuid.value,
+        targetHandinUuid.value,
+        {
+          title: handinTitle.value.trim(),
+          deadline: deadlineIso,
+          acceptsLateSubmissions: handinLateAllowed.value,
+        },
+      )
+      toast.success('Assignment updated successfully.')
+    } else {
+      await createHandin(resolvedCourseUuid.value, targetHandinModUuid.value, {
+        title: handinTitle.value.trim(),
+        deadline: deadlineIso,
+        acceptsLateSubmissions: handinLateAllowed.value,
+      })
+      toast.success('Assignment created successfully.')
+    }
+    handinDialogOpen.value = false
+    await loadAssignments()
+  } catch (err: unknown) {
+    toast.error(err instanceof Error ? err.message : 'Failed to save assignment.')
+  } finally {
+    savingHandin.value = false
+  }
+}
+
+async function handleDeleteHandin(asgn: Assignment) {
+  if (!confirm(`Delete assignment "${asgn.title}"?`)) return
+  try {
+    await deleteHandin(resolvedCourseUuid.value, asgn.moduleUuid, asgn.uuid)
+    toast.success('Assignment deleted.')
+    await loadAssignments()
+  } catch (err: unknown) {
+    toast.error(err instanceof Error ? err.message : 'Failed to delete assignment.')
+  }
+}
+
+function openStudentSubmit(asgn: Assignment) {
+  selectedHandinForSubmit.value = asgn
+  studentSubmitDialogOpen.value = true
+}
+
+function openTeacherSubmissions(asgn: Assignment) {
+  selectedHandinForTeacher.value = asgn
+  teacherSubmissionsDialogOpen.value = true
 }
 
 async function loadAllModulePages() {

@@ -67,6 +67,8 @@ export interface Assignment {
   published: boolean
   visibleFrom?: string
   visibleUntil?: string
+  deadline?: string
+  acceptsLateSubmissions?: boolean
   passPercent: number
   maxAttempts: number
   attemptsUsed: number
