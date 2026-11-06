@@ -178,6 +178,13 @@ tasks:
     silent: true
     internal: true
 
+  dev:run:
+    desc: "Run ONLY the app in development environment"
+    cmds:
+      - task: dev:apps
+    silent: true
+    internal: false
+
   dev:
     desc: "Run fullstack development environment (services, backend, and client)"
     cmds:

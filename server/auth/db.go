@@ -212,6 +212,12 @@ var welcomeContent = notification.NotificationContent{
 	URL:   "/catalog",
 }
 
+var logoutAllContent = notification.NotificationContent{
+	Title: "Logged Out of All Sessions",
+	Body:  "All active sessions for your account have been signed out.",
+	URL:   "/settings",
+}
+
 func (s *AuthService) Register(username, email, password, userAgent, ip string) (*AuthResult, error) {
 	normUsername := strings.ToLower(strings.TrimSpace(username))
 	normEmail := strings.ToLower(strings.TrimSpace(email))
@@ -416,17 +422,22 @@ func (s *AuthService) LogoutCurrent(userUuid uuid.UUID, sessionUuid uuid.UUID) e
 func (s *AuthService) LogoutAll(userUuid uuid.UUID) error {
 	s.logger.Debugf("logging out all sessions for userUuid = %s", userUuid)
 
-	if s.mongoDb == nil {
-		return nil
+	if s.mongoDb != nil {
+		ctx, cancel := s.newContext()
+		defer cancel()
+
+		_, err := s.sessionsColl().DeleteMany(ctx, bson.M{"user_uuid": userUuid})
+		if err != nil {
+			s.logger.Errorf("Error deleting all sessions: %+v", err)
+			return err
+		}
 	}
 
-	ctx, cancel := s.newContext()
-	defer cancel()
-
-	_, err := s.sessionsColl().DeleteMany(ctx, bson.M{"user_uuid": userUuid})
-	if err != nil {
-		s.logger.Errorf("Error deleting all sessions: %+v", err)
-		return err
+	// Best effort: a failed logout notification must not block session revocation.
+	if s.notifications != nil {
+		if _, err := s.notifications.NotifySystem(userUuid, logoutAllContent); err != nil {
+			s.logger.Errorf("Failed to send logout-all notification, err = %+v", err)
+		}
 	}
 
 	return nil

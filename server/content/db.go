@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/course"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/notification"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/storage"
 	"github.com/google/uuid"
@@ -37,16 +38,39 @@ type IContentService interface {
 }
 
 type ContentService struct {
-	db      *gorm.DB
-	storage storage.IStorageService
-	logger  *zap.SugaredLogger
+	db            *gorm.DB
+	storage       storage.IStorageService
+	notifications notification.INotificationService
+	logger        *zap.SugaredLogger
 }
 
-func NewContentService(db *gorm.DB, storage storage.IStorageService, logger *zap.SugaredLogger) IContentService {
+func NewContentService(db *gorm.DB, storage storage.IStorageService, notifications notification.INotificationService, logger *zap.SugaredLogger) IContentService {
 	return &ContentService{
-		db:      db,
-		storage: storage,
-		logger:  logger,
+		db:            db,
+		storage:       storage,
+		notifications: notifications,
+		logger:        logger,
+	}
+}
+
+func (s *ContentService) notifyCourseStudents(courseID uint, msg notification.NotificationContent) {
+	if s.notifications == nil {
+		return
+	}
+	var studentUuids []uuid.UUID
+	err := s.db.Model(&course.Enrollment{}).
+		Joins("JOIN users ON users.id = enrollments.user_id").
+		Where("enrollments.course_id = ? AND enrollments.role = ?", courseID, course.RoleStudent).
+		Pluck("users.uuid", &studentUuids).Error
+	if err != nil {
+		s.logger.Errorf("Failed to query enrolled students for course %d: %v", courseID, err)
+		return
+	}
+	if len(studentUuids) == 0 {
+		return
+	}
+	if _, err := s.notifications.NotifySystemMany(studentUuids, msg); err != nil {
+		s.logger.Errorf("Failed to notify enrolled students for course %d: %v", courseID, err)
 	}
 }
 
@@ -74,7 +98,7 @@ func (s *ContentService) findCourseAndModule(courseUuid, moduleUuid uuid.UUID) (
 // CreateAssignment persists a new Content record of type ASSIGNMENT and its corresponding Assignment record within the specified module.
 func (s *ContentService) CreateAssignment(moduleUuid uuid.UUID, cnt *Content, asgn *Assignment) (*Content, error) {
 	var m course.Module
-	if err := s.db.Where("uuid = ?", moduleUuid).First(&m).Error; err != nil {
+	if err := s.db.Preload("Course").Where("uuid = ?", moduleUuid).First(&m).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrModuleNotFound
 		}
@@ -101,6 +125,20 @@ func (s *ContentService) CreateAssignment(moduleUuid uuid.UUID, cnt *Content, as
 		s.logger.Errorf("Failed to create assignment content: %v", err)
 		return nil, err
 	}
+
+	courseTitle := "Course"
+	var courseUuidStr string
+	if m.Course != nil {
+		if m.Course.Title != "" {
+			courseTitle = m.Course.Title
+		}
+		courseUuidStr = m.Course.Uuid.String()
+	}
+	s.notifyCourseStudents(m.CourseID, notification.NotificationContent{
+		Title: fmt.Sprintf("New Assignment: %s", cnt.Title),
+		Body:  fmt.Sprintf("A new assignment %q was published in %q (%s).", cnt.Title, courseTitle, m.Title),
+		URL:   fmt.Sprintf("/courses/%s", courseUuidStr),
+	})
 
 	return cnt, nil
 }
@@ -233,6 +271,17 @@ func (s *ContentService) UploadFile(
 
 	c.Module = module
 	f.Content = &c
+
+	courseTitle := "Course"
+	if module.Course != nil && module.Course.Title != "" {
+		courseTitle = module.Course.Title
+	}
+	s.notifyCourseStudents(module.CourseID, notification.NotificationContent{
+		Title: fmt.Sprintf("New Course Material: %s", c.Title),
+		Body:  fmt.Sprintf("New material %q was published in %q (%s).", c.Title, courseTitle, module.Title),
+		URL:   fmt.Sprintf("/courses/%s/modules/%s/files/%s", courseUuid, moduleUuid, c.Uuid),
+	})
+
 	return &f, nil
 }
 

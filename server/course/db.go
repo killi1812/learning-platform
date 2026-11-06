@@ -2,8 +2,10 @@ package course
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/notification"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/storage"
 	"github.com/google/uuid"
@@ -49,16 +51,39 @@ type ICourseService interface {
 }
 
 type CourseService struct {
-	db      *gorm.DB
-	storage storage.IStorageService
-	logger  *zap.SugaredLogger
+	db            *gorm.DB
+	storage       storage.IStorageService
+	notifications notification.INotificationService
+	logger        *zap.SugaredLogger
 }
 
-func NewCourseService(db *gorm.DB, storage storage.IStorageService, logger *zap.SugaredLogger) ICourseService {
+func NewCourseService(db *gorm.DB, storage storage.IStorageService, notifications notification.INotificationService, logger *zap.SugaredLogger) ICourseService {
 	return &CourseService{
-		db:      db,
-		storage: storage,
-		logger:  logger,
+		db:            db,
+		storage:       storage,
+		notifications: notifications,
+		logger:        logger,
+	}
+}
+
+func (s *CourseService) notifyEnrolledStudents(courseID uint, content notification.NotificationContent) {
+	if s.notifications == nil {
+		return
+	}
+	var studentUuids []uuid.UUID
+	err := s.db.Model(&Enrollment{}).
+		Joins("JOIN users ON users.id = enrollments.user_id").
+		Where("enrollments.course_id = ? AND enrollments.role = ?", courseID, RoleStudent).
+		Pluck("users.uuid", &studentUuids).Error
+	if err != nil {
+		s.logger.Errorf("Failed to query enrolled students for course %d: %v", courseID, err)
+		return
+	}
+	if len(studentUuids) == 0 {
+		return
+	}
+	if _, err := s.notifications.NotifySystemMany(studentUuids, content); err != nil {
+		s.logger.Errorf("Failed to notify enrolled students for course %d: %v", courseID, err)
 	}
 }
 
@@ -223,6 +248,13 @@ func (s *CourseService) UpdateCourse(courseUuid uuid.UUID, updated *Course) (*Co
 	if err := s.db.Save(&existing).Error; err != nil {
 		return nil, err
 	}
+
+	s.notifyEnrolledStudents(existing.ID, notification.NotificationContent{
+		Title: fmt.Sprintf("Course Updated: %s", existing.Title),
+		Body:  fmt.Sprintf("Course details for %q have been updated.", existing.Title),
+		URL:   fmt.Sprintf("/courses/%s", existing.Uuid),
+	})
+
 	return &existing, nil
 }
 
@@ -448,6 +480,13 @@ func (s *CourseService) CreateModule(courseUuid uuid.UUID, m *Module) (*Module, 
 		s.logger.Errorf("Failed to create module: %v", err)
 		return nil, err
 	}
+
+	s.notifyEnrolledStudents(c.ID, notification.NotificationContent{
+		Title: fmt.Sprintf("Course Updated: %s", c.Title),
+		Body:  fmt.Sprintf("A new module %q was added to %q.", m.Title, c.Title),
+		URL:   fmt.Sprintf("/courses/%s", c.Uuid),
+	})
+
 	return s.GetModule(courseUuid, m.Uuid)
 }
 
@@ -512,6 +551,13 @@ func (s *CourseService) UpdateModule(courseUuid uuid.UUID, moduleUuid uuid.UUID,
 		s.logger.Errorf("Failed to update module: %v", err)
 		return nil, err
 	}
+
+	s.notifyEnrolledStudents(c.ID, notification.NotificationContent{
+		Title: fmt.Sprintf("Course Updated: %s", c.Title),
+		Body:  fmt.Sprintf("Module %q in %q has been updated.", existing.Title, c.Title),
+		URL:   fmt.Sprintf("/courses/%s", c.Uuid),
+	})
+
 	return s.GetModule(courseUuid, existing.Uuid)
 }
 

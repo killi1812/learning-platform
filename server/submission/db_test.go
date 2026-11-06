@@ -6,6 +6,7 @@ import (
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/content"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/course"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/notification"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/submission"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/testutil"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
@@ -30,9 +31,12 @@ func TestSubmissionService_ResolveTarget(t *testing.T) {
 		&content.StudentInteraction{},
 		&submission.Submission{},
 		&submission.IndividualSubmission{},
+		&submission.DeadlineReminder{},
+		&notification.Notification{},
 	)
 
-	svc := submission.NewSubmissionService(db, zap.NewNop().Sugar())
+	notifSvc := notification.NewNotificationService(db, notification.NewHub(), zap.NewNop().Sugar())
+	svc := submission.NewSubmissionService(db, notifSvc, zap.NewNop().Sugar())
 
 	c := &course.Course{Title: "DAT250", Term: course.TermAutumn, Year: 2026}
 	assert.NoError(t, db.Create(c).Error)
@@ -302,9 +306,12 @@ func TestSubmissionService_SaveFromMessage(t *testing.T) {
 		&content.StudentInteraction{},
 		&submission.Submission{},
 		&submission.IndividualSubmission{},
+		&submission.DeadlineReminder{},
+		&notification.Notification{},
 	)
 
-	svc := submission.NewSubmissionService(db, zap.NewNop().Sugar())
+	notifSvc := notification.NewNotificationService(db, notification.NewHub(), zap.NewNop().Sugar())
+	svc := submission.NewSubmissionService(db, notifSvc, zap.NewNop().Sugar())
 
 	c := &course.Course{Title: "DAT250", Term: course.TermAutumn, Year: 2026}
 	assert.NoError(t, db.Create(c).Error)
@@ -428,10 +435,53 @@ func TestSubmissionService_SaveFromMessage(t *testing.T) {
 		first, err := svc.SaveFromMessage(msg)
 		assert.NoError(t, err)
 
+		var notifsAfterFirst []notification.Notification
+		assert.NoError(t, db.Where("user_id = ? AND title = ?", u.ID, "Assignment Saved").Find(&notifsAfterFirst).Error)
+		firstCount := len(notifsAfterFirst)
+		assert.Greater(t, firstCount, 0)
+		assert.Equal(t, "/courses/"+c.Uuid.String(), notifsAfterFirst[len(notifsAfterFirst)-1].URL)
+
 		second, err := svc.SaveFromMessage(msg)
 		assert.NoError(t, err)
 		assert.Equal(t, first.ID, second.ID)
 		assert.Equal(t, first.Attempt, second.Attempt)
+
+		var notifsAfterSecond []notification.Notification
+		assert.NoError(t, db.Where("user_id = ? AND title = ?", u.ID, "Assignment Saved").Find(&notifsAfterSecond).Error)
+		assert.Equal(t, firstCount, len(notifsAfterSecond), "idempotent retry must not duplicate notification")
+	})
+
+	t.Run("NotifySubmitted sends queued notification", func(t *testing.T) {
+		target := &submission.SubmissionTarget{
+			ContentID:    cnt.ID,
+			ContentTitle: "Assignment 1",
+			CourseUuid:   c.Uuid,
+			UserID:       u.ID,
+			UserUuid:     u.Uuid,
+		}
+		svc.NotifySubmitted(target)
+
+		var notifs []notification.Notification
+		assert.NoError(t, db.Where("user_id = ? AND title = ?", u.ID, "Assignment Submitted").Find(&notifs).Error)
+		assert.NotEmpty(t, notifs)
+		assert.Contains(t, notifs[len(notifs)-1].Body, "queued for processing")
+	})
+
+	t.Run("NotifySubmissionFailed sends failure notification", func(t *testing.T) {
+		svc.NotifySubmissionFailed(u.Uuid, c.Uuid, "Assignment 1")
+
+		var notifs []notification.Notification
+		assert.NoError(t, db.Where("user_id = ? AND title = ?", u.ID, "Assignment Submission Failed").Find(&notifs).Error)
+		assert.NotEmpty(t, notifs)
+		assert.Contains(t, notifs[len(notifs)-1].Body, "could not process your submission")
+	})
+
+	t.Run("NotifySubmissionFailedByContent resolves content and user and notifies", func(t *testing.T) {
+		svc.NotifySubmissionFailedByContent(u.ID, cnt.ID)
+
+		var notifs []notification.Notification
+		assert.NoError(t, db.Where("user_id = ? AND title = ?", u.ID, "Assignment Submission Failed").Find(&notifs).Error)
+		assert.NotEmpty(t, notifs)
 	})
 
 	t.Run("Fails when assignment for content does not exist", func(t *testing.T) {

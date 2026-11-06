@@ -57,6 +57,10 @@ func (c *SubmissionConsumer) handle(d amqp.Delivery) {
 
 	if errors.Is(err, ErrInvalidMessage) {
 		c.logger.Warnf("Dead-lettering invalid submission message: %v", err)
+		var msg SubmissionMessage
+		if jsonErr := json.Unmarshal(d.Body, &msg); jsonErr == nil && msg.UserID != 0 && msg.ContentID != 0 {
+			c.service.NotifySubmissionFailedByContent(msg.UserID, msg.ContentID)
+		}
 		if nackErr := d.Nack(false, false); nackErr != nil {
 			c.logger.Errorf("Failed to nack invalid delivery to DLQ: %v", nackErr)
 		}
@@ -72,6 +76,10 @@ func (c *SubmissionConsumer) handle(d amqp.Delivery) {
 		}
 	} else {
 		c.logger.Errorf("Persistent failure processing submission; sending to DLQ: %v", err)
+		var msg SubmissionMessage
+		if jsonErr := json.Unmarshal(d.Body, &msg); jsonErr == nil && msg.UserID != 0 && msg.ContentID != 0 {
+			c.service.NotifySubmissionFailedByContent(msg.UserID, msg.ContentID)
+		}
 		if nackErr := d.Nack(false, false); nackErr != nil {
 			c.logger.Errorf("Failed to dead-letter delivery: %v", nackErr)
 		}

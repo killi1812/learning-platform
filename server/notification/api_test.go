@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -86,6 +87,162 @@ func TestNotificationApi_SendThenListAndSeen(t *testing.T) {
 
 	w = doRequest(r, http.MethodGet, "/api/notification/unread-count", alice, nil)
 	assert.JSONEq(t, `{"count":0}`, w.Body.String())
+}
+
+func TestNotificationApi_MarkAllSeen(t *testing.T) {
+	r, f := setupNotificationRouter(t)
+	admin := bearer(t, f.teacher, authutils.ROLE_ADMIN)
+	alice := bearer(t, f.alice, authutils.ROLE_USER)
+
+	_ = doRequest(r, http.MethodPost, "/api/notification/send", admin,
+		map[string]any{"userUuids": []uuid.UUID{f.alice}, "title": "1", "body": "1"})
+	_ = doRequest(r, http.MethodPost, "/api/notification/send", admin,
+		map[string]any{"userUuids": []uuid.UUID{f.alice}, "title": "2", "body": "2"})
+
+	w := doRequest(r, http.MethodPost, "/api/notification/seen-all", alice, nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"updated":2`)
+}
+
+func TestNotificationApi_ListPagingAndLimits(t *testing.T) {
+	r, f := setupNotificationRouter(t)
+	admin := bearer(t, f.teacher, authutils.ROLE_ADMIN)
+	alice := bearer(t, f.alice, authutils.ROLE_USER)
+
+	_ = doRequest(r, http.MethodPost, "/api/notification/send", admin,
+		map[string]any{"userUuids": []uuid.UUID{f.alice}, "title": "1", "body": "1"})
+	time.Sleep(2 * time.Millisecond)
+	_ = doRequest(r, http.MethodPost, "/api/notification/send", admin,
+		map[string]any{"userUuids": []uuid.UUID{f.alice}, "title": "2", "body": "2"})
+
+	w := doRequest(r, http.MethodGet, "/api/notification?limit=1", alice, nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+	var items []NotificationDto
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &items))
+	require.Len(t, items, 1)
+	assert.Equal(t, "2", items[0].Title)
+
+	before := url.QueryEscape(items[0].CreatedAt.Format(time.RFC3339Nano))
+	w = doRequest(r, http.MethodGet, "/api/notification?before="+before, alice, nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+	var older []NotificationDto
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &older))
+	require.Len(t, older, 1)
+	assert.Equal(t, "1", older[0].Title)
+
+	// Invalid limit and before
+	w = doRequest(r, http.MethodGet, "/api/notification?limit=abc", alice, nil)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	w = doRequest(r, http.MethodGet, "/api/notification?before=invalid", alice, nil)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	// Invalid UUIDs for seen and delete
+	w = doRequest(r, http.MethodPost, "/api/notification/not-a-uuid/seen", alice, nil)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	w = doRequest(r, http.MethodDelete, "/api/notification/not-a-uuid", alice, nil)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	// Send invalid payload
+	w = doRequest(r, http.MethodPost, "/api/notification/send", admin, map[string]any{"title": ""})
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestNotificationCtn_Constructor(t *testing.T) {
+	f := newNotificationFixture(t)
+	ctn := NewNotificationCtn(f.svc, f.hub, zap.NewNop().Sugar())
+	assert.NotNil(t, ctn)
+}
+
+func TestNotificationApi_HandleError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctn := &NotificationCtn{logger: zap.NewNop().Sugar()}
+
+	testCases := []struct {
+		err      error
+		expected int
+	}{
+		{err: nil, expected: 200},
+		{err: ErrNotificationNotFound, expected: 404},
+		{err: ErrRecipientNotFound, expected: 404},
+		{err: ErrUserNotFound, expected: 401},
+		{err: assert.AnError, expected: 500},
+	}
+
+	for _, tc := range testCases {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		handled := ctn.handleError(c, tc.err, "fallback")
+		if tc.err == nil {
+			assert.False(t, handled)
+		} else {
+			assert.True(t, handled)
+			assert.Equal(t, tc.expected, w.Code)
+		}
+	}
+}
+
+type mockNotificationServiceForApi struct {
+	INotificationService
+	countUnseenErr error
+	markSeenErr    error
+	markAllSeenErr error
+	deleteErr      error
+}
+
+func (m *mockNotificationServiceForApi) CountUnseen(userUuid uuid.UUID) (int64, error) {
+	if m.countUnseenErr != nil {
+		return 0, m.countUnseenErr
+	}
+	return m.INotificationService.CountUnseen(userUuid)
+}
+
+func (m *mockNotificationServiceForApi) MarkSeen(userUuid, notificationUuid uuid.UUID) (*Notification, error) {
+	if m.markSeenErr != nil {
+		return nil, m.markSeenErr
+	}
+	return m.INotificationService.MarkSeen(userUuid, notificationUuid)
+}
+
+func (m *mockNotificationServiceForApi) MarkAllSeen(userUuid uuid.UUID) (int64, error) {
+	if m.markAllSeenErr != nil {
+		return 0, m.markAllSeenErr
+	}
+	return m.INotificationService.MarkAllSeen(userUuid)
+}
+
+func (m *mockNotificationServiceForApi) Delete(userUuid, notificationUuid uuid.UUID) error {
+	if m.deleteErr != nil {
+		return m.deleteErr
+	}
+	return m.INotificationService.Delete(userUuid, notificationUuid)
+}
+
+func TestNotificationApi_ServiceErrorResponses(t *testing.T) {
+	f := newNotificationFixture(t)
+	mock := &mockNotificationServiceForApi{
+		INotificationService: f.svc,
+		countUnseenErr:       assert.AnError,
+		markSeenErr:          ErrNotificationNotFound,
+		markAllSeenErr:       assert.AnError,
+		deleteErr:            ErrNotificationNotFound,
+	}
+	ctn := &NotificationCtn{service: mock, hub: f.hub, logger: zap.NewNop().Sugar()}
+	r := gin.New()
+	ctn.RegisterEndpoints(r.Group("/api"))
+
+	userToken := bearer(t, f.alice, authutils.ROLE_USER)
+
+	w := doRequest(r, http.MethodGet, "/api/notification/unread-count", userToken, nil)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	w = doRequest(r, http.MethodPost, "/api/notification/"+uuid.New().String()+"/seen", userToken, nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	w = doRequest(r, http.MethodPost, "/api/notification/seen-all", userToken, nil)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	w = doRequest(r, http.MethodDelete, "/api/notification/"+uuid.New().String(), userToken, nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
 func TestNotificationApi_DeleteForeignIsNotFound(t *testing.T) {

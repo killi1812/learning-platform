@@ -7,6 +7,7 @@ import (
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/content"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/course"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/notification"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -25,28 +26,38 @@ var (
 
 // SubmissionTarget contains database primary IDs for publishing the submission message.
 type SubmissionTarget struct {
-	ContentID uint
-	UserID    uint
-	UserEmail string
+	ContentID    uint
+	ContentUuid  uuid.UUID
+	ContentTitle string
+	CourseUuid   uuid.UUID
+	UserID       uint
+	UserUuid     uuid.UUID
+	UserEmail    string
 }
 
 // ISubmissionService provides domain validation and database persistence for submissions.
 type ISubmissionService interface {
 	ResolveTarget(courseUuid, contentUuid, userUuid uuid.UUID, submittedAt time.Time) (*SubmissionTarget, error)
 	SaveFromMessage(msg SubmissionMessage) (*IndividualSubmission, error)
+	NotifySubmitted(target *SubmissionTarget)
+	NotifySubmissionFailed(userUuid, courseUuid uuid.UUID, contentTitle string)
+	NotifySubmissionFailedByContent(userID, contentID uint)
+	CheckDeadlineReminders(now time.Time) (int, error)
 }
 
 // SubmissionService implements ISubmissionService using GORM.
 type SubmissionService struct {
-	db     *gorm.DB
-	logger *zap.SugaredLogger
+	db            *gorm.DB
+	notifications notification.INotificationService
+	logger        *zap.SugaredLogger
 }
 
 // NewSubmissionService constructs a new SubmissionService.
-func NewSubmissionService(db *gorm.DB, logger *zap.SugaredLogger) ISubmissionService {
+func NewSubmissionService(db *gorm.DB, notifications notification.INotificationService, logger *zap.SugaredLogger) ISubmissionService {
 	return &SubmissionService{
-		db:     db,
-		logger: logger,
+		db:            db,
+		notifications: notifications,
+		logger:        logger,
 	}
 }
 
@@ -129,9 +140,13 @@ func (s *SubmissionService) ResolveTarget(courseUuid, contentUuid, userUuid uuid
 	}
 
 	return &SubmissionTarget{
-		ContentID: cnt.ID,
-		UserID:    u.ID,
-		UserEmail: u.Email,
+		ContentID:    cnt.ID,
+		ContentUuid:  cnt.Uuid,
+		ContentTitle: cnt.Title,
+		CourseUuid:   courseUuid,
+		UserID:       u.ID,
+		UserUuid:     u.Uuid,
+		UserEmail:    u.Email,
 	}, nil
 }
 
@@ -145,6 +160,11 @@ func (s *SubmissionService) SaveFromMessage(msg SubmissionMessage) (*IndividualS
 	}
 
 	var savedSub IndividualSubmission
+	var created bool
+	var courseUuid uuid.UUID
+	var contentTitle string
+	var studentUserUuid uuid.UUID
+
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		// Re-check within transaction
 		if err := tx.Where("uuid = ?", msg.Uuid).First(&savedSub).Error; err == nil {
@@ -187,6 +207,19 @@ func (s *SubmissionService) SaveFromMessage(msg SubmissionMessage) (*IndividualS
 		if err := tx.Create(&savedSub).Error; err != nil {
 			return err
 		}
+		created = true
+
+		var cnt content.Content
+		if err := tx.Preload("Module.Course").Where("id = ?", msg.ContentID).First(&cnt).Error; err == nil {
+			contentTitle = cnt.Title
+			if cnt.Module != nil && cnt.Module.Course != nil {
+				courseUuid = cnt.Module.Course.Uuid
+			}
+		}
+		var u user.User
+		if err := tx.Select("uuid").Where("id = ?", msg.UserID).First(&u).Error; err == nil {
+			studentUserUuid = u.Uuid
+		}
 
 		inter := content.StudentInteraction{
 			UserID:      msg.UserID,
@@ -209,5 +242,62 @@ func (s *SubmissionService) SaveFromMessage(msg SubmissionMessage) (*IndividualS
 		return nil, err
 	}
 
+	if created && s.notifications != nil && studentUserUuid != uuid.Nil {
+		_, _ = s.notifications.NotifySystem(studentUserUuid, notification.NotificationContent{
+			Title: "Assignment Saved",
+			Body:  fmt.Sprintf("Your submission (attempt #%d) for %q has been saved.", savedSub.Attempt, contentTitle),
+			URL:   fmt.Sprintf("/courses/%s", courseUuid),
+		})
+	}
+
 	return &savedSub, nil
+}
+
+func (s *SubmissionService) NotifySubmitted(target *SubmissionTarget) {
+	if s.notifications == nil || target == nil || target.UserUuid == uuid.Nil {
+		return
+	}
+	_, err := s.notifications.NotifySystem(target.UserUuid, notification.NotificationContent{
+		Title: "Assignment Submitted",
+		Body:  fmt.Sprintf("Your submission for %q has been received and queued for processing.", target.ContentTitle),
+		URL:   fmt.Sprintf("/courses/%s", target.CourseUuid),
+	})
+	if err != nil {
+		s.logger.Errorf("Failed to send submission queued notification: %v", err)
+	}
+}
+
+func (s *SubmissionService) NotifySubmissionFailed(userUuid, courseUuid uuid.UUID, contentTitle string) {
+	if s.notifications == nil || userUuid == uuid.Nil {
+		return
+	}
+	_, err := s.notifications.NotifySystem(userUuid, notification.NotificationContent{
+		Title: "Assignment Submission Failed",
+		Body:  fmt.Sprintf("We could not process your submission for %q. Please try submitting again.", contentTitle),
+		URL:   fmt.Sprintf("/courses/%s", courseUuid),
+	})
+	if err != nil {
+		s.logger.Errorf("Failed to send submission failed notification: %v", err)
+	}
+}
+
+func (s *SubmissionService) NotifySubmissionFailedByContent(userID, contentID uint) {
+	if s.notifications == nil || userID == 0 {
+		return
+	}
+	var u user.User
+	if err := s.db.Select("uuid").Where("id = ?", userID).First(&u).Error; err != nil {
+		s.logger.Errorf("Failed to find user %d for failed submission notification: %v", userID, err)
+		return
+	}
+	var cnt content.Content
+	var courseUuid uuid.UUID
+	contentTitle := "Assignment"
+	if err := s.db.Preload("Module.Course").Where("id = ?", contentID).First(&cnt).Error; err == nil {
+		contentTitle = cnt.Title
+		if cnt.Module != nil && cnt.Module.Course != nil {
+			courseUuid = cnt.Module.Course.Uuid
+		}
+	}
+	s.NotifySubmissionFailed(u.Uuid, courseUuid, contentTitle)
 }

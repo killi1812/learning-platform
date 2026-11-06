@@ -22,6 +22,7 @@ const sendBatchSize = 100
 type INotificationService interface {
 	SendToUsers(senderUuid uuid.UUID, recipientUuids []uuid.UUID, content NotificationContent) ([]Notification, error)
 	NotifySystem(recipientUuid uuid.UUID, content NotificationContent) (*Notification, error)
+	NotifySystemMany(recipientUuids []uuid.UUID, content NotificationContent) ([]Notification, error)
 	List(userUuid uuid.UUID, limit int, before *time.Time) ([]Notification, error)
 	CountUnseen(userUuid uuid.UUID) (int64, error)
 	MarkSeen(userUuid uuid.UUID, notificationUuid uuid.UUID) (*Notification, error)
@@ -85,6 +86,18 @@ func (s *NotificationService) SendToUsers(senderUuid uuid.UUID, recipientUuids [
 	if err != nil {
 		return nil, err
 	}
+	return s.sendBatch(&senderID, recipientUuids, content)
+}
+
+// NotifySystemMany writes system notifications (SenderID = nil) to multiple recipients in batches.
+func (s *NotificationService) NotifySystemMany(recipientUuids []uuid.UUID, content NotificationContent) ([]Notification, error) {
+	return s.sendBatch(nil, recipientUuids, content)
+}
+
+func (s *NotificationService) sendBatch(senderID *uint, recipientUuids []uuid.UUID, content NotificationContent) ([]Notification, error) {
+	if len(recipientUuids) == 0 {
+		return []Notification{}, nil
+	}
 
 	unique := make(map[uuid.UUID]struct{}, len(recipientUuids))
 	for _, id := range recipientUuids {
@@ -110,7 +123,7 @@ func (s *NotificationService) SendToUsers(senderUuid uuid.UUID, recipientUuids [
 		uuidByID[r.ID] = r.Uuid
 		rows = append(rows, Notification{
 			UserID:    r.ID,
-			SenderID:  &senderID,
+			SenderID:  senderID,
 			Title:     content.Title,
 			Body:      content.Body,
 			URL:       content.URL,
@@ -118,7 +131,7 @@ func (s *NotificationService) SendToUsers(senderUuid uuid.UUID, recipientUuids [
 		})
 	}
 
-	err = s.db.Transaction(func(tx *gorm.DB) error {
+	err := s.db.Transaction(func(tx *gorm.DB) error {
 		return tx.CreateInBatches(&rows, sendBatchSize).Error
 	})
 	if err != nil {

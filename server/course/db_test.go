@@ -3,6 +3,7 @@ package course
 import (
 	"testing"
 
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/notification"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/testutil"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
@@ -13,10 +14,11 @@ import (
 )
 
 func setupTestDB(t *testing.T) (*CourseService, *user.User, *user.User) {
-	db := testutil.NewSqliteTestDb(t, &user.User{}, &Course{}, &Enrollment{}, &Group{}, &Module{})
+	db := testutil.NewSqliteTestDb(t, &user.User{}, &Course{}, &Enrollment{}, &Group{}, &Module{}, &notification.Notification{})
 	logger := zap.NewNop().Sugar()
 	memStorage := storage.NewMemoryStorageService()
-	svc := &CourseService{db: db, storage: memStorage, logger: logger}
+	notifSvc := notification.NewNotificationService(db, notification.NewHub(), logger)
+	svc := &CourseService{db: db, storage: memStorage, notifications: notifSvc, logger: logger}
 
 	teacher := &user.User{
 		Uuid:         uuid.New(),
@@ -259,7 +261,7 @@ func TestCourseService_CRUDAndEnrollment(t *testing.T) {
 	})
 
 	t.Run("NewCourseService constructor", func(t *testing.T) {
-		constructorSvc := NewCourseService(svc.db, svc.storage, svc.logger)
+		constructorSvc := NewCourseService(svc.db, svc.storage, svc.notifications, svc.logger)
 		assert.NotNil(t, constructorSvc)
 	})
 
@@ -537,5 +539,54 @@ func TestCourseService_Modules(t *testing.T) {
 		// Non-existent course
 		err = svc.DeleteModule(uuid.New(), mod2.Uuid)
 		assert.ErrorIs(t, err, ErrCourseNotFound)
+	})
+}
+
+func TestCourseService_Notifications(t *testing.T) {
+	svc, teacher, student := setupTestDB(t)
+
+	c, err := svc.CreateCourse(&Course{
+		Title: "Notification Test Course",
+		Term:  TermAutumn,
+		Year:  2026,
+	}, teacher.Uuid)
+	assert.NoError(t, err)
+
+	_, err = svc.SelfEnroll(c.Uuid, student.Uuid)
+	assert.NoError(t, err)
+
+	t.Run("UpdateCourse notifies enrolled student", func(t *testing.T) {
+		_, err := svc.UpdateCourse(c.Uuid, &Course{Title: "Updated Notification Course"})
+		assert.NoError(t, err)
+
+		var notifs []notification.Notification
+		assert.NoError(t, svc.db.Where("user_id = ?", student.ID).Find(&notifs).Error)
+		assert.NotEmpty(t, notifs)
+		assert.Equal(t, "Course Updated: Updated Notification Course", notifs[len(notifs)-1].Title)
+		assert.Equal(t, "/courses/"+c.Uuid.String(), notifs[len(notifs)-1].URL)
+
+		// Teacher should not receive student-enrolled update notification
+		var teacherNotifs []notification.Notification
+		assert.NoError(t, svc.db.Where("user_id = ?", teacher.ID).Find(&teacherNotifs).Error)
+		assert.Empty(t, teacherNotifs)
+	})
+
+	t.Run("CreateModule notifies enrolled student", func(t *testing.T) {
+		m, err := svc.CreateModule(c.Uuid, &Module{Title: "Week 1 Basics"})
+		assert.NoError(t, err)
+
+		var notifs []notification.Notification
+		assert.NoError(t, svc.db.Where("user_id = ?", student.ID).Find(&notifs).Error)
+		assert.NotEmpty(t, notifs)
+		assert.Contains(t, notifs[len(notifs)-1].Body, "Week 1 Basics")
+
+		t.Run("UpdateModule notifies enrolled student", func(t *testing.T) {
+			_, err := svc.UpdateModule(c.Uuid, m.Uuid, &Module{Title: "Week 1 Advanced"})
+			assert.NoError(t, err)
+
+			var notifsAfter []notification.Notification
+			assert.NoError(t, svc.db.Where("user_id = ?", student.ID).Find(&notifsAfter).Error)
+			assert.Contains(t, notifsAfter[len(notifsAfter)-1].Body, "Week 1 Advanced")
+		})
 	})
 }

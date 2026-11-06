@@ -205,9 +205,13 @@ func TestSubmissionConsumer_RunAndHandle(t *testing.T) {
 			},
 		}
 
+		notifiedDLQ := false
 		mockSvc := &mockSubmissionService{
 			saveFromMessageFunc: func(msg submission.SubmissionMessage) (*submission.IndividualSubmission, error) {
 				return nil, errors.New("transient db timeout")
+			},
+			notifySubmissionFailedByContentFunc: func(userID, contentID uint) {
+				notifiedDLQ = true
 			},
 		}
 
@@ -219,5 +223,6 @@ func TestSubmissionConsumer_RunAndHandle(t *testing.T) {
 
 		assert.True(t, secondTry.nacked)
 		assert.False(t, secondTry.requeue)
+		assert.True(t, notifiedDLQ)
 	})
 }
