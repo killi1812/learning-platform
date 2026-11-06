@@ -57,8 +57,13 @@ func (s *QuizService) NotifyDueQuizzes() error {
 		return fmt.Errorf("find quizzes to announce: %w", err)
 	}
 
-	for _, q := range due {
-		s.announce(q, now)
+	if len(due) > 0 {
+		s.logger.Infof("Found %d published quiz(zes) due for announcement", len(due))
+		for _, q := range due {
+			s.announce(q, now)
+		}
+	} else {
+		s.logger.Debugf("No published quizzes due for announcement")
 	}
 	return nil
 }
@@ -70,16 +75,17 @@ func (s *QuizService) announce(q dueQuiz, now time.Time) {
 		Where("content_id = ? AND notified_at IS NULL", q.ContentID).
 		Update("notified_at", now)
 	if claim.Error != nil {
-		s.logger.Errorf("Failed to claim quiz %s for notification: %v", q.QuizUuid, claim.Error)
+		s.logger.Errorf("Failed to claim quiz %s (%q) for notification: %v", q.QuizUuid, q.Title, claim.Error)
 		return
 	}
 	if claim.RowsAffected == 0 {
+		s.logger.Debugf("Quiz %s was already claimed by another worker instance", q.QuizUuid)
 		return
 	}
 
 	studentUuids, err := s.studentUuids(q.CourseID)
 	if err != nil {
-		s.logger.Errorf("Failed to load students for quiz %s: %v", q.QuizUuid, err)
+		s.logger.Errorf("Failed to load students for quiz %s (%q): %v", q.QuizUuid, q.Title, err)
 		return
 	}
 
@@ -100,7 +106,7 @@ func (s *QuizService) announce(q dueQuiz, now time.Time) {
 		s.logger.Warnf("Failed to notify students about quiz %s: %v", q.QuizUuid, err)
 		return
 	}
-	s.logger.Infof("Notified %d students about quiz %s", len(studentUuids), q.QuizUuid)
+	s.logger.Infof("Notified %d students about quiz %s (%q)", len(studentUuids), q.QuizUuid, q.Title)
 }
 
 // studentUuids returns the uuid of every user enrolled in the course as a student.
