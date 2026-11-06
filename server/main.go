@@ -9,6 +9,7 @@ import (
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/course"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/info"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/notification"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/quiz"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/submission"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/seed"
@@ -43,6 +44,8 @@ func main() {
 	app.Provide(notification.NewNotificationService)
 	app.Provide(submission.NewSubmissionService)
 	app.Provide(submission.NewSubmissionPublisher)
+	app.Provide(func(s notification.INotificationService) quiz.Notifier { return s })
+	app.Provide(quiz.NewQuizService)
 
 	app.RegisterApi(info.NewInfoApi)
 	app.RegisterApi(user.NewUserCtn)
@@ -51,7 +54,9 @@ func main() {
 	app.RegisterApi(content.NewContentCtn)
 	app.RegisterApi(notification.NewNotificationCtn)
 	app.RegisterApi(submission.NewSubmissionCtn)
+	app.RegisterApi(quiz.NewQuizCtn)
 	app.RegisterWorker(submission.NewSubmissionConsumer)
+	app.RegisterWorker(quiz.NewNotifyWorker)
 
 	app.RegisterModel(&user.User{})
 	// Course
@@ -69,6 +74,9 @@ func main() {
 	app.RegisterModel(&content.Question{})
 	app.RegisterModel(&content.CodingExercise{})
 	app.RegisterModel(&content.StudentInteraction{})
+	// Quiz
+	app.RegisterModel(&quiz.Attempt{})
+	app.RegisterModel(&quiz.Answer{})
 	// Submission
 	app.RegisterModel(&submission.Submission{})
 	app.RegisterModel(&submission.GroupSubmission{})
