@@ -419,25 +419,33 @@ func (s *AuthService) LogoutCurrent(userUuid uuid.UUID, sessionUuid uuid.UUID) e
 	return nil
 }
 
+func (s *AuthService) revokeAllSessions(userUuid uuid.UUID) error {
+	if s.mongoDb == nil {
+		return nil
+	}
+
+	ctx, cancel := s.newContext()
+	defer cancel()
+
+	_, err := s.sessionsColl().DeleteMany(ctx, bson.M{"user_uuid": userUuid})
+	if err != nil {
+		s.logger.Errorf("Error deleting all sessions: %+v", err)
+		return err
+	}
+
+	return nil
+}
+
 func (s *AuthService) LogoutAll(userUuid uuid.UUID) error {
 	s.logger.Debugf("logging out all sessions for userUuid = %s", userUuid)
 
-	if s.mongoDb != nil {
-		ctx, cancel := s.newContext()
-		defer cancel()
-
-		_, err := s.sessionsColl().DeleteMany(ctx, bson.M{"user_uuid": userUuid})
-		if err != nil {
-			s.logger.Errorf("Error deleting all sessions: %+v", err)
-			return err
-		}
+	if err := s.revokeAllSessions(userUuid); err != nil {
+		return err
 	}
 
 	// Best effort: a failed logout notification must not block session revocation.
-	if s.notifications != nil {
-		if _, err := s.notifications.NotifySystem(userUuid, logoutAllContent); err != nil {
-			s.logger.Errorf("Failed to send logout-all notification, err = %+v", err)
-		}
+	if _, err := s.notifications.NotifySystem(userUuid, logoutAllContent); err != nil {
+		s.logger.Errorf("Failed to send logout-all notification, err = %+v", err)
 	}
 
 	return nil

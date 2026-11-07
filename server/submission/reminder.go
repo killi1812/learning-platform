@@ -141,7 +141,7 @@ func (s *SubmissionService) CheckDeadlineReminders(now time.Time) (int, error) {
 			recipientUuids = append(recipientUuids, enr.User.Uuid)
 		}
 
-		if len(recipientUuids) > 0 && s.notifications != nil {
+		if len(recipientUuids) > 0 {
 			_, err := s.notifications.NotifySystemMany(recipientUuids, notification.NotificationContent{
 				Title: notifTitle,
 				Body:  notifBody,

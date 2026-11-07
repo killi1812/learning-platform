@@ -67,9 +67,6 @@ func NewCourseService(db *gorm.DB, storage storage.IStorageService, notification
 }
 
 func (s *CourseService) notifyEnrolledStudents(courseID uint, content notification.NotificationContent) {
-	if s.notifications == nil {
-		return
-	}
 	var studentUuids []uuid.UUID
 	err := s.db.Model(&Enrollment{}).
 		Joins("JOIN users ON users.id = enrollments.user_id").
@@ -276,11 +273,9 @@ func (s *CourseService) DeleteCourse(courseUuid uuid.UUID) error {
 		return err
 	}
 
-	if s.storage != nil {
-		for _, key := range storageKeys {
-			if key != "" {
-				_ = s.storage.Delete(key)
-			}
+	for _, key := range storageKeys {
+		if key != "" {
+			_ = s.storage.Delete(key)
 		}
 	}
 
@@ -578,11 +573,9 @@ func (s *CourseService) DeleteModule(courseUuid uuid.UUID, moduleUuid uuid.UUID)
 		return err
 	}
 
-	if s.storage != nil {
-		for _, key := range storageKeys {
-			if key != "" {
-				_ = s.storage.Delete(key)
-			}
+	for _, key := range storageKeys {
+		if key != "" {
+			_ = s.storage.Delete(key)
 		}
 	}
 
