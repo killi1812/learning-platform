@@ -10,9 +10,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// Notifier delivers one notification to one user. notification.INotificationService satisfies it.
+// Notifier delivers notifications to users. notification.INotificationService satisfies it.
 type Notifier interface {
 	NotifySystem(recipientUuid uuid.UUID, content notification.NotificationContent) (*notification.Notification, error)
+	NotifySystemMany(recipientUuids []uuid.UUID, content notification.NotificationContent) ([]notification.Notification, error)
 }
 
 // dueQuiz is a published, not yet announced quiz whose window is open now.
@@ -82,6 +83,10 @@ func (s *QuizService) announce(q dueQuiz, now time.Time) {
 		return
 	}
 
+	if len(studentUuids) == 0 {
+		return
+	}
+
 	content := notification.NotificationContent{
 		Title: "New quiz: " + q.Title,
 		Body:  "A quiz is open now in your course. Open it to start.",
@@ -91,15 +96,11 @@ func (s *QuizService) announce(q dueQuiz, now time.Time) {
 		content.Title = "Quiz updated: " + q.Title
 		content.Body = "Your teacher changed this quiz. Earlier attempts were reset, so take it again."
 	}
-	sent := 0
-	for _, studentUuid := range studentUuids {
-		if _, err := s.notifier.NotifySystem(studentUuid, content); err != nil {
-			s.logger.Warnf("Failed to notify student %s about quiz %s: %v", studentUuid, q.QuizUuid, err)
-			continue
-		}
-		sent++
+	if _, err := s.notifier.NotifySystemMany(studentUuids, content); err != nil {
+		s.logger.Warnf("Failed to notify students about quiz %s: %v", q.QuizUuid, err)
+		return
 	}
-	s.logger.Infof("Notified %d of %d students about quiz %s", sent, len(studentUuids), q.QuizUuid)
+	s.logger.Infof("Notified %d students about quiz %s", len(studentUuids), q.QuizUuid)
 }
 
 // studentUuids returns the uuid of every user enrolled in the course as a student.
