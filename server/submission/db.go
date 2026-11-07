@@ -251,7 +251,7 @@ func (s *SubmissionService) SaveFromMessage(msg SubmissionMessage) (*IndividualS
 		return nil, err
 	}
 
-	if created && s.notifications != nil && studentUserUuid != uuid.Nil {
+	if created && studentUserUuid != uuid.Nil {
 		_, _ = s.notifications.NotifySystem(studentUserUuid, notification.NotificationContent{
 			Title: "Assignment Saved",
 			Body:  fmt.Sprintf("Your submission (attempt #%d) for %q has been saved.", savedSub.Attempt, contentTitle),
@@ -263,7 +263,8 @@ func (s *SubmissionService) SaveFromMessage(msg SubmissionMessage) (*IndividualS
 }
 
 func (s *SubmissionService) NotifySubmitted(target *SubmissionTarget) {
-	if s.notifications == nil || target == nil || target.UserUuid == uuid.Nil {
+	if target == nil || target.UserUuid == uuid.Nil {
+		s.logger.Error("Cannot notify submission queued: target or user uuid is nil")
 		return
 	}
 	_, err := s.notifications.NotifySystem(target.UserUuid, notification.NotificationContent{
@@ -277,20 +278,14 @@ func (s *SubmissionService) NotifySubmitted(target *SubmissionTarget) {
 }
 
 func (s *SubmissionService) NotifySubmissionFailed(userUuid, courseUuid uuid.UUID, contentTitle string) {
-	if s.notifications == nil || userUuid == uuid.Nil {
+	if userUuid == uuid.Nil {
+		s.logger.Error("Cannot notify submission failed: user uuid is nil")
 		return
-	}
-	if contentTitle == "" {
-		contentTitle = "Assignment"
-	}
-	url := "/courses"
-	if courseUuid != uuid.Nil {
-		url = fmt.Sprintf("/courses/%s", courseUuid)
 	}
 	_, err := s.notifications.NotifySystem(userUuid, notification.NotificationContent{
 		Title: "Assignment Submission Failed",
 		Body:  fmt.Sprintf("We could not process your submission for %q. Please try submitting again.", contentTitle),
-		URL:   url,
+		URL:   fmt.Sprintf("/courses/%s", courseUuid),
 	})
 	if err != nil {
 		s.logger.Errorf("Failed to send submission failed notification: %v", err)

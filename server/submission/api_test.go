@@ -20,8 +20,8 @@ import (
 )
 
 type mockSubmissionService struct {
-	resolveTargetFunc                 func(courseUuid, contentUuid, userUuid uuid.UUID, submittedAt time.Time) (*submission.SubmissionTarget, error)
-	saveFromMessageFunc               func(msg submission.SubmissionMessage) (*submission.IndividualSubmission, error)
+	resolveTargetFunc          func(courseUuid, contentUuid, userUuid uuid.UUID, submittedAt time.Time) (*submission.SubmissionTarget, error)
+	saveFromMessageFunc        func(msg submission.SubmissionMessage) (*submission.IndividualSubmission, error)
 	notifySubmittedFunc        func(target *submission.SubmissionTarget)
 	notifySubmissionFailedFunc func(userUuid, courseUuid uuid.UUID, contentTitle string)
 	checkDeadlineRemindersFunc func(now time.Time) (int, error)
