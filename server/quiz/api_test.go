@@ -9,6 +9,7 @@ import (
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/course"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/notification"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/quiz"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
@@ -28,8 +29,10 @@ func init() {
 func (f *fixture) router() http.Handler {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	courseSvc := course.NewCourseService(f.db, storage.NewMemoryStorageService(), zap.NewNop().Sugar())
-	quiz.NewQuizCtn(f.svc, courseSvc, zap.NewNop().Sugar()).RegisterEndpoints(r.Group("/api"))
+	logger := zap.NewNop().Sugar()
+	notifSvc := notification.NewNotificationService(f.db, notification.NewHub(), logger)
+	courseSvc := course.NewCourseService(f.db, storage.NewMemoryStorageService(), notifSvc, logger)
+	quiz.NewQuizCtn(f.svc, courseSvc, logger).RegisterEndpoints(r.Group("/api"))
 	return r
 }
 
