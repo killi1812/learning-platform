@@ -42,6 +42,15 @@ func (ctn *ContentCtn) RegisterEndpoints(api *gin.RouterGroup) {
 	files.GET("/:fileUuid/preview", ctn.preview)
 	files.PUT("/:fileUuid", ctn.update)
 	files.DELETE("/:fileUuid", ctn.delete)
+
+	asgns := api.Group("/course/:uuid/module/:moduleUuid/assignment")
+	asgns.Use(authutils.Protect())
+
+	asgns.POST("", ctn.createHandin)
+	asgns.GET("", ctn.listHandins)
+	asgns.GET("/:assignmentUuid", ctn.getHandin)
+	asgns.PUT("/:assignmentUuid", ctn.updateHandin)
+	asgns.DELETE("/:assignmentUuid", ctn.deleteHandin)
 }
 
 func (ctn *ContentCtn) handleError(c *gin.Context, err error) bool {
@@ -448,6 +457,230 @@ func (ctn *ContentCtn) delete(c *gin.Context) {
 	}
 
 	err := ctn.contentService.DeleteFile(courseUuid, moduleUuid, fileUuid)
+	if ctn.handleError(c, err) {
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
+// CreateHandin godoc
+//
+//	@Summary		Create hand-in assignment in module
+//	@Description	Creates a new submittable hand-in assignment (Teacher or Admin only)
+//	@Tags			content
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			uuid		path		string			true	"Course UUID"
+//	@Param			moduleUuid	path		string			true	"Module UUID"
+//	@Param			assignment	body		CreateHandinDto	true	"Hand-in assignment details"
+//	@Success		201			{object}	HandinDto
+//	@Failure		400			{object}	ginutil.ErrorResponse
+//	@Failure		401			{object}	ginutil.ErrorResponse
+//	@Failure		403			{object}	ginutil.ErrorResponse
+//	@Failure		404			{object}	ginutil.ErrorResponse
+//	@Failure		500			{object}	ginutil.ErrorResponse
+//	@Router			/course/{uuid}/module/{moduleUuid}/assignment [post]
+func (ctn *ContentCtn) createHandin(c *gin.Context) {
+	courseUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
+	if !ok {
+		return
+	}
+	moduleUuid, ok := ginutil.ParseUUIDParam(c, "moduleUuid")
+	if !ok {
+		return
+	}
+
+	if !authutils.CheckCourseAccess(c, courseUuid, ctn.courseService.IsTeacherOrAdmin, course.ErrCourseNotFound) {
+		return
+	}
+
+	var dto CreateHandinDto
+	if err := c.ShouldBindJSON(&dto); err != nil {
+		ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	cnt, err := ctn.contentService.CreateHandin(courseUuid, moduleUuid, dto.Title, dto.Deadline, dto.AcceptsLateSubmissions)
+	if ctn.handleError(c, err) {
+		return
+	}
+
+	c.JSON(http.StatusCreated, HandinDto{}.FromModel(cnt))
+}
+
+// ListHandins godoc
+//
+//	@Summary		List hand-in assignments in module
+//	@Description	Returns all hand-in assignments for a given course module
+//	@Tags			content
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			uuid		path		string	true	"Course UUID"
+//	@Param			moduleUuid	path		string	true	"Module UUID"
+//	@Success		200			{array}		HandinDto
+//	@Failure		400			{object}	ginutil.ErrorResponse
+//	@Failure		401			{object}	ginutil.ErrorResponse
+//	@Failure		404			{object}	ginutil.ErrorResponse
+//	@Failure		500			{object}	ginutil.ErrorResponse
+//	@Router			/course/{uuid}/module/{moduleUuid}/assignment [get]
+func (ctn *ContentCtn) listHandins(c *gin.Context) {
+	courseUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
+	if !ok {
+		return
+	}
+	moduleUuid, ok := ginutil.ParseUUIDParam(c, "moduleUuid")
+	if !ok {
+		return
+	}
+
+	if !authutils.CheckCourseAccess(c, courseUuid, ctn.courseService.IsEnrolledOrAdmin, course.ErrCourseNotFound) {
+		return
+	}
+
+	cnts, err := ctn.contentService.ListHandins(courseUuid, moduleUuid)
+	if ctn.handleError(c, err) {
+		return
+	}
+
+	dtos := make([]HandinDto, 0, len(cnts))
+	for i := range cnts {
+		dtos = append(dtos, HandinDto{}.FromModel(&cnts[i]))
+	}
+
+	c.JSON(http.StatusOK, dtos)
+}
+
+// GetHandin godoc
+//
+//	@Summary		Get hand-in assignment details
+//	@Description	Returns metadata for a specific hand-in assignment
+//	@Tags			content
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			uuid			path		string	true	"Course UUID"
+//	@Param			moduleUuid		path		string	true	"Module UUID"
+//	@Param			assignmentUuid	path		string	true	"Assignment UUID"
+//	@Success		200				{object}	HandinDto
+//	@Failure		400				{object}	ginutil.ErrorResponse
+//	@Failure		401				{object}	ginutil.ErrorResponse
+//	@Failure		404				{object}	ginutil.ErrorResponse
+//	@Failure		500				{object}	ginutil.ErrorResponse
+//	@Router			/course/{uuid}/module/{moduleUuid}/assignment/{assignmentUuid} [get]
+func (ctn *ContentCtn) getHandin(c *gin.Context) {
+	courseUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
+	if !ok {
+		return
+	}
+	moduleUuid, ok := ginutil.ParseUUIDParam(c, "moduleUuid")
+	if !ok {
+		return
+	}
+	assignmentUuid, ok := ginutil.ParseUUIDParam(c, "assignmentUuid")
+	if !ok {
+		return
+	}
+
+	if !authutils.CheckCourseAccess(c, courseUuid, ctn.courseService.IsEnrolledOrAdmin, course.ErrCourseNotFound) {
+		return
+	}
+
+	cnt, err := ctn.contentService.GetHandin(courseUuid, moduleUuid, assignmentUuid)
+	if ctn.handleError(c, err) {
+		return
+	}
+
+	c.JSON(http.StatusOK, HandinDto{}.FromModel(cnt))
+}
+
+// UpdateHandin godoc
+//
+//	@Summary		Update hand-in assignment
+//	@Description	Updates title, deadline, and late submission policy (Teacher or Admin only)
+//	@Tags			content
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			uuid			path		string			true	"Course UUID"
+//	@Param			moduleUuid		path		string			true	"Module UUID"
+//	@Param			assignmentUuid	path		string			true	"Assignment UUID"
+//	@Param			assignment		body		UpdateHandinDto	true	"Updated assignment metadata"
+//	@Success		200				{object}	HandinDto
+//	@Failure		400				{object}	ginutil.ErrorResponse
+//	@Failure		401				{object}	ginutil.ErrorResponse
+//	@Failure		403				{object}	ginutil.ErrorResponse
+//	@Failure		404				{object}	ginutil.ErrorResponse
+//	@Failure		500				{object}	ginutil.ErrorResponse
+//	@Router			/course/{uuid}/module/{moduleUuid}/assignment/{assignmentUuid} [put]
+func (ctn *ContentCtn) updateHandin(c *gin.Context) {
+	courseUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
+	if !ok {
+		return
+	}
+	moduleUuid, ok := ginutil.ParseUUIDParam(c, "moduleUuid")
+	if !ok {
+		return
+	}
+	assignmentUuid, ok := ginutil.ParseUUIDParam(c, "assignmentUuid")
+	if !ok {
+		return
+	}
+
+	if !authutils.CheckCourseAccess(c, courseUuid, ctn.courseService.IsTeacherOrAdmin, course.ErrCourseNotFound) {
+		return
+	}
+
+	var dto UpdateHandinDto
+	if err := c.ShouldBindJSON(&dto); err != nil {
+		ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	cnt, err := ctn.contentService.UpdateHandin(courseUuid, moduleUuid, assignmentUuid, dto.Title, dto.Deadline, dto.AcceptsLateSubmissions)
+	if ctn.handleError(c, err) {
+		return
+	}
+
+	c.JSON(http.StatusOK, HandinDto{}.FromModel(cnt))
+}
+
+// DeleteHandin godoc
+//
+//	@Summary		Delete hand-in assignment
+//	@Description	Deletes hand-in assignment and its content record (Teacher or Admin only)
+//	@Tags			content
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			uuid			path	string	true	"Course UUID"
+//	@Param			moduleUuid		path	string	true	"Module UUID"
+//	@Param			assignmentUuid	path	string	true	"Assignment UUID"
+//	@Success		204
+//	@Failure		400	{object}	ginutil.ErrorResponse
+//	@Failure		401	{object}	ginutil.ErrorResponse
+//	@Failure		403	{object}	ginutil.ErrorResponse
+//	@Failure		404	{object}	ginutil.ErrorResponse
+//	@Failure		500	{object}	ginutil.ErrorResponse
+//	@Router			/course/{uuid}/module/{moduleUuid}/assignment/{assignmentUuid} [delete]
+func (ctn *ContentCtn) deleteHandin(c *gin.Context) {
+	courseUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
+	if !ok {
+		return
+	}
+	moduleUuid, ok := ginutil.ParseUUIDParam(c, "moduleUuid")
+	if !ok {
+		return
+	}
+	assignmentUuid, ok := ginutil.ParseUUIDParam(c, "assignmentUuid")
+	if !ok {
+		return
+	}
+
+	if !authutils.CheckCourseAccess(c, courseUuid, ctn.courseService.IsTeacherOrAdmin, course.ErrCourseNotFound) {
+		return
+	}
+
+	err := ctn.contentService.DeleteHandin(courseUuid, moduleUuid, assignmentUuid)
 	if ctn.handleError(c, err) {
 		return
 	}

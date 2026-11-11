@@ -32,9 +32,14 @@ func NewSeaweedStorageService(endpoint string) IStorageService {
 	if endpoint == "" {
 		endpoint = "http://localhost:8888"
 	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.ResponseHeaderTimeout = 30 * time.Second
+	transport.IdleConnTimeout = 30 * time.Second
 	return &SeaweedStorageService{
-		endpoint:   endpoint,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		endpoint: endpoint,
+		httpClient: &http.Client{
+			Transport: transport,
+		},
 	}
 }
 

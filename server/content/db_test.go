@@ -626,3 +626,89 @@ func TestContentService_Notifications(t *testing.T) {
 		assert.Equal(t, "/courses/"+c.Uuid.String(), notifs[len(notifs)-1].URL)
 	})
 }
+
+func TestContentService_HandinAssignment(t *testing.T) {
+	db := testutil.NewSqliteTestDb(t,
+		&user.User{},
+		&course.Course{},
+		&course.Enrollment{},
+		&course.Module{},
+		&content.Content{},
+		&content.Assignment{},
+		&notification.Notification{},
+	)
+
+	memStorage := storage.NewMemoryStorageService()
+	logger := zap.NewNop().Sugar()
+	notifSvc := notification.NewNotificationService(db, notification.NewHub(), logger)
+	svc := content.NewContentService(db, memStorage, notifSvc, logger)
+
+	c := &course.Course{Title: "DAT250", Term: course.TermAutumn, Year: 2026}
+	assert.NoError(t, db.Create(c).Error)
+
+	m := &course.Module{CourseID: c.ID, Title: "Module 1", Position: 1}
+	assert.NoError(t, db.Create(m).Error)
+
+	student := &user.User{Uuid: uuid.New(), Username: "handin_stud", Email: "handin_stud@example.com"}
+	assert.NoError(t, db.Create(student).Error)
+	assert.NoError(t, db.Create(&course.Enrollment{UserID: student.ID, CourseID: c.ID, Role: course.RoleStudent}).Error)
+
+	deadline := time.Now().Add(48 * time.Hour)
+
+	// 1. CreateHandin
+	created, err := svc.CreateHandin(c.Uuid, m.Uuid, "Assignment 1", &deadline, true)
+	assert.NoError(t, err)
+	assert.NotNil(t, created)
+	assert.Equal(t, "Assignment 1", created.Title)
+	assert.Equal(t, 1, created.Position)
+	assert.Equal(t, content.TypeAssignment, created.Type)
+	assert.Equal(t, content.AssignmentHandIn, created.Assignment.Type)
+	assert.True(t, created.Assignment.AcceptsLateSubmissions)
+
+	var notifs []notification.Notification
+	assert.NoError(t, db.Where("user_id = ?", student.ID).Find(&notifs).Error)
+	assert.Len(t, notifs, 1)
+	assert.Equal(t, "New Assignment: Assignment 1", notifs[0].Title)
+	assert.Equal(t, "/courses/"+c.Uuid.String(), notifs[0].URL)
+
+	// Create second handin to test auto-position
+	created2, err := svc.CreateHandin(c.Uuid, m.Uuid, "Assignment 2", nil, false)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, created2.Position)
+
+	// 2. GetHandin
+	fetched, err := svc.GetHandin(c.Uuid, m.Uuid, created.Uuid)
+	assert.NoError(t, err)
+	assert.Equal(t, created.Uuid, fetched.Uuid)
+	assert.Equal(t, "Assignment 1", fetched.Title)
+
+	// GetHandin not found
+	_, err = svc.GetHandin(c.Uuid, m.Uuid, uuid.New())
+	assert.ErrorIs(t, err, content.ErrContentNotFound)
+
+	// 3. UpdateHandin
+	newDeadline := time.Now().Add(72 * time.Hour)
+	updated, err := svc.UpdateHandin(c.Uuid, m.Uuid, created.Uuid, "Assignment 1 Updated", &newDeadline, false)
+	assert.NoError(t, err)
+	assert.Equal(t, "Assignment 1 Updated", updated.Title)
+	assert.False(t, updated.Assignment.AcceptsLateSubmissions)
+
+	// 4. ListHandins
+	list, err := svc.ListHandins(c.Uuid, m.Uuid)
+	assert.NoError(t, err)
+	assert.Len(t, list, 2)
+	assert.Equal(t, "Assignment 1 Updated", list[0].Title)
+	assert.Equal(t, "Assignment 2", list[1].Title)
+
+	// 5. DeleteHandin
+	err = svc.DeleteHandin(c.Uuid, m.Uuid, created2.Uuid)
+	assert.NoError(t, err)
+
+	listAfterDelete, err := svc.ListHandins(c.Uuid, m.Uuid)
+	assert.NoError(t, err)
+	assert.Len(t, listAfterDelete, 1)
+
+	// Delete non-existent
+	err = svc.DeleteHandin(c.Uuid, m.Uuid, uuid.New())
+	assert.ErrorIs(t, err, content.ErrContentNotFound)
+}

@@ -96,18 +96,20 @@ type ResultDto struct {
 
 // AssignmentDto is one row in the course assignment list.
 type AssignmentDto struct {
-	Uuid         string     `json:"uuid"`
-	Type         string     `json:"type"`
-	Title        string     `json:"title"`
-	ModuleUuid   string     `json:"moduleUuid"`
-	ModuleTitle  string     `json:"moduleTitle"`
-	Published    bool       `json:"published"`
-	VisibleFrom  *time.Time `json:"visibleFrom,omitempty"`
-	VisibleUntil *time.Time `json:"visibleUntil,omitempty"`
-	PassPercent  int        `json:"passPercent"`
-	MaxAttempts  int        `json:"maxAttempts"`
-	MyResult     *ResultDto `json:"myResult,omitempty"`
-	AttemptsUsed int        `json:"attemptsUsed"`
+	Uuid                   string     `json:"uuid"`
+	Type                   string     `json:"type"`
+	Title                  string     `json:"title"`
+	ModuleUuid             string     `json:"moduleUuid"`
+	ModuleTitle            string     `json:"moduleTitle"`
+	Published              bool       `json:"published"`
+	VisibleFrom            *time.Time `json:"visibleFrom,omitempty"`
+	VisibleUntil           *time.Time `json:"visibleUntil,omitempty"`
+	Deadline               *time.Time `json:"deadline,omitempty"`
+	AcceptsLateSubmissions bool       `json:"acceptsLateSubmissions"`
+	PassPercent            int        `json:"passPercent"`
+	MaxAttempts            int        `json:"maxAttempts"`
+	MyResult               *ResultDto `json:"myResult,omitempty"`
+	AttemptsUsed           int        `json:"attemptsUsed"`
 }
 
 // decodeOptions parses the JSON option list stored on a question.

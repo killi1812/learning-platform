@@ -52,3 +52,51 @@ func (FileDto) FromModel(f *File) FileDto {
 
 	return dto
 }
+
+// CreateHandinDto defines the payload for creating a hand-in assignment.
+type CreateHandinDto struct {
+	Title                  string     `json:"title" binding:"required,min=2,max=255"`
+	Deadline               *time.Time `json:"deadline,omitempty"`
+	AcceptsLateSubmissions bool       `json:"acceptsLateSubmissions"`
+}
+
+// UpdateHandinDto defines the payload for updating a hand-in assignment.
+type UpdateHandinDto struct {
+	Title                  string     `json:"title" binding:"required,min=2,max=255"`
+	Deadline               *time.Time `json:"deadline,omitempty"`
+	AcceptsLateSubmissions bool       `json:"acceptsLateSubmissions"`
+}
+
+// HandinDto represents the public view of a hand-in assignment.
+type HandinDto struct {
+	Uuid                   string     `json:"uuid"`
+	ModuleUuid             string     `json:"moduleUuid,omitempty"`
+	Title                  string     `json:"title"`
+	Position               int        `json:"position"`
+	Deadline               *time.Time `json:"deadline,omitempty"`
+	AcceptsLateSubmissions bool       `json:"acceptsLateSubmissions"`
+	CreatedAt              time.Time  `json:"createdAt"`
+	UpdatedAt              time.Time  `json:"updatedAt"`
+}
+
+// FromModel converts Content + Assignment to HandinDto.
+func (HandinDto) FromModel(cnt *Content) HandinDto {
+	if cnt == nil {
+		return HandinDto{}
+	}
+	dto := HandinDto{
+		Uuid:      cnt.Uuid.String(),
+		Title:     cnt.Title,
+		Position:  cnt.Position,
+		CreatedAt: cnt.CreatedAt,
+		UpdatedAt: cnt.UpdatedAt,
+	}
+	if cnt.Module != nil {
+		dto.ModuleUuid = cnt.Module.Uuid.String()
+	}
+	if cnt.Assignment != nil {
+		dto.Deadline = cnt.Assignment.Deadline
+		dto.AcceptsLateSubmissions = cnt.Assignment.AcceptsLateSubmissions
+	}
+	return dto
+}

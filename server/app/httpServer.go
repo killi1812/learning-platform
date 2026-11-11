@@ -56,8 +56,9 @@ func Start() {
 			go func() {
 				defer schedulerWg.Done()
 				worker.Run(schedulerCtx)
+				zap.S().Infof("Stopped background worker %T", worker)
 			}()
-			zap.S().Debugf("Started background worker %T", worker)
+			zap.S().Infof("Started background worker %T", worker)
 		}
 	})
 

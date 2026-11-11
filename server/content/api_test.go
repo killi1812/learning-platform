@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/content"
@@ -129,6 +130,51 @@ func (m *mockContentService) GetContent(contentUuid uuid.UUID) (*content.Content
 
 func (m *mockContentService) GetAssignmentByModule(moduleUuid uuid.UUID) (*content.Content, error) {
 	return nil, content.ErrContentNotFound
+}
+
+func (m *mockContentService) CreateHandin(courseUuid, moduleUuid uuid.UUID, title string, deadline *time.Time, lateAllowed bool) (*content.Content, error) {
+	return &content.Content{
+		Uuid:  uuid.New(),
+		Title: title,
+		Type:  content.TypeAssignment,
+		Assignment: &content.Assignment{
+			Type:                   content.AssignmentHandIn,
+			Deadline:               deadline,
+			AcceptsLateSubmissions: lateAllowed,
+		},
+	}, nil
+}
+
+func (m *mockContentService) UpdateHandin(courseUuid, moduleUuid, assignmentUuid uuid.UUID, title string, deadline *time.Time, lateAllowed bool) (*content.Content, error) {
+	return &content.Content{
+		Uuid:  assignmentUuid,
+		Title: title,
+		Type:  content.TypeAssignment,
+		Assignment: &content.Assignment{
+			Type:                   content.AssignmentHandIn,
+			Deadline:               deadline,
+			AcceptsLateSubmissions: lateAllowed,
+		},
+	}, nil
+}
+
+func (m *mockContentService) GetHandin(courseUuid, moduleUuid, assignmentUuid uuid.UUID) (*content.Content, error) {
+	return &content.Content{
+		Uuid:  assignmentUuid,
+		Title: "Handin",
+		Type:  content.TypeAssignment,
+		Assignment: &content.Assignment{
+			Type: content.AssignmentHandIn,
+		},
+	}, nil
+}
+
+func (m *mockContentService) DeleteHandin(courseUuid, moduleUuid, assignmentUuid uuid.UUID) error {
+	return nil
+}
+
+func (m *mockContentService) ListHandins(courseUuid, moduleUuid uuid.UUID) ([]content.Content, error) {
+	return []content.Content{}, nil
 }
 
 type mockCourseServiceForContent struct {
@@ -639,6 +685,64 @@ func TestContentCtn_Delete(t *testing.T) {
 		}
 		r := setupContentApiTest(&mockContentService{}, courseMock)
 		w := doReq(r, http.MethodDelete, "/api/course/"+courseUuid.String()+"/module/"+moduleUuid.String()+"/file/"+pageUuid.String(), auth, nil)
+		assert.Equal(t, http.StatusForbidden, w.Code)
+	})
+}
+
+func TestContentCtn_Handin(t *testing.T) {
+	courseUuid := uuid.New()
+	moduleUuid := uuid.New()
+	asgnUuid := uuid.New()
+	auth := generateAuthHeader(t, authutils.ROLE_USER)
+	basePath := "/api/course/" + courseUuid.String() + "/module/" + moduleUuid.String() + "/assignment"
+
+	t.Run("create handin success", func(t *testing.T) {
+		r := setupContentApiTest(&mockContentService{}, &mockCourseServiceForContent{})
+		payload := content.CreateHandinDto{Title: "Homework 1", AcceptsLateSubmissions: true}
+		w := doReq(r, http.MethodPost, basePath, auth, payload)
+		assert.Equal(t, http.StatusCreated, w.Code)
+	})
+
+	t.Run("create handin validation error", func(t *testing.T) {
+		r := setupContentApiTest(&mockContentService{}, &mockCourseServiceForContent{})
+		payload := content.CreateHandinDto{Title: ""}
+		w := doReq(r, http.MethodPost, basePath, auth, payload)
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("list handins success", func(t *testing.T) {
+		r := setupContentApiTest(&mockContentService{}, &mockCourseServiceForContent{})
+		w := doReq(r, http.MethodGet, basePath, auth, nil)
+		assert.Equal(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("get handin success", func(t *testing.T) {
+		r := setupContentApiTest(&mockContentService{}, &mockCourseServiceForContent{})
+		w := doReq(r, http.MethodGet, basePath+"/"+asgnUuid.String(), auth, nil)
+		assert.Equal(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("update handin success", func(t *testing.T) {
+		r := setupContentApiTest(&mockContentService{}, &mockCourseServiceForContent{})
+		payload := content.UpdateHandinDto{Title: "Updated HW 1"}
+		w := doReq(r, http.MethodPut, basePath+"/"+asgnUuid.String(), auth, payload)
+		assert.Equal(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("delete handin success", func(t *testing.T) {
+		r := setupContentApiTest(&mockContentService{}, &mockCourseServiceForContent{})
+		w := doReq(r, http.MethodDelete, basePath+"/"+asgnUuid.String(), auth, nil)
+		assert.Equal(t, http.StatusNoContent, w.Code)
+	})
+
+	t.Run("forbidden when not teacher or admin", func(t *testing.T) {
+		courseMock := &mockCourseServiceForContent{
+			isTeacherOrAdminFunc: func(courseUuid, userUuid uuid.UUID, isSystemAdmin bool) (bool, error) {
+				return false, nil
+			},
+		}
+		r := setupContentApiTest(&mockContentService{}, courseMock)
+		w := doReq(r, http.MethodPost, basePath, auth, content.CreateHandinDto{Title: "HW 1"})
 		assert.Equal(t, http.StatusForbidden, w.Code)
 	})
 }

@@ -48,6 +48,19 @@ definitions:
       accessToken:
         type: string
     type: object
+  content.CreateHandinDto:
+    properties:
+      acceptsLateSubmissions:
+        type: boolean
+      deadline:
+        type: string
+      title:
+        maxLength: 255
+        minLength: 2
+        type: string
+    required:
+    - title
+    type: object
   content.FileDto:
     properties:
       contentType:
@@ -73,6 +86,25 @@ definitions:
       uuid:
         type: string
     type: object
+  content.HandinDto:
+    properties:
+      acceptsLateSubmissions:
+        type: boolean
+      createdAt:
+        type: string
+      deadline:
+        type: string
+      moduleUuid:
+        type: string
+      position:
+        type: integer
+      title:
+        type: string
+      updatedAt:
+        type: string
+      uuid:
+        type: string
+    type: object
   content.QuestionType:
     enum:
     - MULTIPLE_CHOICE
@@ -90,6 +122,19 @@ definitions:
   content.UpdateFileDto:
     properties:
       description:
+        type: string
+      title:
+        maxLength: 255
+        minLength: 2
+        type: string
+    required:
+    - title
+    type: object
+  content.UpdateHandinDto:
+    properties:
+      acceptsLateSubmissions:
+        type: boolean
+      deadline:
         type: string
       title:
         maxLength: 255
@@ -329,8 +374,12 @@ definitions:
     type: object
   quiz.AssignmentDto:
     properties:
+      acceptsLateSubmissions:
+        type: boolean
       attemptsUsed:
         type: integer
+      deadline:
+        type: string
       maxAttempts:
         type: integer
       moduleTitle:
@@ -556,6 +605,38 @@ definitions:
         type: string
       uuid:
         example: a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11
+        type: string
+    type: object
+  submission.SubmissionDto:
+    properties:
+      attempt:
+        type: integer
+      contentType:
+        type: string
+      fileName:
+        type: string
+      fileSize:
+        type: integer
+      isLate:
+        type: boolean
+      payloadType:
+        $ref: '#/definitions/submission.PayloadType'
+      payloadUrl:
+        type: string
+      submittedAt:
+        type: string
+      userEmail:
+        type: string
+      uuid:
+        type: string
+    type: object
+  submission.UploadTicketDto:
+    properties:
+      expiresAt:
+        type: string
+      submittedAt:
+        type: string
+      ticketUuid:
         type: string
     type: object
   user.NewUserDto:
@@ -1012,6 +1093,53 @@ paths:
       tags:
       - quiz
   /course/{uuid}/content/{contentUuid}/submission:
+    get:
+      description: Teacher or Admin only. Returns all student submissions for an assignment.
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Content UUID
+        in: path
+        name: contentUuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/submission.SubmissionDto'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List all student submissions for an assignment
+      tags:
+      - submission
     post:
       consumes:
       - application/json
@@ -1067,7 +1195,213 @@ paths:
             $ref: '#/definitions/ginutil.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: Submit assignment deliverable
+      summary: Submit assignment deliverable via URL
+      tags:
+      - submission
+  /course/{uuid}/content/{contentUuid}/submission/{submissionUuid}/file:
+    get:
+      description: Streams deliverable file for student owner or course instructor.
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Content UUID
+        in: path
+        name: contentUuid
+        required: true
+        type: string
+      - description: Submission UUID
+        in: path
+        name: submissionUuid
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Download submitted deliverable file
+      tags:
+      - submission
+  /course/{uuid}/content/{contentUuid}/submission/file/init:
+    post:
+      description: Stamps receipt time, verifies eligibility, and issues an upload
+        ticket valid for 30 minutes.
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Content UUID
+        in: path
+        name: contentUuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/submission.UploadTicketDto'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Initialize file submission
+      tags:
+      - submission
+  /course/{uuid}/content/{contentUuid}/submission/file/upload:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Accepts multipart file stream, pipes zero-memory to SeaweedFS with
+        rolling deadline extension, and queues submission.
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Content UUID
+        in: path
+        name: contentUuid
+        required: true
+        type: string
+      - description: Upload Ticket UUID
+        in: query
+        name: ticket
+        required: true
+        type: string
+      - description: Deliverable file
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/submission.SubmissionAcceptedDto'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Stream upload deliverable file for submission ticket
+      tags:
+      - submission
+  /course/{uuid}/content/{contentUuid}/submission/my:
+    get:
+      description: Returns all submission attempts made by the authenticated student
+        for this assignment.
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Content UUID
+        in: path
+        name: contentUuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/submission.SubmissionDto'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List my submissions for an assignment
       tags:
       - submission
   /course/{uuid}/enroll:
@@ -1511,6 +1845,259 @@ paths:
       summary: Update module
       tags:
       - module
+  /course/{uuid}/module/{moduleUuid}/assignment:
+    get:
+      description: Returns all hand-in assignments for a given course module
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Module UUID
+        in: path
+        name: moduleUuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/content.HandinDto'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List hand-in assignments in module
+      tags:
+      - content
+    post:
+      consumes:
+      - application/json
+      description: Creates a new submittable hand-in assignment (Teacher or Admin
+        only)
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Module UUID
+        in: path
+        name: moduleUuid
+        required: true
+        type: string
+      - description: Hand-in assignment details
+        in: body
+        name: assignment
+        required: true
+        schema:
+          $ref: '#/definitions/content.CreateHandinDto'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/content.HandinDto'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create hand-in assignment in module
+      tags:
+      - content
+  /course/{uuid}/module/{moduleUuid}/assignment/{assignmentUuid}:
+    delete:
+      description: Deletes hand-in assignment and its content record (Teacher or Admin
+        only)
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Module UUID
+        in: path
+        name: moduleUuid
+        required: true
+        type: string
+      - description: Assignment UUID
+        in: path
+        name: assignmentUuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete hand-in assignment
+      tags:
+      - content
+    get:
+      description: Returns metadata for a specific hand-in assignment
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Module UUID
+        in: path
+        name: moduleUuid
+        required: true
+        type: string
+      - description: Assignment UUID
+        in: path
+        name: assignmentUuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/content.HandinDto'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get hand-in assignment details
+      tags:
+      - content
+    put:
+      consumes:
+      - application/json
+      description: Updates title, deadline, and late submission policy (Teacher or
+        Admin only)
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Module UUID
+        in: path
+        name: moduleUuid
+        required: true
+        type: string
+      - description: Assignment UUID
+        in: path
+        name: assignmentUuid
+        required: true
+        type: string
+      - description: Updated assignment metadata
+        in: body
+        name: assignment
+        required: true
+        schema:
+          $ref: '#/definitions/content.UpdateHandinDto'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/content.HandinDto'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update hand-in assignment
+      tags:
+      - content
   /course/{uuid}/module/{moduleUuid}/file:
     get:
       description: Returns all file materials for a given course module

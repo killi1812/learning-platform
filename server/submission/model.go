@@ -39,7 +39,11 @@ type Submission struct {
 	Attempt     int              `json:"attempt" gorm:"not null;default:1"`
 	IsLate      bool             `json:"isLate" gorm:"not null;default:false"`
 	PayloadType PayloadType      `json:"payloadType" gorm:"type:varchar(20);not null;default:'URL'"`
-	PayloadURL  string           `json:"payloadUrl" gorm:"type:text;not null"`
+	PayloadURL  string           `json:"payloadUrl,omitempty" gorm:"type:text"`
+	FileName    string           `json:"fileName,omitempty" gorm:"type:varchar(255)"`
+	FileSize    int64            `json:"fileSize,omitempty"`
+	ContentType string           `json:"contentType,omitempty" gorm:"type:varchar(100)"`
+	StorageKey  string           `json:"storageKey,omitempty" gorm:"type:varchar(512)"`
 	SubmittedAt time.Time        `json:"submittedAt" gorm:"not null;index"`
 	Grade       *Grade           `json:"grade,omitempty" gorm:"foreignKey:SubmissionID;constraint:OnDelete:CASCADE;"`
 }
@@ -82,4 +86,25 @@ type DeadlineReminder struct {
 	UserID       uint         `gorm:"not null;uniqueIndex:idx_deadline_reminder_unique;index"`
 	ReminderType ReminderType `gorm:"type:varchar(10);not null;uniqueIndex:idx_deadline_reminder_unique"`
 	SentAt       time.Time    `gorm:"not null"`
+}
+
+// UploadTicket reserves a submission slot and locks the submission receipt timestamp during two-phase file uploads.
+type UploadTicket struct {
+	gorm.Model
+	Uuid         uuid.UUID `json:"uuid" gorm:"type:uuid;uniqueIndex;not null"`
+	CourseID     uint      `json:"courseId" gorm:"not null;index"`
+	ContentID    uint      `json:"contentId" gorm:"not null;index"`
+	ContentTitle string    `json:"contentTitle,omitempty" gorm:"type:varchar(255)"`
+	UserID       uint      `json:"userId" gorm:"not null;index"`
+	UserEmail    string    `json:"userEmail" gorm:"type:varchar(255);not null"`
+	SubmittedAt  time.Time `json:"submittedAt" gorm:"not null"`
+	ExpiresAt    time.Time `json:"expiresAt" gorm:"not null;index"`
+	Consumed     bool      `json:"consumed" gorm:"not null;default:false"`
+}
+
+func (t *UploadTicket) BeforeCreate(tx *gorm.DB) error {
+	if t.Uuid == uuid.Nil {
+		t.Uuid = uuid.New()
+	}
+	return nil
 }

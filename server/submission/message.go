@@ -19,6 +19,10 @@ type SubmissionMessage struct {
 	UserUuid     uuid.UUID   `json:"userUuid,omitempty"`
 	UserEmail    string      `json:"userEmail"`
 	PayloadType  PayloadType `json:"payloadType"`
-	PayloadURL   string      `json:"payloadUrl"`
+	PayloadURL   string      `json:"payloadUrl,omitempty"`
+	FileName     string      `json:"fileName,omitempty"`
+	FileSize     int64       `json:"fileSize,omitempty"`
+	ContentType  string      `json:"contentType,omitempty"`
+	StorageKey   string      `json:"storageKey,omitempty"`
 	SubmittedAt  time.Time   `json:"submittedAt"`
 }

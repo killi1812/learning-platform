@@ -1,0 +1,190 @@
+<template>
+  <v-dialog
+    :model-value="modelValue"
+    max-width="850"
+    persistent
+    @update:model-value="emit('update:modelValue', $event)"
+  >
+    <v-card class="bg-surface pa-2" rounded="lg">
+      <v-card-title
+        class="text-h5 font-weight-bold pt-4 px-4 text-high-emphasis d-flex align-center justify-space-between"
+      >
+        <span>Student Submissions: {{ assignment?.title }}</span>
+        <v-btn icon="mdi-close" variant="text" size="small" @click="close" />
+      </v-card-title>
+
+      <v-card-subtitle class="px-4 text-medium-emphasis d-flex align-center justify-space-between">
+        <span>{{ submissions.length }} total submissions recorded</span>
+        <v-btn
+          density="compact"
+          prepend-icon="mdi-refresh"
+          variant="text"
+          size="small"
+          @click="loadSubmissions"
+        >
+          Refresh
+        </v-btn>
+      </v-card-subtitle>
+
+      <v-card-text class="px-4 pt-3">
+        <!-- Search filter -->
+        <v-text-field
+          v-model="searchQuery"
+          class="mb-3"
+          clearable
+          density="compact"
+          label="Search by student email"
+          prepend-inner-icon="mdi-magnify"
+          variant="outlined"
+        />
+
+        <div v-if="loading" class="py-8 text-center">
+          <v-progress-circular color="primary" indeterminate size="32" />
+        </div>
+        <div
+          v-else-if="filteredSubmissions.length === 0"
+          class="py-6 text-center text-medium-emphasis"
+        >
+          {{
+            searchQuery
+              ? 'No submissions match your search.'
+              : 'No submissions received for this assignment yet.'
+          }}
+        </div>
+        <v-card v-else class="bg-surface" elevation="0" rounded="md" border>
+          <v-table density="comfortable">
+            <thead>
+              <tr>
+                <th class="text-left font-weight-bold">Student Email</th>
+                <th class="text-center font-weight-bold">Attempt</th>
+                <th class="text-left font-weight-bold">Submitted At</th>
+                <th class="text-center font-weight-bold">Timing</th>
+                <th class="text-right font-weight-bold">Deliverable</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="sub in filteredSubmissions" :key="sub.uuid">
+                <td class="font-weight-medium">{{ sub.userEmail }}</td>
+                <td class="text-center">
+                  <v-chip size="x-small" color="primary" variant="flat">
+                    #{{ sub.attempt }}
+                  </v-chip>
+                </td>
+                <td class="text-medium-emphasis">
+                  {{ formatDateTime(sub.submittedAt) }}
+                </td>
+                <td class="text-center">
+                  <v-chip
+                    :color="sub.isLate ? 'warning' : 'success'"
+                    size="x-small"
+                    variant="tonal"
+                  >
+                    {{ sub.isLate ? 'Late' : 'On Time' }}
+                  </v-chip>
+                </td>
+                <td class="text-right">
+                  <v-btn
+                    v-if="sub.payloadType === 'FILE'"
+                    color="primary"
+                    density="compact"
+                    prepend-icon="mdi-download"
+                    size="small"
+                    variant="tonal"
+                    @click="handleDownload(sub)"
+                  >
+                    {{ sub.fileName || 'Download' }}
+                  </v-btn>
+                  <v-btn
+                    v-else
+                    :href="sub.payloadUrl"
+                    color="primary"
+                    density="compact"
+                    prepend-icon="mdi-open-in-new"
+                    size="small"
+                    target="_blank"
+                    variant="text"
+                  >
+                    Open Link
+                  </v-btn>
+                </td>
+              </tr>
+            </tbody>
+          </v-table>
+        </v-card>
+      </v-card-text>
+
+      <v-card-actions class="pa-4 bg-surface-variant">
+        <v-spacer />
+        <v-btn color="medium-emphasis" variant="text" @click="close"> Close </v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
+</template>
+
+<script setup lang="ts">
+import { ref, computed, watch } from 'vue'
+import { useToast } from '@/composables/useToast'
+import { listAssignmentSubmissions, downloadSubmissionFile } from '@/api/submission'
+import type { Assignment } from '@/types/quiz'
+import type { Submission } from '@/types/submission'
+
+const props = defineProps<{
+  modelValue: boolean
+  courseUuid: string
+  assignment?: Assignment
+}>()
+
+const emit = defineEmits<{
+  (e: 'update:modelValue', val: boolean): void
+}>()
+
+const toast = useToast()
+const submissions = ref<Submission[]>([])
+const loading = ref(false)
+const searchQuery = ref('')
+
+function close() {
+  emit('update:modelValue', false)
+}
+
+function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString()
+}
+
+const filteredSubmissions = computed(() => {
+  if (!searchQuery.value.trim()) return submissions.value
+  const query = searchQuery.value.toLowerCase()
+  return submissions.value.filter(s => s.userEmail?.toLowerCase().includes(query))
+})
+
+async function loadSubmissions() {
+  if (!props.courseUuid || !props.assignment?.uuid) return
+  loading.value = true
+  try {
+    submissions.value = await listAssignmentSubmissions(props.courseUuid, props.assignment.uuid)
+  } catch (err: unknown) {
+    toast.error(err instanceof Error ? err.message : 'Failed to load student submissions.')
+  } finally {
+    loading.value = false
+  }
+}
+
+watch(
+  () => props.modelValue,
+  open => {
+    if (open) {
+      searchQuery.value = ''
+      loadSubmissions()
+    }
+  },
+)
+
+async function handleDownload(sub: Submission) {
+  if (!props.courseUuid || !props.assignment?.uuid) return
+  try {
+    await downloadSubmissionFile(props.courseUuid, props.assignment.uuid, sub.uuid, sub.fileName)
+  } catch (err: unknown) {
+    toast.error(err instanceof Error ? err.message : 'Failed to download file.')
+  }
+}
+</script>

@@ -22,10 +22,16 @@ var (
 	ErrNotEnrolled               = errors.New("user is not enrolled as a student in this course")
 	ErrDeadlinePassed            = errors.New("deadline has passed and late submissions are not accepted")
 	ErrModuleLocked              = errors.New("module is locked because prerequisite module has not been completed")
+	ErrTicketNotFound            = errors.New("upload ticket not found")
+	ErrTicketExpired             = errors.New("upload ticket has expired")
+	ErrTicketConsumed            = errors.New("upload ticket has already been used")
+	ErrSubmissionNotFound        = errors.New("submission not found")
+	ErrUnauthorizedSubmission    = errors.New("unauthorized access to submission")
 )
 
 // SubmissionTarget contains database primary IDs for publishing the submission message.
 type SubmissionTarget struct {
+	CourseID     uint
 	ContentID    uint
 	ContentUuid  uuid.UUID
 	ContentTitle string
@@ -38,10 +44,16 @@ type SubmissionTarget struct {
 // ISubmissionService provides domain validation and database persistence for submissions.
 type ISubmissionService interface {
 	ResolveTarget(courseUuid, contentUuid, userUuid uuid.UUID, submittedAt time.Time) (*SubmissionTarget, error)
+	InitFileSubmission(courseUuid, contentUuid, userUuid uuid.UUID, submittedAt time.Time) (*UploadTicket, error)
+	ValidateAndExtendTicket(ticketUuid, courseUuid, contentUuid, userUuid uuid.UUID, now time.Time) (*UploadTicket, error)
+	ConsumeUploadTicket(ticketUuid uuid.UUID) error
 	SaveFromMessage(msg SubmissionMessage) (*IndividualSubmission, error)
 	NotifySubmitted(target *SubmissionTarget)
 	NotifySubmissionFailed(userUuid, courseUuid uuid.UUID, contentTitle string)
 	CheckDeadlineReminders(now time.Time) (int, error)
+	ListMySubmissions(courseUuid, contentUuid, userUuid uuid.UUID) ([]SubmissionDto, error)
+	ListCourseAssignmentSubmissions(courseUuid, contentUuid uuid.UUID) ([]SubmissionDto, error)
+	GetSubmissionForDownload(courseUuid, contentUuid, subUuid, userUuid uuid.UUID, isPrivileged bool) (*IndividualSubmission, error)
 }
 
 // SubmissionService implements ISubmissionService using GORM.
@@ -139,6 +151,7 @@ func (s *SubmissionService) ResolveTarget(courseUuid, contentUuid, userUuid uuid
 	}
 
 	return &SubmissionTarget{
+		CourseID:     enrollment.CourseID,
 		ContentID:    cnt.ID,
 		ContentUuid:  cnt.Uuid,
 		ContentTitle: cnt.Title,
@@ -149,11 +162,90 @@ func (s *SubmissionService) ResolveTarget(courseUuid, contentUuid, userUuid uuid
 	}, nil
 }
 
+// InitFileSubmission reserves an upload ticket and stamps the receipt time.
+func (s *SubmissionService) InitFileSubmission(courseUuid, contentUuid, userUuid uuid.UUID, submittedAt time.Time) (*UploadTicket, error) {
+	target, err := s.ResolveTarget(courseUuid, contentUuid, userUuid, submittedAt)
+	if err != nil {
+		return nil, err
+	}
+
+	// Invalidate any existing unconsumed tickets for this student and assignment
+	_ = s.db.Model(&UploadTicket{}).
+		Where("user_id = ? AND content_id = ? AND consumed = ?", target.UserID, target.ContentID, false).
+		Update("consumed", true).Error
+
+	ticket := UploadTicket{
+		Uuid:         uuid.New(),
+		CourseID:     target.CourseID,
+		ContentID:    target.ContentID,
+		ContentTitle: target.ContentTitle,
+		UserID:       target.UserID,
+		UserEmail:    target.UserEmail,
+		SubmittedAt:  submittedAt,
+		ExpiresAt:    submittedAt.Add(30 * time.Minute),
+		Consumed:     false,
+	}
+
+	if err := s.db.Create(&ticket).Error; err != nil {
+		return nil, err
+	}
+	return &ticket, nil
+}
+
+// ValidateAndExtendTicket verifies that the ticket is valid, belongs to the student, and extends its expiration while active.
+func (s *SubmissionService) ValidateAndExtendTicket(ticketUuid, courseUuid, contentUuid, userUuid uuid.UUID, now time.Time) (*UploadTicket, error) {
+	var ticket UploadTicket
+	err := s.db.
+		Joins("JOIN contents ON contents.id = upload_tickets.content_id").
+		Joins("JOIN courses ON courses.id = upload_tickets.course_id").
+		Joins("JOIN users ON users.id = upload_tickets.user_id").
+		Where("upload_tickets.uuid = ? AND courses.uuid = ? AND contents.uuid = ? AND users.uuid = ?", ticketUuid, courseUuid, contentUuid, userUuid).
+		First(&ticket).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrTicketNotFound
+		}
+		return nil, err
+	}
+
+	if ticket.Consumed {
+		return nil, ErrTicketConsumed
+	}
+
+	if now.After(ticket.ExpiresAt) {
+		return nil, ErrTicketExpired
+	}
+
+	// Extend ticket expiration by 15 minutes during active transfer so ongoing slow uploads stay valid
+	if ticket.ExpiresAt.Sub(now) < 15*time.Minute {
+		ticket.ExpiresAt = now.Add(15 * time.Minute)
+		_ = s.db.Model(&ticket).Update("expires_at", ticket.ExpiresAt).Error
+	}
+
+	return &ticket, nil
+}
+
+// ConsumeUploadTicket marks the upload ticket as consumed atomically.
+func (s *SubmissionService) ConsumeUploadTicket(ticketUuid uuid.UUID) error {
+	res := s.db.Model(&UploadTicket{}).Where("uuid = ? AND consumed = ?", ticketUuid, false).Update("consumed", true)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		var exists int64
+		if err := s.db.Model(&UploadTicket{}).Where("uuid = ?", ticketUuid).Count(&exists).Error; err == nil && exists == 0 {
+			return ErrTicketNotFound
+		}
+		return ErrTicketConsumed
+	}
+	return nil
+}
+
 // SaveFromMessage persists an enqueued submission into the database. Idempotent on msg.Uuid.
 func (s *SubmissionService) SaveFromMessage(msg SubmissionMessage) (*IndividualSubmission, error) {
-	// Fast check for duplicate delivery revers logic return if submission exists
+	// Fast check for duplicate delivery
 	var existing IndividualSubmission
-	if err := s.db.Where("uuid = ?", msg.Uuid).First(&existing).Error; err == nil {
+	if err := s.db.Where("uuid = ?", msg.Uuid).Limit(1).Find(&existing).Error; err == nil && existing.ID != 0 {
 		s.logger.Debugf("Submission %s already exists, skipping duplicate message", msg.Uuid)
 		return &existing, nil
 	}
@@ -166,7 +258,7 @@ func (s *SubmissionService) SaveFromMessage(msg SubmissionMessage) (*IndividualS
 
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		// Re-check within transaction
-		if err := tx.Where("uuid = ?", msg.Uuid).First(&savedSub).Error; err == nil {
+		if err := tx.Where("uuid = ?", msg.Uuid).Limit(1).Find(&savedSub).Error; err == nil && savedSub.ID != 0 {
 			return nil
 		}
 
@@ -177,14 +269,19 @@ func (s *SubmissionService) SaveFromMessage(msg SubmissionMessage) (*IndividualS
 		}
 
 		// Compute attempt number for this student on this assignment
-		var maxAttempt int
-		row := tx.Model(&IndividualSubmission{}).
-			Clauses(clause.Locking{Strength: "UPDATE"}).
+		var lastSub IndividualSubmission
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("content_id = ? AND user_id = ?", msg.ContentID, msg.UserID).
-			Select("COALESCE(MAX(attempt), 0)").
-			Row()
-		if err := row.Scan(&maxAttempt); err != nil {
-			return fmt.Errorf("failed to query max attempt: %w", err)
+			Order("attempt DESC").
+			Limit(1).
+			Find(&lastSub).Error
+		if err != nil {
+			return fmt.Errorf("failed to query latest attempt: %w", err)
+		}
+
+		maxAttempt := 0
+		if lastSub.ID != 0 {
+			maxAttempt = lastSub.Attempt
 		}
 
 		isLate := asgn.Deadline != nil && msg.SubmittedAt.After(*asgn.Deadline)
@@ -197,6 +294,10 @@ func (s *SubmissionService) SaveFromMessage(msg SubmissionMessage) (*IndividualS
 				IsLate:      isLate,
 				PayloadType: msg.PayloadType,
 				PayloadURL:  msg.PayloadURL,
+				FileName:    msg.FileName,
+				FileSize:    msg.FileSize,
+				ContentType: msg.ContentType,
+				StorageKey:  msg.StorageKey,
 				SubmittedAt: msg.SubmittedAt,
 			},
 			UserID:    &msg.UserID,
@@ -282,12 +383,147 @@ func (s *SubmissionService) NotifySubmissionFailed(userUuid, courseUuid uuid.UUI
 		s.logger.Error("Cannot notify submission failed: user uuid is nil")
 		return
 	}
+	targetURL := "/dashboard"
+	if courseUuid != uuid.Nil {
+		targetURL = fmt.Sprintf("/courses/%s", courseUuid)
+	}
 	_, err := s.notifications.NotifySystem(userUuid, notification.NotificationContent{
 		Title: "Assignment Submission Failed",
-		Body:  fmt.Sprintf("We could not process your submission for %q. Please try submitting again.", contentTitle),
-		URL:   fmt.Sprintf("/courses/%s", courseUuid),
+		Body:  fmt.Sprintf("We could not process your submission for %q. Please contact your professor so they can help you resolve it.", contentTitle),
+		URL:   targetURL,
 	})
 	if err != nil {
 		s.logger.Errorf("Failed to send submission failed notification: %v", err)
 	}
+}
+
+// ListMySubmissions returns all submissions for a student on a specific assignment.
+func (s *SubmissionService) ListMySubmissions(courseUuid, contentUuid, userUuid uuid.UUID) ([]SubmissionDto, error) {
+	var u user.User
+	if err := s.db.Where("uuid = ?", userUuid).First(&u).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotEnrolled
+		}
+		return nil, err
+	}
+
+	var cnt content.Content
+	err := s.db.
+		Joins("JOIN modules ON modules.id = contents.module_id").
+		Joins("JOIN courses ON courses.id = modules.course_id").
+		Where("contents.uuid = ? AND courses.uuid = ?", contentUuid, courseUuid).
+		First(&cnt).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrContentNotFound
+		}
+		return nil, err
+	}
+
+	var subs []IndividualSubmission
+	err = s.db.
+		Where("content_id = ? AND user_id = ?", cnt.ID, u.ID).
+		Order("attempt DESC").
+		Find(&subs).Error
+	if err != nil {
+		return nil, err
+	}
+
+	dtos := make([]SubmissionDto, 0, len(subs))
+	for _, sub := range subs {
+		dtos = append(dtos, SubmissionDto{
+			Uuid:        sub.Uuid,
+			Attempt:     sub.Attempt,
+			IsLate:      sub.IsLate,
+			PayloadType: sub.PayloadType,
+			PayloadURL:  sub.PayloadURL,
+			FileName:    sub.FileName,
+			FileSize:    sub.FileSize,
+			ContentType: sub.ContentType,
+			SubmittedAt: sub.SubmittedAt,
+			UserEmail:   sub.UserEmail,
+		})
+	}
+	return dtos, nil
+}
+
+// ListCourseAssignmentSubmissions returns all submissions for an assignment (for instructors).
+func (s *SubmissionService) ListCourseAssignmentSubmissions(courseUuid, contentUuid uuid.UUID) ([]SubmissionDto, error) {
+	var cnt content.Content
+	err := s.db.
+		Joins("JOIN modules ON modules.id = contents.module_id").
+		Joins("JOIN courses ON courses.id = modules.course_id").
+		Where("contents.uuid = ? AND courses.uuid = ?", contentUuid, courseUuid).
+		First(&cnt).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrContentNotFound
+		}
+		return nil, err
+	}
+
+	var subs []IndividualSubmission
+	err = s.db.
+		Where("content_id = ?", cnt.ID).
+		Order("submitted_at DESC").
+		Find(&subs).Error
+	if err != nil {
+		return nil, err
+	}
+
+	dtos := make([]SubmissionDto, 0, len(subs))
+	for _, sub := range subs {
+		dtos = append(dtos, SubmissionDto{
+			Uuid:        sub.Uuid,
+			Attempt:     sub.Attempt,
+			IsLate:      sub.IsLate,
+			PayloadType: sub.PayloadType,
+			PayloadURL:  sub.PayloadURL,
+			FileName:    sub.FileName,
+			FileSize:    sub.FileSize,
+			ContentType: sub.ContentType,
+			SubmittedAt: sub.SubmittedAt,
+			UserEmail:   sub.UserEmail,
+		})
+	}
+	return dtos, nil
+}
+
+// GetSubmissionForDownload retrieves a submission and verifies download access authorization.
+func (s *SubmissionService) GetSubmissionForDownload(courseUuid, contentUuid, subUuid, userUuid uuid.UUID, isPrivileged bool) (*IndividualSubmission, error) {
+	var cnt content.Content
+	err := s.db.
+		Joins("JOIN modules ON modules.id = contents.module_id").
+		Joins("JOIN courses ON courses.id = modules.course_id").
+		Where("contents.uuid = ? AND courses.uuid = ?", contentUuid, courseUuid).
+		First(&cnt).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrContentNotFound
+		}
+		return nil, err
+	}
+
+	var sub IndividualSubmission
+	err = s.db.
+		Where("uuid = ? AND content_id = ?", subUuid, cnt.ID).
+		First(&sub).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrSubmissionNotFound
+		}
+		return nil, err
+	}
+
+	if !isPrivileged {
+		var u user.User
+		if err := s.db.Where("uuid = ?", userUuid).First(&u).Error; err != nil {
+			return nil, ErrUnauthorizedSubmission
+		}
+		if sub.UserID == nil || *sub.UserID != u.ID {
+			return nil, ErrUnauthorizedSubmission
+		}
+	}
+
+	return &sub, nil
 }

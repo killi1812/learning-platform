@@ -47,41 +47,44 @@ func (c *SubmissionConsumer) Run(ctx context.Context) {
 }
 
 func (c *SubmissionConsumer) handle(d amqp.Delivery) {
+	c.logger.Debugf("Received submission delivery (deliveryTag=%d, redelivered=%t, size=%d bytes)",
+		d.DeliveryTag, d.Redelivered, len(d.Body))
+
 	err := c.Process(d.Body)
 	if err == nil {
 		if ackErr := d.Ack(false); ackErr != nil {
-			c.logger.Errorf("Failed to ack delivery: %v", ackErr)
+			c.logger.Errorf("Failed to ack delivery %d: %v", d.DeliveryTag, ackErr)
 		}
 		return
 	}
 
 	if errors.Is(err, ErrInvalidMessage) {
-		c.logger.Warnf("Dead-lettering invalid submission message: %v", err)
+		c.logger.Warnf("Dead-lettering invalid submission message (deliveryTag=%d): %v", d.DeliveryTag, err)
 		var msg SubmissionMessage
 		if jsonErr := json.Unmarshal(d.Body, &msg); jsonErr == nil && msg.UserUuid != uuid.Nil {
 			c.service.NotifySubmissionFailed(msg.UserUuid, msg.CourseUuid, msg.ContentTitle)
 		}
 		if nackErr := d.Nack(false, false); nackErr != nil {
-			c.logger.Errorf("Failed to nack invalid delivery to DLQ: %v", nackErr)
+			c.logger.Errorf("Failed to nack invalid delivery %d to DLQ: %v", d.DeliveryTag, nackErr)
 		}
 		return
 	}
 
 	// Database or transient persistence failure
 	if !d.Redelivered {
-		c.logger.Warnf("Transient failure processing submission; requeuing once: %v", err)
+		c.logger.Warnf("Transient failure processing submission (deliveryTag=%d); requeuing once: %v", d.DeliveryTag, err)
 		time.Sleep(200 * time.Millisecond)
 		if nackErr := d.Nack(false, true); nackErr != nil {
-			c.logger.Errorf("Failed to requeue delivery: %v", nackErr)
+			c.logger.Errorf("Failed to requeue delivery %d: %v", d.DeliveryTag, nackErr)
 		}
 	} else {
-		c.logger.Errorf("Persistent failure processing submission; sending to DLQ: %v", err)
+		c.logger.Errorf("Persistent failure processing submission (deliveryTag=%d); sending to DLQ: %v", d.DeliveryTag, err)
 		var msg SubmissionMessage
 		if jsonErr := json.Unmarshal(d.Body, &msg); jsonErr == nil && msg.UserUuid != uuid.Nil {
 			c.service.NotifySubmissionFailed(msg.UserUuid, msg.CourseUuid, msg.ContentTitle)
 		}
 		if nackErr := d.Nack(false, false); nackErr != nil {
-			c.logger.Errorf("Failed to dead-letter delivery: %v", nackErr)
+			c.logger.Errorf("Failed to dead-letter delivery %d: %v", d.DeliveryTag, nackErr)
 		}
 	}
 }
@@ -93,18 +96,33 @@ func (c *SubmissionConsumer) Process(body []byte) error {
 		return fmt.Errorf("%w: failed to parse JSON: %v", ErrInvalidMessage, err)
 	}
 
-	if msg.Uuid == uuid.Nil || msg.ContentID == 0 || msg.UserID == 0 || msg.PayloadURL == "" {
-		return fmt.Errorf("%w: missing required fields", ErrInvalidMessage)
+	if msg.Uuid == uuid.Nil || msg.ContentID == 0 || msg.UserID == 0 {
+		return fmt.Errorf("%w: missing required fields (uuid=%s, contentId=%d, userId=%d)",
+			ErrInvalidMessage, msg.Uuid, msg.ContentID, msg.UserID)
 	}
+
+	if msg.PayloadType == PayloadTypeFile {
+		if msg.StorageKey == "" {
+			return fmt.Errorf("%w: missing storageKey for file submission %s", ErrInvalidMessage, msg.Uuid)
+		}
+	} else {
+		if msg.PayloadURL == "" {
+			return fmt.Errorf("%w: missing payloadUrl for url submission %s", ErrInvalidMessage, msg.Uuid)
+		}
+	}
+
+	c.logger.Infof("Processing submission %s (type=%s, contentId=%d, userId=%d, user=%s)",
+		msg.Uuid, msg.PayloadType, msg.ContentID, msg.UserID, msg.UserEmail)
 
 	saved, err := c.service.SaveFromMessage(msg)
 	if err != nil {
+		c.logger.Errorf("Failed to persist submission %s: %v", msg.Uuid, err)
 		return fmt.Errorf("failed to save submission: %w", err)
 	}
 
 	latency := time.Since(msg.SubmittedAt)
-	c.logger.Debugf("Submission %s persisted successfully (attempt=%d, isLate=%t, latency=%v)",
-		saved.Uuid, saved.Attempt, saved.IsLate, latency)
+	c.logger.Infof("Submission %s persisted successfully (attempt=%d, isLate=%t, latency=%s)",
+		saved.Uuid, saved.Attempt, saved.IsLate, latency.Round(time.Millisecond))
 
 	return nil
 }
