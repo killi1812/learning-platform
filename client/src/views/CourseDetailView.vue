@@ -31,7 +31,7 @@
         </v-tab>
         <v-tab v-if="isEnrolled" value="groups">
           <v-icon start icon="mdi-account-multiple" />
-          Groups
+          Groups ({{ groups.length }})
         </v-tab>
         <v-tab v-if="isTeacher" value="settings">
           <v-icon start icon="mdi-cog" />
@@ -464,13 +464,277 @@
 
       <!-- TAB: GROUPS -->
       <div v-if="activeTab === 'groups' && isEnrolled">
-        <v-card class="pa-6 bg-surface mb-6 text-center" elevation="1" rounded="lg">
-          <v-icon class="mb-3 text-medium-emphasis" icon="mdi-account-multiple" size="48" />
-          <h2 class="text-h5 font-weight-bold text-high-emphasis mb-2">Groups</h2>
-          <p class="text-body-1 text-medium-emphasis mb-0">
-            Course groups will be available here once configured.
+        <div class="d-flex flex-wrap align-center justify-space-between ga-3 mb-4">
+          <div>
+            <h2 class="text-h5 font-weight-bold text-high-emphasis my-0">Course Groups</h2>
+            <p class="text-body-2 text-medium-emphasis mb-0 mt-1">
+              Collaborate with peers on course assignments and team hand-ins.
+            </p>
+          </div>
+          <div v-if="isTeacher" class="d-flex align-center ga-2">
+            <v-btn
+              color="secondary"
+              prepend-icon="mdi-card-multiple-outline"
+              variant="tonal"
+              @click="openBulkDialog"
+            >
+              Bulk Create Groups
+            </v-btn>
+            <v-btn
+              color="primary"
+              prepend-icon="mdi-plus"
+              variant="elevated"
+              @click="openCreateGroupDialog"
+            >
+              Create Group
+            </v-btn>
+          </div>
+        </div>
+
+        <!-- Student Membership Alert -->
+        <v-alert
+          v-if="myGroup"
+          class="mb-6"
+          color="success"
+          icon="mdi-account-check"
+          rounded="lg"
+          variant="tonal"
+        >
+          <div class="d-flex flex-wrap align-center justify-space-between ga-3">
+            <div>
+              <div class="text-subtitle-1 font-weight-bold">
+                You are a member of {{ myGroup.name }}
+              </div>
+              <div class="text-body-2 text-medium-emphasis">
+                {{ myGroup.members.length }} / {{ myGroup.maxMembers }} members enrolled
+              </div>
+            </div>
+            <v-btn
+              v-if="!isTeacher"
+              color="error"
+              :loading="!!actionLoading[myGroup.uuid]"
+              prepend-icon="mdi-exit-to-app"
+              size="small"
+              variant="tonal"
+              @click="handleLeaveGroup(myGroup)"
+            >
+              Leave Group
+            </v-btn>
+          </div>
+        </v-alert>
+        <v-alert
+          v-else-if="!isTeacher && groups.length > 0"
+          class="mb-6"
+          color="info"
+          icon="mdi-information-outline"
+          rounded="lg"
+          variant="tonal"
+        >
+          <div class="text-subtitle-1 font-weight-bold">You have not joined a group yet</div>
+          <div class="text-body-2 text-medium-emphasis">
+            Select an open group below to join your teammates for group submissions.
+          </div>
+        </v-alert>
+
+        <!-- Loading State -->
+        <div v-if="loadingGroups" class="d-flex justify-center py-10">
+          <v-progress-circular color="primary" indeterminate size="48" />
+        </div>
+
+        <!-- Empty State -->
+        <v-card
+          v-else-if="groups.length === 0"
+          class="pa-8 text-center bg-surface-variant mb-6"
+          elevation="0"
+          rounded="lg"
+        >
+          <v-icon class="mb-3 text-medium-emphasis" icon="mdi-account-group-outline" size="48" />
+          <h3 class="text-h6 font-weight-medium text-high-emphasis">No groups created yet</h3>
+          <p class="text-body-2 text-medium-emphasis mb-4">
+            {{
+              isTeacher
+                ? 'Use "Bulk Create Groups" to quickly generate numbered groups, or create a single group.'
+                : 'The instructor has not created any groups for this course yet.'
+            }}
           </p>
+          <div v-if="isTeacher" class="d-flex justify-center ga-3">
+            <v-btn
+              color="primary"
+              prepend-icon="mdi-card-multiple-outline"
+              variant="elevated"
+              @click="openBulkDialog"
+            >
+              Bulk Create Groups
+            </v-btn>
+            <v-btn
+              color="secondary"
+              prepend-icon="mdi-plus"
+              variant="tonal"
+              @click="openCreateGroupDialog"
+            >
+              Create Group
+            </v-btn>
+          </div>
         </v-card>
+
+        <!-- Group Cards Grid -->
+        <v-row v-else class="mb-6" dense>
+          <v-col v-for="group in groups" :key="group.uuid" class="d-flex" cols="12" lg="4" sm="6">
+            <v-card
+              class="bg-surface w-100 d-flex flex-column justify-space-between"
+              :elevation="myGroup?.uuid === group.uuid ? 3 : 1"
+              rounded="lg"
+              :style="
+                myGroup?.uuid === group.uuid ? 'border: 2px solid rgb(var(--v-theme-primary));' : ''
+              "
+            >
+              <div>
+                <v-card-item class="pb-2">
+                  <div class="d-flex align-center justify-space-between mb-2">
+                    <h3
+                      class="text-subtitle-1 font-weight-bold text-high-emphasis my-0 text-truncate"
+                    >
+                      {{ group.name }}
+                    </h3>
+                    <div class="d-flex align-center ga-1">
+                      <v-chip
+                        v-if="myGroup?.uuid === group.uuid"
+                        color="success"
+                        size="x-small"
+                        variant="flat"
+                      >
+                        Your Group
+                      </v-chip>
+                      <v-chip
+                        :color="group.members.length >= group.maxMembers ? 'error' : 'primary'"
+                        size="x-small"
+                        variant="tonal"
+                      >
+                        {{ group.members.length }} / {{ group.maxMembers }}
+                      </v-chip>
+                    </div>
+                  </div>
+
+                  <!-- Teacher action buttons in header -->
+                  <div v-if="isTeacher" class="d-flex justify-end ga-1 mb-1">
+                    <v-btn
+                      density="comfortable"
+                      icon="mdi-pencil-outline"
+                      size="small"
+                      title="Edit Group"
+                      variant="text"
+                      @click="openEditGroupDialog(group)"
+                    />
+                    <v-btn
+                      color="error"
+                      density="comfortable"
+                      icon="mdi-delete-outline"
+                      :loading="!!actionLoading[group.uuid]"
+                      size="small"
+                      title="Delete Group"
+                      variant="text"
+                      @click="handleDeleteGroup(group)"
+                    />
+                  </div>
+                </v-card-item>
+
+                <v-card-text class="py-0">
+                  <v-divider class="mb-3" />
+                  <div class="text-caption font-weight-bold text-medium-emphasis mb-2">
+                    Members ({{ group.members.length }})
+                  </div>
+
+                  <div v-if="group.members.length > 0" class="d-flex flex-column ga-1">
+                    <div
+                      v-for="member in group.members"
+                      :key="member.uuid"
+                      class="d-flex align-center justify-space-between py-1 px-2 rounded bg-surface-variant text-caption"
+                    >
+                      <div class="d-flex align-center ga-2 text-truncate">
+                        <v-icon icon="mdi-account" size="small" />
+                        <span class="text-truncate font-weight-medium">
+                          {{ member.username || member.email }}
+                        </span>
+                      </div>
+                      <v-chip
+                        v-if="
+                          (currentUser?.userUuid && currentUser.userUuid === member.uuid) ||
+                          (currentUser?.email &&
+                            currentUser.email.toLowerCase() === member.email.toLowerCase())
+                        "
+                        color="primary"
+                        size="x-small"
+                        variant="flat"
+                      >
+                        You
+                      </v-chip>
+                    </div>
+                  </div>
+                  <div v-else class="text-caption text-medium-emphasis font-italic py-2">
+                    No members have joined yet.
+                  </div>
+                </v-card-text>
+              </div>
+
+              <!-- Card Actions -->
+              <v-card-actions class="pa-4 bg-surface-variant mt-3">
+                <template v-if="!isTeacher">
+                  <v-btn
+                    v-if="myGroup?.uuid === group.uuid"
+                    block
+                    color="error"
+                    :loading="!!actionLoading[group.uuid]"
+                    prepend-icon="mdi-exit-to-app"
+                    size="small"
+                    variant="tonal"
+                    @click="handleLeaveGroup(group)"
+                  >
+                    Leave Group
+                  </v-btn>
+                  <v-btn
+                    v-else
+                    block
+                    color="primary"
+                    :disabled="!!myGroup || group.members.length >= group.maxMembers"
+                    :loading="!!actionLoading[group.uuid]"
+                    prepend-icon="mdi-account-plus"
+                    size="small"
+                    variant="elevated"
+                    @click="handleJoinGroup(group)"
+                  >
+                    {{
+                      group.members.length >= group.maxMembers
+                        ? 'Group Full'
+                        : myGroup
+                          ? 'In Another Group'
+                          : 'Join Group'
+                    }}
+                  </v-btn>
+                </template>
+                <template v-else>
+                  <div class="d-flex justify-space-between align-center w-100">
+                    <span class="text-caption text-medium-emphasis">
+                      {{
+                        group.maxMembers - group.members.length > 0
+                          ? `${group.maxMembers - group.members.length} spots remaining`
+                          : 'Capacity reached'
+                      }}
+                    </span>
+                    <v-btn
+                      color="primary"
+                      prepend-icon="mdi-pencil-outline"
+                      size="small"
+                      variant="tonal"
+                      @click="openEditGroupDialog(group)"
+                    >
+                      Manage
+                    </v-btn>
+                  </div>
+                </template>
+              </v-card-actions>
+            </v-card>
+          </v-col>
+        </v-row>
       </div>
 
       <!-- TAB 3: SETTINGS (Teachers only) -->
@@ -812,6 +1076,162 @@
       :course-uuid="resolvedCourseUuid"
       :assignment="selectedHandinForTeacher"
     />
+
+    <!-- Create/Edit Group Dialog -->
+    <v-dialog v-model="groupDialogOpen" max-width="500" persistent>
+      <v-card class="bg-surface pa-2" rounded="lg">
+        <v-card-title class="text-h5 font-weight-bold pt-4 px-4 text-high-emphasis">
+          {{ isEditingGroup ? 'Edit Group' : 'Create Group' }}
+        </v-card-title>
+        <v-card-subtitle class="px-4 text-medium-emphasis">
+          {{
+            isEditingGroup
+              ? 'Update the group name and maximum member capacity.'
+              : 'Add a new group for students to collaborate and submit assignments.'
+          }}
+        </v-card-subtitle>
+
+        <v-card-text class="px-4 pt-4">
+          <v-text-field
+            v-model="groupForm.name"
+            class="mb-3"
+            label="Group Name"
+            placeholder="e.g. Group 1 or Team Alpha"
+            required
+            variant="outlined"
+          />
+
+          <v-text-field
+            v-model.number="groupForm.maxMembers"
+            class="mb-3"
+            hint="Maximum number of students permitted in this group (at least 1)"
+            label="Maximum Members"
+            max="100"
+            min="1"
+            persistent-hint
+            required
+            type="number"
+            variant="outlined"
+          />
+        </v-card-text>
+
+        <v-card-actions class="pa-4 bg-surface-variant">
+          <v-spacer />
+          <v-btn color="medium-emphasis" variant="text" @click="groupDialogOpen = false">
+            Cancel
+          </v-btn>
+          <v-btn color="primary" :loading="savingGroup" variant="elevated" @click="handleSaveGroup">
+            {{ isEditingGroup ? 'Save Changes' : 'Create Group' }}
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- Bulk Create Groups Dialog -->
+    <v-dialog v-model="bulkDialogOpen" max-width="540" persistent>
+      <v-card class="bg-surface pa-2" rounded="lg">
+        <v-card-title class="text-h5 font-weight-bold pt-4 px-4 text-high-emphasis">
+          Bulk Create Groups
+        </v-card-title>
+        <v-card-subtitle class="px-4 text-medium-emphasis">
+          Instantly generate multiple numbered groups with minimal clicks.
+        </v-card-subtitle>
+
+        <v-card-text class="px-4 pt-4">
+          <v-text-field
+            v-model="bulkForm.prefix"
+            class="mb-3"
+            hint="Prefix for group names (e.g. 'Group' produces 'Group 1', 'Group 2', ...)"
+            label="Group Prefix"
+            persistent-hint
+            placeholder="Group"
+            variant="outlined"
+          />
+
+          <div class="mb-3">
+            <label class="text-caption font-weight-bold text-medium-emphasis mb-1 d-block">
+              Quick Count Preset:
+            </label>
+            <div class="d-flex ga-2">
+              <v-btn
+                v-for="cnt in [5, 10, 15, 20]"
+                :key="cnt"
+                :color="bulkForm.count === cnt ? 'primary' : 'secondary'"
+                size="small"
+                :variant="bulkForm.count === cnt ? 'elevated' : 'tonal'"
+                @click="bulkForm.count = cnt"
+              >
+                {{ cnt }} Groups
+              </v-btn>
+            </div>
+          </div>
+
+          <v-row class="mb-2" dense>
+            <v-col cols="6">
+              <v-text-field
+                v-model.number="bulkForm.count"
+                label="Number of Groups"
+                max="50"
+                min="1"
+                required
+                type="number"
+                variant="outlined"
+              />
+            </v-col>
+            <v-col cols="6">
+              <v-text-field
+                v-model.number="bulkForm.maxMembers"
+                label="Capacity per Group"
+                max="100"
+                min="1"
+                required
+                type="number"
+                variant="outlined"
+              />
+            </v-col>
+          </v-row>
+
+          <v-alert
+            class="text-caption"
+            color="info"
+            density="compact"
+            icon="mdi-information-outline"
+            variant="tonal"
+          >
+            <div>
+              <strong>Preview:</strong>
+              {{ bulkForm.prefix || 'Group' }} 1, {{ bulkForm.prefix || 'Group' }} 2
+              <template v-if="bulkForm.count > 3">
+                ... {{ bulkForm.prefix || 'Group' }} {{ bulkForm.count }}
+              </template>
+              <template v-else-if="bulkForm.count === 3">
+                , {{ bulkForm.prefix || 'Group' }} 3
+              </template>
+              ({{ bulkForm.maxMembers }} students each)
+            </div>
+            <div class="mt-1 text-medium-emphasis">
+              Numbers that already exist will be automatically skipped.
+            </div>
+          </v-alert>
+        </v-card-text>
+
+        <v-card-actions class="pa-4 bg-surface-variant">
+          <v-spacer />
+          <v-btn color="medium-emphasis" variant="text" @click="bulkDialogOpen = false">
+            Cancel
+          </v-btn>
+          <v-btn
+            color="primary"
+            :loading="savingBulkGroups"
+            prepend-icon="mdi-plus-box-multiple"
+            variant="elevated"
+            @click="handleBulkCreateGroups"
+          >
+            Create {{ bulkForm.count }} Groups
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </v-container>
 </template>
 
@@ -834,6 +1254,13 @@ import {
   removeEnrollment,
   updateCourse,
   deleteCourse,
+  listCourseGroups,
+  createGroup,
+  bulkCreateGroups,
+  updateGroup,
+  deleteGroup,
+  joinGroup,
+  leaveGroup,
 } from '@/api/course'
 import { listFiles, uploadFile, updateFile, deleteFile } from '@/api/content'
 import { createQuiz, deleteQuiz, listAssignments } from '@/api/quiz'
@@ -844,7 +1271,7 @@ import HandinSubmissionDialog from '@/components/HandinSubmissionDialog.vue'
 import TeacherSubmissionsDialog from '@/components/TeacherSubmissionsDialog.vue'
 import { isAxiosError } from 'axios'
 import { getApiErrorMessage } from '@/api/client'
-import type { Course, Module, Enrollment, UpdateCoursePayload } from '@/types/course'
+import type { Course, Module, Enrollment, UpdateCoursePayload, Group } from '@/types/course'
 import type { FileUpload } from '@/types/content'
 import type { Assignment } from '@/types/quiz'
 
@@ -858,7 +1285,7 @@ const emit = defineEmits<{
 
 const route = useRoute()
 const router = useRouter()
-const { hasRole } = useAuth()
+const { hasRole, currentUser } = useAuth()
 const toast = useToast()
 
 const resolvedCourseUuid = computed(() => props.courseUuid || String(route.params.uuid || ''))
@@ -910,6 +1337,39 @@ const newEnrollmentEmail = ref('')
 const newEnrollmentRole = ref<'STUDENT' | 'TEACHER'>('STUDENT')
 const addingEnrollment = ref(false)
 const deletingEnrollmentUserUuid = ref<string | undefined>(undefined)
+
+// Group management state
+const groups = ref<Group[]>([])
+const loadingGroups = ref(false)
+const groupDialogOpen = ref(false)
+const isEditingGroup = ref(false)
+const editingGroupUuid = ref<string | undefined>(undefined)
+const groupForm = ref<{ name: string; maxMembers: number }>({
+  name: '',
+  maxMembers: 4,
+})
+const savingGroup = ref(false)
+
+const bulkDialogOpen = ref(false)
+const bulkForm = ref<{ prefix: string; count: number; maxMembers: number }>({
+  prefix: 'Group',
+  count: 10,
+  maxMembers: 4,
+})
+const savingBulkGroups = ref(false)
+const actionLoading = ref<Record<string, boolean>>({})
+
+const myGroup = computed(() => {
+  if (!currentUser.value) return undefined
+  return groups.value.find(g =>
+    g.members?.some(
+      m =>
+        (currentUser.value?.userUuid && m.uuid === currentUser.value.userUuid) ||
+        (currentUser.value?.email &&
+          m.email.toLowerCase() === currentUser.value.email.toLowerCase()),
+    ),
+  )
+})
 
 // Course materials state
 const modulePages = ref<Record<string, FileUpload[]>>({})
@@ -1322,9 +1782,13 @@ async function fetchCourseDetails() {
       if (isTeacher.value) {
         enrollments.value = await getCourseEnrollments(resolvedCourseUuid.value).catch(() => [])
       }
+
+      // Load groups
+      await loadGroups()
     } else {
       activeTab.value = 'overview'
       modules.value = []
+      groups.value = []
     }
   } catch (err: unknown) {
     toast.error(err instanceof Error ? err.message : 'Failed to load course details.')
@@ -1488,6 +1952,155 @@ async function handleDeleteCourse() {
     toast.error(err instanceof Error ? err.message : 'Failed to delete course.')
   } finally {
     deletingCourse.value = false
+  }
+}
+
+async function loadGroups() {
+  if (!resolvedCourseUuid.value) return
+  loadingGroups.value = true
+  try {
+    groups.value = await listCourseGroups(resolvedCourseUuid.value)
+  } catch (err: unknown) {
+    toast.error(err instanceof Error ? err.message : 'Failed to load course groups.')
+  } finally {
+    loadingGroups.value = false
+  }
+}
+
+function openCreateGroupDialog() {
+  isEditingGroup.value = false
+  editingGroupUuid.value = undefined
+  groupForm.value = {
+    name: `Group ${groups.value.length + 1}`,
+    maxMembers: 4,
+  }
+  groupDialogOpen.value = true
+}
+
+function openEditGroupDialog(group: Group) {
+  isEditingGroup.value = true
+  editingGroupUuid.value = group.uuid
+  groupForm.value = {
+    name: group.name,
+    maxMembers: group.maxMembers,
+  }
+  groupDialogOpen.value = true
+}
+
+async function handleSaveGroup() {
+  if (!groupForm.value.name.trim()) {
+    toast.error('Group name is required.')
+    return
+  }
+  if (groupForm.value.maxMembers < 1) {
+    toast.error('Maximum members must be at least 1.')
+    return
+  }
+
+  savingGroup.value = true
+  try {
+    if (isEditingGroup.value && editingGroupUuid.value) {
+      await updateGroup(editingGroupUuid.value, {
+        name: groupForm.value.name.trim(),
+        maxMembers: Number(groupForm.value.maxMembers),
+      })
+      toast.success('Group updated successfully.')
+    } else {
+      await createGroup({
+        courseUuid: resolvedCourseUuid.value,
+        name: groupForm.value.name.trim(),
+        maxMembers: Number(groupForm.value.maxMembers),
+      })
+      toast.success('Group created successfully.')
+    }
+    groupDialogOpen.value = false
+    await loadGroups()
+  } catch (err: unknown) {
+    toast.error(getApiErrorMessage(err, 'Failed to save group.'))
+  } finally {
+    savingGroup.value = false
+  }
+}
+
+function openBulkDialog() {
+  bulkForm.value = {
+    prefix: 'Group',
+    count: 10,
+    maxMembers: 4,
+  }
+  bulkDialogOpen.value = true
+}
+
+async function handleBulkCreateGroups() {
+  if (bulkForm.value.count < 1 || bulkForm.value.count > 50) {
+    toast.error('Count must be between 1 and 50.')
+    return
+  }
+  if (bulkForm.value.maxMembers < 1) {
+    toast.error('Maximum members must be at least 1.')
+    return
+  }
+
+  savingBulkGroups.value = true
+  try {
+    const created = await bulkCreateGroups({
+      courseUuid: resolvedCourseUuid.value,
+      prefix: bulkForm.value.prefix.trim() || 'Group',
+      count: Number(bulkForm.value.count),
+      maxMembers: Number(bulkForm.value.maxMembers),
+    })
+    toast.success(`Successfully created ${created.length} groups!`)
+    bulkDialogOpen.value = false
+    await loadGroups()
+  } catch (err: unknown) {
+    toast.error(getApiErrorMessage(err, 'Failed to bulk-create groups.'))
+  } finally {
+    savingBulkGroups.value = false
+  }
+}
+
+async function handleDeleteGroup(group: Group) {
+  if (!confirm(`Are you sure you want to delete "${group.name}"? Members will be unassigned.`)) {
+    return
+  }
+  actionLoading.value[group.uuid] = true
+  try {
+    await deleteGroup(group.uuid)
+    toast.success(`Group "${group.name}" deleted.`)
+    await loadGroups()
+  } catch (err: unknown) {
+    toast.error(getApiErrorMessage(err, 'Failed to delete group.'))
+  } finally {
+    delete actionLoading.value[group.uuid]
+  }
+}
+
+async function handleJoinGroup(group: Group) {
+  actionLoading.value[group.uuid] = true
+  try {
+    await joinGroup(group.uuid)
+    toast.success(`Joined "${group.name}"!`)
+    await loadGroups()
+  } catch (err: unknown) {
+    toast.error(getApiErrorMessage(err, 'Failed to join group.'))
+  } finally {
+    delete actionLoading.value[group.uuid]
+  }
+}
+
+async function handleLeaveGroup(group: Group) {
+  if (!confirm(`Are you sure you want to leave "${group.name}"?`)) {
+    return
+  }
+  actionLoading.value[group.uuid] = true
+  try {
+    await leaveGroup(group.uuid)
+    toast.success(`Left "${group.name}".`)
+    await loadGroups()
+  } catch (err: unknown) {
+    toast.error(getApiErrorMessage(err, 'Failed to leave group.'))
+  } finally {
+    delete actionLoading.value[group.uuid]
   }
 }
 

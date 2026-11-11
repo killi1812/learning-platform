@@ -68,11 +68,22 @@ type Enrollment struct {
 // Group represents a collaboration group of students within a course.
 type Group struct {
 	gorm.Model
-	Uuid     uuid.UUID   `json:"uuid" gorm:"type:uuid;uniqueIndex;not null"`
-	CourseID uint        `json:"courseId" gorm:"not null;index"`
-	Course   *Course     `json:"course,omitempty" gorm:"foreignKey:CourseID;constraint:OnDelete:CASCADE;"`
-	Name     string      `json:"name" gorm:"type:varchar(255);not null"`
-	Members  []user.User `json:"members,omitempty" gorm:"many2many:group_members;constraint:OnDelete:CASCADE;"`
+	Uuid       uuid.UUID   `json:"uuid" gorm:"type:uuid;uniqueIndex;not null"`
+	CourseID   uint        `json:"courseId" gorm:"not null;index"`
+	Course     *Course     `json:"course,omitempty" gorm:"foreignKey:CourseID;constraint:OnDelete:CASCADE;"`
+	Name       string      `json:"name" gorm:"type:varchar(255);not null"`
+	MaxMembers int         `json:"maxMembers" gorm:"not null;default:4"`
+	Members    []user.User `json:"members,omitempty" gorm:"many2many:group_members;constraint:OnDelete:CASCADE;"`
+}
+
+func (g *Group) BeforeCreate(tx *gorm.DB) error {
+	if g.Uuid == uuid.Nil {
+		g.Uuid = uuid.New()
+	}
+	if g.MaxMembers <= 0 {
+		g.MaxMembers = 4
+	}
+	return nil
 }
 
 // Module represents an ordered structural unit within a course (e.g., "Week 1: Introduction").

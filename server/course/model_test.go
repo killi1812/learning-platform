@@ -62,11 +62,23 @@ func TestCourseAggregate_CRUDAndAssociations(t *testing.T) {
 
 	// Group
 	grp := &course.Group{
-		CourseID: c.ID,
-		Name:     "Group 1",
-		Members:  []user.User{*u},
+		CourseID:   c.ID,
+		Name:       "Group 1",
+		MaxMembers: 3,
+		Members:    []user.User{*u},
 	}
 	assert.NoError(t, db.Create(grp).Error)
+	assert.NotEqual(t, uuid.Nil, grp.Uuid)
+	assert.Equal(t, 3, grp.MaxMembers)
+
+	// Group BeforeCreate default maxMembers
+	grp2 := &course.Group{
+		CourseID: c.ID,
+		Name:     "Group 2",
+	}
+	assert.NoError(t, db.Create(grp2).Error)
+	assert.NotEqual(t, uuid.Nil, grp2.Uuid)
+	assert.Equal(t, 4, grp2.MaxMembers)
 
 	// Modules with ordering and dependency
 	m1 := &course.Module{CourseID: c.ID, Title: "Week 1", Position: 1}
@@ -87,7 +99,7 @@ func TestCourseAggregate_CRUDAndAssociations(t *testing.T) {
 	assert.Equal(t, "DAT250: Modern Software Technologies", retrieved.Title)
 	assert.Len(t, retrieved.Enrollments, 1)
 	assert.Equal(t, course.RoleTeacher, retrieved.Enrollments[0].Role)
-	assert.Len(t, retrieved.Groups, 1)
+	assert.Len(t, retrieved.Groups, 2)
 	assert.Len(t, retrieved.Groups[0].Members, 1)
 	assert.Len(t, retrieved.Modules, 2)
 

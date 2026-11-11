@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"gorm.io/gorm"
@@ -237,5 +238,44 @@ func TestModuleDtos(t *testing.T) {
 		assert.NotNil(t, dto.DependsOn)
 		assert.Equal(t, depUuid.String(), dto.DependsOn.Uuid)
 		assert.Equal(t, "Prerequisite Module", dto.DependsOn.Title)
+	})
+}
+
+func TestGroupDtos(t *testing.T) {
+	t.Run("GroupDto FromModel with nil model", func(t *testing.T) {
+		dto := GroupDto{}.FromModel(nil)
+		assert.Empty(t, dto.Uuid)
+		assert.Empty(t, dto.Name)
+		assert.Empty(t, dto.Members)
+	})
+
+	t.Run("GroupDto FromModel with populated model", func(t *testing.T) {
+		grpUuid := uuid.New()
+		courseUuid := uuid.New()
+		userUuid := uuid.New()
+
+		g := &Group{
+			Uuid:       grpUuid,
+			Name:       "Test Team",
+			MaxMembers: 5,
+			Course:     &Course{Uuid: courseUuid},
+			Members: []user.User{
+				{
+					Uuid:     userUuid,
+					Username: "alice",
+					Email:    "alice@example.com",
+				},
+			},
+		}
+
+		dto := GroupDto{}.FromModel(g)
+		assert.Equal(t, grpUuid.String(), dto.Uuid)
+		assert.Equal(t, courseUuid.String(), dto.CourseUuid)
+		assert.Equal(t, "Test Team", dto.Name)
+		assert.Equal(t, 5, dto.MaxMembers)
+		assert.Len(t, dto.Members, 1)
+		assert.Equal(t, userUuid.String(), dto.Members[0].Uuid)
+		assert.Equal(t, "alice", dto.Members[0].Username)
+		assert.Equal(t, "alice@example.com", dto.Members[0].Email)
 	})
 }

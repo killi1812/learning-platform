@@ -1506,6 +1506,74 @@ const docTemplate = `{
                 }
             }
         },
+        "/course/{uuid}/group": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all groups formed for the specified course. Requires student enrollment, teacher role, or system admin.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Groups"
+                ],
+                "summary": "List groups in a course",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Course UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/course.GroupDto"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid UUID format",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Course not found",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/course/{uuid}/module": {
             "get": {
                 "security": [
@@ -3587,6 +3655,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "Creates a new group in a course with a maximum member limit. Teacher or Admin only.",
                 "consumes": [
                     "application/json"
                 ],
@@ -3596,30 +3665,123 @@ const docTemplate = `{
                 "tags": [
                     "Groups"
                 ],
-                "summary": "Creates a new group",
+                "summary": "Create a new group",
                 "parameters": [
                     {
-                        "description": "Data for new group",
+                        "description": "Group creation payload",
                         "name": "model",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/course.NewGroupDto"
+                            "$ref": "#/definitions/course.CreateGroupDto"
                         }
                     }
                 ],
                 "responses": {
                     "201": {
-                        "description": "Successfully created a group"
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/course.GroupDto"
+                        }
                     },
                     "400": {
-                        "description": "Invalid or missing user UUID",
+                        "description": "Invalid request payload",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
                         "schema": {
                             "$ref": "#/definitions/ginutil.ErrorResponse"
                         }
                     },
                     "404": {
-                        "description": "User or group not found",
+                        "description": "Course not found",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Group name already taken",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/group/bulk": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates multiple numbered groups sequentially (e.g. Group 1 through Group 10). Teacher or Admin only.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Groups"
+                ],
+                "summary": "Bulk create groups",
+                "parameters": [
+                    {
+                        "description": "Bulk creation payload",
+                        "name": "model",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/course.BulkCreateGroupsDto"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/course.GroupDto"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request payload",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Course not found",
                         "schema": {
                             "$ref": "#/definitions/ginutil.ErrorResponse"
                         }
@@ -3640,7 +3802,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Adds the authenticated student to the specified group.",
+                "description": "Adds the authenticated student to the specified group (enforces at most one group per course and capacity limits).",
                 "consumes": [
                     "application/json"
                 ],
@@ -3663,16 +3825,31 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "Successfully joined the group"
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/course.GroupDto"
+                        }
                     },
                     "400": {
-                        "description": "Invalid or missing user UUID",
+                        "description": "Invalid UUID format",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/ginutil.ErrorResponse"
                         }
                     },
                     "404": {
-                        "description": "User or group not found",
+                        "description": "Group or student enrollment not found",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Already in a group or group is full",
                         "schema": {
                             "$ref": "#/definitions/ginutil.ErrorResponse"
                         }
@@ -3693,6 +3870,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "Removes the authenticated student from their current group.",
                 "consumes": [
                     "application/json"
                 ],
@@ -3702,7 +3880,7 @@ const docTemplate = `{
                 "tags": [
                     "Groups"
                 ],
-                "summary": "Remove student from a group",
+                "summary": "Leave a group",
                 "parameters": [
                     {
                         "type": "string",
@@ -3715,16 +3893,25 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "Successfully removed student from the group"
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/course.GroupDto"
+                        }
                     },
                     "400": {
-                        "description": "Invalid or missing user UUID",
+                        "description": "Invalid UUID format or not a group member",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/ginutil.ErrorResponse"
                         }
                     },
                     "404": {
-                        "description": "User or group not found",
+                        "description": "Group or user not found",
                         "schema": {
                             "$ref": "#/definitions/ginutil.ErrorResponse"
                         }
@@ -3739,19 +3926,83 @@ const docTemplate = `{
             }
         },
         "/group/{uuid}": {
-            "delete": {
+            "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
+                "description": "Returns details and members for the specified group. Requires course enrollment, teacher role, or system admin.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Groups"
                 ],
-                "summary": "Deletes a group",
+                "summary": "Get group by UUID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Group UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/course.GroupDto"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid UUID format",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Group not found",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Deletes a group and clears member associations. Teacher or Admin only.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Groups"
+                ],
+                "summary": "Delete group",
                 "parameters": [
                     {
                         "type": "string",
@@ -3764,16 +4015,109 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "204": {
-                        "description": ""
+                        "description": "Successfully deleted group"
                     },
                     "400": {
-                        "description": "Invalid or missing user UUID",
+                        "description": "Invalid UUID format",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
                         "schema": {
                             "$ref": "#/definitions/ginutil.ErrorResponse"
                         }
                     },
                     "404": {
-                        "description": "User or group not found",
+                        "description": "Group not found",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Modifies group name or maximum member capacity. Teacher or Admin only.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Groups"
+                ],
+                "summary": "Update group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Group UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Group update payload",
+                        "name": "model",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/course.UpdateGroupDto"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/course.GroupDto"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request payload",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Group not found",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Group name already taken",
                         "schema": {
                             "$ref": "#/definitions/ginutil.ErrorResponse"
                         }
@@ -4720,6 +5064,33 @@ const docTemplate = `{
                 }
             }
         },
+        "course.BulkCreateGroupsDto": {
+            "type": "object",
+            "required": [
+                "count",
+                "courseUuid",
+                "maxMembers"
+            ],
+            "properties": {
+                "count": {
+                    "type": "integer",
+                    "maximum": 50,
+                    "minimum": 1
+                },
+                "courseUuid": {
+                    "type": "string"
+                },
+                "maxMembers": {
+                    "type": "integer",
+                    "maximum": 100,
+                    "minimum": 1
+                },
+                "prefix": {
+                    "type": "string",
+                    "maxLength": 200
+                }
+            }
+        },
         "course.CourseDto": {
             "type": "object",
             "properties": {
@@ -4793,6 +5164,29 @@ const docTemplate = `{
                 }
             }
         },
+        "course.CreateGroupDto": {
+            "type": "object",
+            "required": [
+                "courseUuid",
+                "maxMembers",
+                "name"
+            ],
+            "properties": {
+                "courseUuid": {
+                    "type": "string"
+                },
+                "maxMembers": {
+                    "type": "integer",
+                    "maximum": 100,
+                    "minimum": 1
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "minLength": 2
+                }
+            }
+        },
         "course.CreateModuleDto": {
             "type": "object",
             "required": [
@@ -4835,6 +5229,43 @@ const docTemplate = `{
                 }
             }
         },
+        "course.GroupDto": {
+            "type": "object",
+            "properties": {
+                "courseUuid": {
+                    "type": "string"
+                },
+                "maxMembers": {
+                    "type": "integer"
+                },
+                "members": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/course.GroupMemberDto"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "uuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "course.GroupMemberDto": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                },
+                "uuid": {
+                    "type": "string"
+                }
+            }
+        },
         "course.ModuleDto": {
             "type": "object",
             "properties": {
@@ -4869,17 +5300,6 @@ const docTemplate = `{
                 },
                 "role": {
                     "$ref": "#/definitions/course.CourseRole"
-                }
-            }
-        },
-        "course.NewGroupDto": {
-            "type": "object",
-            "properties": {
-                "courseUuid": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
                 }
             }
         },
@@ -4925,6 +5345,25 @@ const docTemplate = `{
                     "type": "integer",
                     "maximum": 2100,
                     "minimum": 2000
+                }
+            }
+        },
+        "course.UpdateGroupDto": {
+            "type": "object",
+            "required": [
+                "maxMembers",
+                "name"
+            ],
+            "properties": {
+                "maxMembers": {
+                    "type": "integer",
+                    "maximum": 100,
+                    "minimum": 1
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "minLength": 2
                 }
             }
         },

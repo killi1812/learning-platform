@@ -6,7 +6,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"go.uber.org/zap"
 )
 
 // ErrorResponse represents a standardized API error response payload.
@@ -34,18 +33,13 @@ func ParseUUIDParam(c *gin.Context, param string) (uuid.UUID, bool) {
 // If err matches notFoundErr, aborts with 404 Not Found and returns true.
 // Otherwise, aborts with 500 Internal Server Error and returns true.
 func HandleServiceError(c *gin.Context, err error, notFoundErr error) bool {
-	zap.S().Debugf("Inside HandleServiceError")
 	if err == nil {
-		zap.S().Debugf("err was nil")
 		return false
 	}
-	zap.S().Debugf("err was not nil")
 	if notFoundErr != nil && errors.Is(err, notFoundErr) {
-		zap.S().Debugf("Inside if statement")
 		RespondWithError(c, http.StatusNotFound, err.Error())
 		return true
 	}
-	zap.S().Debugf("not inside if statement")
 	RespondWithError(c, http.StatusInternalServerError, "Internal server error")
 	return true
 }

@@ -156,6 +156,26 @@ definitions:
     required:
     - email
     type: object
+  course.BulkCreateGroupsDto:
+    properties:
+      count:
+        maximum: 50
+        minimum: 1
+        type: integer
+      courseUuid:
+        type: string
+      maxMembers:
+        maximum: 100
+        minimum: 1
+        type: integer
+      prefix:
+        maxLength: 200
+        type: string
+    required:
+    - count
+    - courseUuid
+    - maxMembers
+    type: object
   course.CourseDto:
     properties:
       createdAt:
@@ -207,6 +227,23 @@ definitions:
     - title
     - year
     type: object
+  course.CreateGroupDto:
+    properties:
+      courseUuid:
+        type: string
+      maxMembers:
+        maximum: 100
+        minimum: 1
+        type: integer
+      name:
+        maxLength: 255
+        minLength: 2
+        type: string
+    required:
+    - courseUuid
+    - maxMembers
+    - name
+    type: object
   course.CreateModuleDto:
     properties:
       dependsOnUuid:
@@ -235,6 +272,30 @@ definitions:
       username:
         type: string
     type: object
+  course.GroupDto:
+    properties:
+      courseUuid:
+        type: string
+      maxMembers:
+        type: integer
+      members:
+        items:
+          $ref: '#/definitions/course.GroupMemberDto'
+        type: array
+      name:
+        type: string
+      uuid:
+        type: string
+    type: object
+  course.GroupMemberDto:
+    properties:
+      email:
+        type: string
+      username:
+        type: string
+      uuid:
+        type: string
+    type: object
   course.ModuleDto:
     properties:
       courseUuid:
@@ -258,13 +319,6 @@ definitions:
         type: string
       role:
         $ref: '#/definitions/course.CourseRole'
-    type: object
-  course.NewGroupDto:
-    properties:
-      courseUuid:
-        type: string
-      name:
-        type: string
     type: object
   course.ReorderModulesDto:
     properties:
@@ -297,6 +351,20 @@ definitions:
     - term
     - title
     - year
+    type: object
+  course.UpdateGroupDto:
+    properties:
+      maxMembers:
+        maximum: 100
+        minimum: 1
+        type: integer
+      name:
+        maxLength: 255
+        minLength: 2
+        type: string
+    required:
+    - maxMembers
+    - name
     type: object
   course.UpdateModuleDto:
     properties:
@@ -1626,6 +1694,51 @@ paths:
       summary: Remove user from course
       tags:
       - course
+  /course/{uuid}/group:
+    get:
+      description: Returns all groups formed for the specified course. Requires student
+        enrollment, teacher role, or system admin.
+      parameters:
+      - description: Course UUID
+        format: uuid
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/course.GroupDto'
+            type: array
+        "400":
+          description: Invalid UUID format
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Course not found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List groups in a course
+      tags:
+      - Groups
   /course/{uuid}/module:
     get:
       description: Returns all modules of a course ordered by position
@@ -3023,24 +3136,40 @@ paths:
     post:
       consumes:
       - application/json
+      description: Creates a new group in a course with a maximum member limit. Teacher
+        or Admin only.
       parameters:
-      - description: Data for new group
+      - description: Group creation payload
         in: body
         name: model
         required: true
         schema:
-          $ref: '#/definitions/course.NewGroupDto'
+          $ref: '#/definitions/course.CreateGroupDto'
       produces:
       - application/json
       responses:
         "201":
-          description: Successfully created a group
+          description: Created
+          schema:
+            $ref: '#/definitions/course.GroupDto'
         "400":
-          description: Invalid or missing user UUID
+          description: Invalid request payload
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
           schema:
             $ref: '#/definitions/ginutil.ErrorResponse'
         "404":
-          description: User or group not found
+          description: Course not found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "409":
+          description: Group name already taken
           schema:
             $ref: '#/definitions/ginutil.ErrorResponse'
         "500":
@@ -3049,11 +3178,13 @@ paths:
             $ref: '#/definitions/ginutil.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: Creates a new group
+      summary: Create a new group
       tags:
       - Groups
   /group/{uuid}:
     delete:
+      description: Deletes a group and clears member associations. Teacher or Admin
+        only.
       parameters:
       - description: Group UUID
         format: uuid
@@ -3065,13 +3196,21 @@ paths:
       - application/json
       responses:
         "204":
-          description: ""
+          description: Successfully deleted group
         "400":
-          description: Invalid or missing user UUID
+          description: Invalid UUID format
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
           schema:
             $ref: '#/definitions/ginutil.ErrorResponse'
         "404":
-          description: User or group not found
+          description: Group not found
           schema:
             $ref: '#/definitions/ginutil.ErrorResponse'
         "500":
@@ -3080,14 +3219,12 @@ paths:
             $ref: '#/definitions/ginutil.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: Deletes a group
+      summary: Delete group
       tags:
       - Groups
-  /group/join/{uuid}:
-    post:
-      consumes:
-      - application/json
-      description: Adds the authenticated student to the specified group.
+    get:
+      description: Returns details and members for the specified group. Requires course
+        enrollment, teacher role, or system admin.
       parameters:
       - description: Group UUID
         format: uuid
@@ -3099,13 +3236,169 @@ paths:
       - application/json
       responses:
         "200":
-          description: Successfully joined the group
+          description: OK
+          schema:
+            $ref: '#/definitions/course.GroupDto'
         "400":
-          description: Invalid or missing user UUID
+          description: Invalid UUID format
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
           schema:
             $ref: '#/definitions/ginutil.ErrorResponse'
         "404":
-          description: User or group not found
+          description: Group not found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get group by UUID
+      tags:
+      - Groups
+    patch:
+      consumes:
+      - application/json
+      description: Modifies group name or maximum member capacity. Teacher or Admin
+        only.
+      parameters:
+      - description: Group UUID
+        format: uuid
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Group update payload
+        in: body
+        name: model
+        required: true
+        schema:
+          $ref: '#/definitions/course.UpdateGroupDto'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/course.GroupDto'
+        "400":
+          description: Invalid request payload
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Group not found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "409":
+          description: Group name already taken
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update group
+      tags:
+      - Groups
+  /group/bulk:
+    post:
+      consumes:
+      - application/json
+      description: Creates multiple numbered groups sequentially (e.g. Group 1 through
+        Group 10). Teacher or Admin only.
+      parameters:
+      - description: Bulk creation payload
+        in: body
+        name: model
+        required: true
+        schema:
+          $ref: '#/definitions/course.BulkCreateGroupsDto'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            items:
+              $ref: '#/definitions/course.GroupDto'
+            type: array
+        "400":
+          description: Invalid request payload
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Course not found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Bulk create groups
+      tags:
+      - Groups
+  /group/join/{uuid}:
+    post:
+      consumes:
+      - application/json
+      description: Adds the authenticated student to the specified group (enforces
+        at most one group per course and capacity limits).
+      parameters:
+      - description: Group UUID
+        format: uuid
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/course.GroupDto'
+        "400":
+          description: Invalid UUID format
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Group or student enrollment not found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "409":
+          description: Already in a group or group is full
           schema:
             $ref: '#/definitions/ginutil.ErrorResponse'
         "500":
@@ -3121,6 +3414,7 @@ paths:
     patch:
       consumes:
       - application/json
+      description: Removes the authenticated student from their current group.
       parameters:
       - description: Group UUID
         format: uuid
@@ -3132,13 +3426,19 @@ paths:
       - application/json
       responses:
         "200":
-          description: Successfully removed student from the group
+          description: OK
+          schema:
+            $ref: '#/definitions/course.GroupDto'
         "400":
-          description: Invalid or missing user UUID
+          description: Invalid UUID format or not a group member
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
           schema:
             $ref: '#/definitions/ginutil.ErrorResponse'
         "404":
-          description: User or group not found
+          description: Group or user not found
           schema:
             $ref: '#/definitions/ginutil.ErrorResponse'
         "500":
@@ -3147,7 +3447,7 @@ paths:
             $ref: '#/definitions/ginutil.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: Remove student from a group
+      summary: Leave a group
       tags:
       - Groups
   /healthz:

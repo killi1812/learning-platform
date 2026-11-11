@@ -61,3 +61,35 @@ export interface UpdateModulePayload {
   position?: number
   dependsOnUuid?: string
 }
+
+export interface GroupMember {
+  uuid: string
+  username: string
+  email: string
+}
+
+export interface Group {
+  uuid: string
+  courseUuid: string
+  name: string
+  maxMembers: number
+  members: GroupMember[]
+}
+
+export interface CreateGroupPayload {
+  courseUuid: string
+  name: string
+  maxMembers: number
+}
+
+export interface BulkCreateGroupsPayload {
+  courseUuid: string
+  prefix?: string
+  count: number
+  maxMembers: number
+}
+
+export interface UpdateGroupPayload {
+  name: string
+  maxMembers: number
+}

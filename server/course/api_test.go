@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -184,16 +185,93 @@ func (m *mockCourseService) ReorderModules(courseUuid uuid.UUID, moduleUuids []u
 	return nil
 }
 
+type mockGroupService struct {
+	listCourseGroupsFunc       func(courseUuid uuid.UUID) ([]Group, error)
+	getGroupFunc               func(groupUuid uuid.UUID) (*Group, error)
+	createGroupFunc            func(courseUuid uuid.UUID, name string, maxMembers int) (*Group, error)
+	bulkCreateGroupsFunc       func(courseUuid uuid.UUID, prefix string, count int, maxMembers int) ([]Group, error)
+	updateGroupFunc            func(groupUuid uuid.UUID, name string, maxMembers int) (*Group, error)
+	deleteGroupFunc            func(groupUuid uuid.UUID) error
+	userJoinGroupFunc          func(groupUuid uuid.UUID, userUuid uuid.UUID) (*Group, error)
+	removeStudentFromGroupFunc func(groupUuid uuid.UUID, userUuid uuid.UUID) (*Group, error)
+}
+
+func (m *mockGroupService) ListCourseGroups(courseUuid uuid.UUID) ([]Group, error) {
+	if m.listCourseGroupsFunc != nil {
+		return m.listCourseGroupsFunc(courseUuid)
+	}
+	return []Group{{Name: "Group 1", MaxMembers: 4}}, nil
+}
+
+func (m *mockGroupService) GetGroup(groupUuid uuid.UUID) (*Group, error) {
+	if m.getGroupFunc != nil {
+		return m.getGroupFunc(groupUuid)
+	}
+	return &Group{Uuid: groupUuid, Name: "Group 1", MaxMembers: 4, Course: &Course{Uuid: uuid.New()}}, nil
+}
+
+func (m *mockGroupService) CreateGroup(courseUuid uuid.UUID, name string, maxMembers int) (*Group, error) {
+	if m.createGroupFunc != nil {
+		return m.createGroupFunc(courseUuid, name, maxMembers)
+	}
+	return &Group{Uuid: uuid.New(), Name: name, MaxMembers: maxMembers, Course: &Course{Uuid: courseUuid}}, nil
+}
+
+func (m *mockGroupService) BulkCreateGroups(courseUuid uuid.UUID, prefix string, count int, maxMembers int) ([]Group, error) {
+	if m.bulkCreateGroupsFunc != nil {
+		return m.bulkCreateGroupsFunc(courseUuid, prefix, count, maxMembers)
+	}
+	res := make([]Group, count)
+	for i := 0; i < count; i++ {
+		res[i] = Group{Uuid: uuid.New(), Name: "G", MaxMembers: maxMembers, Course: &Course{Uuid: courseUuid}}
+	}
+	return res, nil
+}
+
+func (m *mockGroupService) UpdateGroup(groupUuid uuid.UUID, name string, maxMembers int) (*Group, error) {
+	if m.updateGroupFunc != nil {
+		return m.updateGroupFunc(groupUuid, name, maxMembers)
+	}
+	return &Group{Uuid: groupUuid, Name: name, MaxMembers: maxMembers, Course: &Course{Uuid: uuid.New()}}, nil
+}
+
+func (m *mockGroupService) DeleteGroup(groupUuid uuid.UUID) error {
+	if m.deleteGroupFunc != nil {
+		return m.deleteGroupFunc(groupUuid)
+	}
+	return nil
+}
+
+func (m *mockGroupService) UserJoinGroup(groupUuid uuid.UUID, userUuid uuid.UUID) (*Group, error) {
+	if m.userJoinGroupFunc != nil {
+		return m.userJoinGroupFunc(groupUuid, userUuid)
+	}
+	return &Group{Uuid: groupUuid, Name: "Group 1", MaxMembers: 4, Course: &Course{Uuid: uuid.New()}}, nil
+}
+
+func (m *mockGroupService) RemoveStudentFromGroup(groupUuid uuid.UUID, userUuid uuid.UUID) (*Group, error) {
+	if m.removeStudentFromGroupFunc != nil {
+		return m.removeStudentFromGroupFunc(groupUuid, userUuid)
+	}
+	return &Group{Uuid: groupUuid, Name: "Group 1", MaxMembers: 4, Course: &Course{Uuid: uuid.New()}}, nil
+}
+
 func init() {
 	app.AccessKey = "test-course-secret-access-key-12345"
 	app.RefreshKey = "test-course-secret-refresh-key-12345"
 }
 
-func setupCourseTestRouter(service ICourseService) (*gin.Engine, *CourseCtn) {
+func setupCourseTestRouter(service ICourseService, groupSvc ...IGroupService) (*gin.Engine, *CourseCtn) {
 	gin.SetMode(gin.TestMode)
+
+	var gs IGroupService = &mockGroupService{}
+	if len(groupSvc) > 0 && groupSvc[0] != nil {
+		gs = groupSvc[0]
+	}
 
 	ctn := &CourseCtn{
 		CourseService: service,
+		groupService:  gs,
 		logger:        zap.NewNop().Sugar(),
 	}
 	r := gin.New()
@@ -230,7 +308,7 @@ func doReq(r http.Handler, method, path, auth string, body any) *httptest.Respon
 }
 
 func TestCourseCtn_HappyPaths(t *testing.T) {
-	assert.NotNil(t, NewCourseCtn(&mockCourseService{}, zap.NewNop().Sugar(),nil,nil))
+	assert.NotNil(t, NewCourseCtn(&mockCourseService{}, zap.NewNop().Sugar(), nil, nil))
 
 	depID := uint(50)
 	depUuid := uuid.New()
@@ -465,4 +543,252 @@ func TestCourseCtn_ServiceErrorsAndPermissions(t *testing.T) {
 		fn(c)
 		assert.Equal(t, http.StatusUnauthorized, w.Code)
 	}
+}
+
+func TestCourseCtn_GroupEndpoints(t *testing.T) {
+	userUuid := uuid.New()
+	auth := generateAuthHeader(t, userUuid, authutils.ROLE_USER)
+	courseUuid := uuid.New()
+	cID := courseUuid.String()
+	groupUuid := uuid.New()
+	gID := groupUuid.String()
+
+	courseSvc := &mockCourseService{
+		isEnrolledOrAdminFunc: func(cUuid, uUuid uuid.UUID, isSystemAdmin bool) (bool, error) {
+			return true, nil
+		},
+		isTeacherOrAdminFunc: func(cUuid, uUuid uuid.UUID, isSystemAdmin bool) (bool, error) {
+			return true, nil
+		},
+	}
+
+	groupSvc := &mockGroupService{
+		listCourseGroupsFunc: func(cUuid uuid.UUID) ([]Group, error) {
+			return []Group{
+				{
+					Uuid:       groupUuid,
+					CourseID:   1,
+					Course:     &Course{Uuid: cUuid},
+					Name:       "Test Group 1",
+					MaxMembers: 4,
+					Members: []user.User{
+						{Uuid: userUuid, Username: "student1", Email: "s1@example.com"},
+					},
+				},
+			}, nil
+		},
+		getGroupFunc: func(gUuid uuid.UUID) (*Group, error) {
+			return &Group{
+				Uuid:       gUuid,
+				CourseID:   1,
+				Course:     &Course{Uuid: courseUuid},
+				Name:       "Test Group 1",
+				MaxMembers: 4,
+				Members:    []user.User{},
+			}, nil
+		},
+		createGroupFunc: func(cUuid uuid.UUID, name string, maxMembers int) (*Group, error) {
+			return &Group{
+				Uuid:       uuid.New(),
+				CourseID:   1,
+				Course:     &Course{Uuid: cUuid},
+				Name:       name,
+				MaxMembers: maxMembers,
+				Members:    []user.User{},
+			}, nil
+		},
+		bulkCreateGroupsFunc: func(cUuid uuid.UUID, prefix string, count int, maxMembers int) ([]Group, error) {
+			return []Group{
+				{Uuid: uuid.New(), Course: &Course{Uuid: cUuid}, Name: prefix + " 1", MaxMembers: maxMembers},
+				{Uuid: uuid.New(), Course: &Course{Uuid: cUuid}, Name: prefix + " 2", MaxMembers: maxMembers},
+			}, nil
+		},
+		updateGroupFunc: func(gUuid uuid.UUID, name string, maxMembers int) (*Group, error) {
+			return &Group{
+				Uuid:       gUuid,
+				CourseID:   1,
+				Course:     &Course{Uuid: courseUuid},
+				Name:       name,
+				MaxMembers: maxMembers,
+				Members:    []user.User{},
+			}, nil
+		},
+		deleteGroupFunc: func(gUuid uuid.UUID) error {
+			return nil
+		},
+		userJoinGroupFunc: func(gUuid, uUuid uuid.UUID) (*Group, error) {
+			return &Group{
+				Uuid:       gUuid,
+				CourseID:   1,
+				Course:     &Course{Uuid: courseUuid},
+				Name:       "Test Group 1",
+				MaxMembers: 4,
+				Members:    []user.User{{Uuid: uUuid, Username: "joiner"}},
+			}, nil
+		},
+		removeStudentFromGroupFunc: func(gUuid, uUuid uuid.UUID) (*Group, error) {
+			return &Group{
+				Uuid:       gUuid,
+				CourseID:   1,
+				Course:     &Course{Uuid: courseUuid},
+				Name:       "Test Group 1",
+				MaxMembers: 4,
+				Members:    []user.User{},
+			}, nil
+		},
+	}
+
+	r, _ := setupCourseTestRouter(courseSvc, groupSvc)
+
+	t.Run("List course groups", func(t *testing.T) {
+		w := doReq(r, http.MethodGet, "/api/course/"+cID+"/group", auth, nil)
+		assert.Equal(t, http.StatusOK, w.Code)
+		var dtos []GroupDto
+		assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &dtos))
+		assert.Len(t, dtos, 1)
+		assert.Equal(t, "Test Group 1", dtos[0].Name)
+
+		// Invalid course UUID
+		assert.Equal(t, http.StatusBadRequest, doReq(r, http.MethodGet, "/api/course/not-uuid/group", auth, nil).Code)
+	})
+
+	t.Run("Get group", func(t *testing.T) {
+		w := doReq(r, http.MethodGet, "/api/group/"+gID, auth, nil)
+		assert.Equal(t, http.StatusOK, w.Code)
+		var dto GroupDto
+		assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &dto))
+		assert.Equal(t, "Test Group 1", dto.Name)
+
+		// Invalid group UUID
+		assert.Equal(t, http.StatusBadRequest, doReq(r, http.MethodGet, "/api/group/not-uuid", auth, nil).Code)
+	})
+
+	t.Run("Create group", func(t *testing.T) {
+		w := doReq(r, http.MethodPost, "/api/group", auth, CreateGroupDto{
+			CourseUuid: cID,
+			Name:       "New Group",
+			MaxMembers: 4,
+		})
+		assert.Equal(t, http.StatusCreated, w.Code)
+
+		// Invalid payload
+		assert.Equal(t, http.StatusBadRequest, doReq(r, http.MethodPost, "/api/group", auth, "bad-json").Code)
+		// Invalid course UUID
+		assert.Equal(t, http.StatusBadRequest, doReq(r, http.MethodPost, "/api/group", auth, CreateGroupDto{
+			CourseUuid: "bad-uuid",
+			Name:       "New Group",
+			MaxMembers: 4,
+		}).Code)
+	})
+
+	t.Run("Bulk create groups", func(t *testing.T) {
+		w := doReq(r, http.MethodPost, "/api/group/bulk", auth, BulkCreateGroupsDto{
+			CourseUuid: cID,
+			Prefix:     "Team",
+			Count:      2,
+			MaxMembers: 4,
+		})
+		assert.Equal(t, http.StatusCreated, w.Code)
+		var dtos []GroupDto
+		assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &dtos))
+		assert.Len(t, dtos, 2)
+
+		// Invalid payload
+		assert.Equal(t, http.StatusBadRequest, doReq(r, http.MethodPost, "/api/group/bulk", auth, "bad-json").Code)
+		// Invalid course UUID
+		assert.Equal(t, http.StatusBadRequest, doReq(r, http.MethodPost, "/api/group/bulk", auth, BulkCreateGroupsDto{
+			CourseUuid: "bad-uuid",
+			Count:      2,
+			MaxMembers: 4,
+		}).Code)
+	})
+
+	t.Run("Update group", func(t *testing.T) {
+		w := doReq(r, http.MethodPatch, "/api/group/"+gID, auth, UpdateGroupDto{
+			Name:       "Renamed",
+			MaxMembers: 6,
+		})
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		// Invalid uuid
+		assert.Equal(t, http.StatusBadRequest, doReq(r, http.MethodPatch, "/api/group/not-uuid", auth, UpdateGroupDto{
+			Name:       "Renamed",
+			MaxMembers: 6,
+		}).Code)
+		// Invalid payload
+		assert.Equal(t, http.StatusBadRequest, doReq(r, http.MethodPatch, "/api/group/"+gID, auth, "bad-json").Code)
+	})
+
+	t.Run("Delete group", func(t *testing.T) {
+		w := doReq(r, http.MethodDelete, "/api/group/"+gID, auth, nil)
+		assert.Equal(t, http.StatusNoContent, w.Code)
+
+		// Invalid uuid
+		assert.Equal(t, http.StatusBadRequest, doReq(r, http.MethodDelete, "/api/group/not-uuid", auth, nil).Code)
+	})
+
+	t.Run("Join and leave group", func(t *testing.T) {
+		w := doReq(r, http.MethodPost, "/api/group/join/"+gID, auth, nil)
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		// Without auth header
+		assert.Equal(t, http.StatusUnauthorized, doReq(r, http.MethodPost, "/api/group/join/"+gID, "", nil).Code)
+		// Invalid uuid
+		assert.Equal(t, http.StatusBadRequest, doReq(r, http.MethodPost, "/api/group/join/not-uuid", auth, nil).Code)
+
+		// Leave
+		wLeave := doReq(r, http.MethodPatch, "/api/group/leave/"+gID, auth, nil)
+		assert.Equal(t, http.StatusOK, wLeave.Code)
+
+		// Leave without auth header
+		assert.Equal(t, http.StatusUnauthorized, doReq(r, http.MethodPatch, "/api/group/leave/"+gID, "", nil).Code)
+		// Leave invalid uuid
+		assert.Equal(t, http.StatusBadRequest, doReq(r, http.MethodPatch, "/api/group/leave/not-uuid", auth, nil).Code)
+	})
+
+	t.Run("Error handling for group endpoints", func(t *testing.T) {
+		errCourseSvc := &mockCourseService{
+			isEnrolledOrAdminFunc: func(cUuid, uUuid uuid.UUID, isSystemAdmin bool) (bool, error) { return true, nil },
+			isTeacherOrAdminFunc:  func(cUuid, uUuid uuid.UUID, isSystemAdmin bool) (bool, error) { return true, nil },
+		}
+		errGroupSvc := &mockGroupService{
+			listCourseGroupsFunc: func(cUuid uuid.UUID) ([]Group, error) { return nil, ErrCourseNotFound },
+			getGroupFunc:         func(gUuid uuid.UUID) (*Group, error) { return nil, ErrGroupNotFound },
+			createGroupFunc:      func(cUuid uuid.UUID, name string, maxMembers int) (*Group, error) { return nil, ErrCourseNotFound },
+			bulkCreateGroupsFunc: func(cUuid uuid.UUID, prefix string, count int, maxMembers int) ([]Group, error) {
+				return nil, errors.New("db error")
+			},
+			updateGroupFunc: func(gUuid uuid.UUID, name string, maxMembers int) (*Group, error) {
+				return nil, ErrGroupMaxMembersTooSmall
+			},
+			deleteGroupFunc:            func(gUuid uuid.UUID) error { return errors.New("db error") },
+			userJoinGroupFunc:          func(gUuid, uUuid uuid.UUID) (*Group, error) { return nil, ErrUserAlreadyInGroup },
+			removeStudentFromGroupFunc: func(gUuid, uUuid uuid.UUID) (*Group, error) { return nil, ErrUserNotInGroup },
+		}
+
+		errR, _ := setupCourseTestRouter(errCourseSvc, errGroupSvc)
+
+		assert.Equal(t, http.StatusNotFound, doReq(errR, http.MethodGet, "/api/course/"+cID+"/group", auth, nil).Code)
+		assert.Equal(t, http.StatusNotFound, doReq(errR, http.MethodGet, "/api/group/"+gID, auth, nil).Code)
+		assert.Equal(t, http.StatusNotFound, doReq(errR, http.MethodPost, "/api/group", auth, CreateGroupDto{CourseUuid: cID, Name: "Group Valid", MaxMembers: 4}).Code)
+		assert.Equal(t, http.StatusInternalServerError, doReq(errR, http.MethodPost, "/api/group/bulk", auth, BulkCreateGroupsDto{CourseUuid: cID, Count: 2, MaxMembers: 4}).Code)
+		assert.Equal(t, http.StatusConflict, doReq(errR, http.MethodPost, "/api/group/join/"+gID, auth, nil).Code)
+		assert.Equal(t, http.StatusBadRequest, doReq(errR, http.MethodPatch, "/api/group/leave/"+gID, auth, nil).Code)
+
+		// Patch & Delete errors when group exists
+		patchDeleteGroupSvc := &mockGroupService{
+			getGroupFunc: func(gUuid uuid.UUID) (*Group, error) {
+				return &Group{Uuid: gUuid, Course: &Course{Uuid: courseUuid}}, nil
+			},
+			updateGroupFunc: func(gUuid uuid.UUID, name string, maxMembers int) (*Group, error) {
+				return nil, ErrGroupMaxMembersTooSmall
+			},
+			deleteGroupFunc: func(gUuid uuid.UUID) error {
+				return errors.New("delete error")
+			},
+		}
+		patchDeleteR, _ := setupCourseTestRouter(errCourseSvc, patchDeleteGroupSvc)
+		assert.Equal(t, http.StatusBadRequest, doReq(patchDeleteR, http.MethodPatch, "/api/group/"+gID, auth, UpdateGroupDto{Name: "Renamed", MaxMembers: 4}).Code)
+		assert.Equal(t, http.StatusInternalServerError, doReq(patchDeleteR, http.MethodDelete, "/api/group/"+gID, auth, nil).Code)
+	})
 }
