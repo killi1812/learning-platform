@@ -72,14 +72,19 @@ func TestSubmissionPublisher(t *testing.T) {
 		require.NotNil(t, pub)
 		assert.Equal(t, submission.SubmissionQueue, declaredQueue)
 
+		userUuid := uuid.New()
+		courseUuid := uuid.New()
 		msg := submission.SubmissionMessage{
-			Uuid:        uuid.New(),
-			ContentID:   5,
-			UserID:      12,
-			UserEmail:   "student@example.com",
-			PayloadType: submission.PayloadTypeURL,
-			PayloadURL:  "https://git.app.uib.no/student/repo.git",
-			SubmittedAt: time.Now().UTC().Truncate(time.Second),
+			Uuid:         uuid.New(),
+			ContentID:    5,
+			ContentTitle: "Homework 1",
+			CourseUuid:   courseUuid,
+			UserID:       12,
+			UserUuid:     userUuid,
+			UserEmail:    "student@example.com",
+			PayloadType:  submission.PayloadTypeURL,
+			PayloadURL:   "https://git.app.uib.no/student/repo.git",
+			SubmittedAt:  time.Now().UTC().Truncate(time.Second),
 		}
 
 		err = pub.Publish(context.Background(), msg)
@@ -90,7 +95,10 @@ func TestSubmissionPublisher(t *testing.T) {
 		require.NoError(t, json.Unmarshal(publishedBody, &decoded))
 		assert.Equal(t, msg.Uuid, decoded.Uuid)
 		assert.Equal(t, msg.ContentID, decoded.ContentID)
+		assert.Equal(t, msg.ContentTitle, decoded.ContentTitle)
+		assert.Equal(t, msg.CourseUuid, decoded.CourseUuid)
 		assert.Equal(t, msg.UserID, decoded.UserID)
+		assert.Equal(t, msg.UserUuid, decoded.UserUuid)
 		assert.Equal(t, msg.PayloadURL, decoded.PayloadURL)
 	})
 

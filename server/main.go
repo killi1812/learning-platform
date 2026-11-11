@@ -56,7 +56,7 @@ func main() {
 	app.RegisterApi(submission.NewSubmissionCtn)
 	app.RegisterApi(quiz.NewQuizCtn)
 	app.RegisterWorker(submission.NewSubmissionConsumer)
-	app.RegisterWorker(quiz.NewNotifyWorker)
+	app.RegisterWorker(submission.NewDeadlineReminderWorker)
 
 	app.RegisterModel(&user.User{})
 	// Course
@@ -82,6 +82,7 @@ func main() {
 	app.RegisterModel(&submission.GroupSubmission{})
 	app.RegisterModel(&submission.IndividualSubmission{})
 	app.RegisterModel(&submission.Grade{})
+	app.RegisterModel(&submission.DeadlineReminder{})
 
 	app.Migrate()
 

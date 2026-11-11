@@ -46,6 +46,65 @@ func newNotificationFixture(t *testing.T) *notificationFixture {
 	return f
 }
 
+func TestNotifySystem_CreatesSystemNotificationAndPublishes(t *testing.T) {
+	f := newNotificationFixture(t)
+	events, cancel := f.hub.Subscribe(f.alice)
+	defer cancel()
+
+	n, err := f.svc.NotifySystem(f.alice, NotificationContent{Title: "Sys", Body: "Msg", URL: "/test"})
+	require.NoError(t, err)
+	assert.NotNil(t, n)
+	assert.Equal(t, "Sys", n.Title)
+	assert.Nil(t, n.SenderID)
+
+	select {
+	case dto := <-events:
+		assert.Equal(t, "Sys", dto.Title)
+	case <-time.After(time.Second):
+		t.Fatal("expected event")
+	}
+
+	// Unknown recipient returns ErrUserNotFound
+	_, err = f.svc.NotifySystem(uuid.New(), NotificationContent{Title: "Ghost", Body: "Ghost"})
+	assert.ErrorIs(t, err, ErrUserNotFound)
+}
+
+func TestNotifySystemMany_FansOutSystemRows(t *testing.T) {
+	f := newNotificationFixture(t)
+
+	sent, err := f.svc.NotifySystemMany([]uuid.UUID{f.alice, f.bob}, NotificationContent{Title: "System Alert", Body: "Maintenance at midnight", URL: "/settings"})
+	require.NoError(t, err)
+	assert.Len(t, sent, 2)
+
+	aliceItems, err := f.svc.List(f.alice, 20, nil)
+	require.NoError(t, err)
+	require.Len(t, aliceItems, 1)
+	assert.Equal(t, "System Alert", aliceItems[0].Title)
+	assert.Nil(t, aliceItems[0].SenderID)
+	assert.Equal(t, "/settings", aliceItems[0].URL)
+
+	bobItems, err := f.svc.List(f.bob, 20, nil)
+	require.NoError(t, err)
+	require.Len(t, bobItems, 1)
+	assert.Equal(t, "System Alert", bobItems[0].Title)
+	assert.Nil(t, bobItems[0].SenderID)
+}
+
+func TestNotifySystemMany_EmptyListReturnsEmptyWithoutError(t *testing.T) {
+	f := newNotificationFixture(t)
+
+	sent, err := f.svc.NotifySystemMany([]uuid.UUID{}, NotificationContent{Title: "None", Body: "Empty"})
+	require.NoError(t, err)
+	assert.Empty(t, sent)
+}
+
+func TestNotifySystemMany_UnknownRecipientReturnsError(t *testing.T) {
+	f := newNotificationFixture(t)
+
+	_, err := f.svc.NotifySystemMany([]uuid.UUID{f.alice, uuid.New()}, NotificationContent{Title: "Missing", Body: "Fail"})
+	assert.ErrorIs(t, err, ErrRecipientNotFound)
+}
+
 func TestSendToUsers_FansOutOnePrivateRowPerRecipient(t *testing.T) {
 	f := newNotificationFixture(t)
 
@@ -175,6 +234,28 @@ func TestDelete_OnlyOwnRow(t *testing.T) {
 	bobItems, err := f.svc.List(f.bob, 20, nil)
 	require.NoError(t, err)
 	assert.Len(t, bobItems, 1, "bob's copy untouched")
+}
+
+func TestNotificationService_ClosedDBErrors(t *testing.T) {
+	f := newNotificationFixture(t)
+	sqlDB, err := f.db.DB()
+	require.NoError(t, err)
+	_ = sqlDB.Close()
+
+	_, err = f.svc.List(f.alice, 20, nil)
+	assert.Error(t, err)
+
+	_, err = f.svc.CountUnseen(f.alice)
+	assert.Error(t, err)
+
+	_, err = f.svc.MarkSeen(f.alice, uuid.New())
+	assert.Error(t, err)
+
+	_, err = f.svc.MarkAllSeen(f.alice)
+	assert.Error(t, err)
+
+	err = f.svc.Delete(f.alice, uuid.New())
+	assert.Error(t, err)
 }
 
 func TestNotificationTable_HasNoUpdatedAtColumn(t *testing.T) {

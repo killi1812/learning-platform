@@ -145,9 +145,14 @@ func TestAuthService_Unit(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
-	t.Run("LogoutAll with nil mongoDb returns nil", func(t *testing.T) {
-		err := svc.LogoutAll(uuid.New())
+	t.Run("LogoutAll sends notification when mongoDb is nil", func(t *testing.T) {
+		// MongoDB session revocation is out of scope for unit tests and is verified in TestAuthService_Integration.
+		err := svc.LogoutAll(userUuid)
 		assert.NoError(t, err)
+
+		var notifs []notification.Notification
+		assert.NoError(t, gormDb.Where("user_id = ? AND title = ?", testUser.ID, logoutAllContent.Title).Find(&notifs).Error)
+		assert.NotEmpty(t, notifs)
 	})
 
 	t.Run("ListSessions with nil mongoDb returns empty slice", func(t *testing.T) {
@@ -230,6 +235,16 @@ func TestAuthService_Unit(t *testing.T) {
 		tokens, err := svcWithFailingNotifier.Register("notifieruser", "notifier@example.com", "Password123", "", "")
 		assert.NoError(t, err)
 		assert.NotEmpty(t, tokens.AccessToken)
+	})
+
+	t.Run("LogoutAll succeeds even when notification delivery fails", func(t *testing.T) {
+		svcWithFailingNotifier := &AuthService{
+			db:            gormDb,
+			logger:        logger,
+			notifications: &mockFailingNotifier{},
+		}
+		err := svcWithFailingNotifier.LogoutAll(userUuid)
+		assert.NoError(t, err)
 	})
 }
 

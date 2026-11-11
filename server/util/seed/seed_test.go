@@ -7,6 +7,7 @@ import (
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/content"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/course"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/notification"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/testutil"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
@@ -101,12 +102,15 @@ func TestSeedInsert(t *testing.T) {
 			&content.Content{},
 			&content.Assignment{},
 			&content.File{},
+			&notification.Notification{},
 		)
 
 		app.Test()
 		app.Provide(func() *gorm.DB { return db })
 		app.Provide(zap.S)
 		app.Provide(func() storage.IStorageService { return storage.NewMemoryStorageService() })
+		app.Provide(notification.NewHub)
+		app.Provide(notification.NewNotificationService)
 		app.Provide(user.NewUserCrudService)
 		app.Provide(course.NewCourseService)
 		app.Provide(content.NewContentService)
@@ -135,12 +139,15 @@ func TestSeedInsert(t *testing.T) {
 			&content.Content{},
 			&content.Assignment{},
 			&content.File{},
+			&notification.Notification{},
 		)
 
 		app.Test()
 		app.Provide(func() *gorm.DB { return db })
 		app.Provide(zap.S)
 		app.Provide(func() storage.IStorageService { return storage.NewMemoryStorageService() })
+		app.Provide(notification.NewHub)
+		app.Provide(notification.NewNotificationService)
 		app.Provide(user.NewUserCrudService)
 		app.Provide(course.NewCourseService)
 		app.Provide(content.NewContentService)
@@ -199,12 +206,15 @@ func TestSeedInsert(t *testing.T) {
 			&content.Content{},
 			&content.Assignment{},
 			&content.File{},
+			&notification.Notification{},
 		)
 
 		app.Test()
 		app.Provide(func() *gorm.DB { return db })
 		app.Provide(zap.S)
 		app.Provide(func() storage.IStorageService { return storage.NewMemoryStorageService() })
+		app.Provide(notification.NewHub)
+		app.Provide(notification.NewNotificationService)
 		app.Provide(user.NewUserCrudService)
 		app.Provide(course.NewCourseService)
 		app.Provide(content.NewContentService)

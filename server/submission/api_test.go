@@ -20,15 +20,18 @@ import (
 )
 
 type mockSubmissionService struct {
-	resolveTargetFunc   func(courseUuid, contentUuid, userUuid uuid.UUID, submittedAt time.Time) (*submission.SubmissionTarget, error)
-	saveFromMessageFunc func(msg submission.SubmissionMessage) (*submission.IndividualSubmission, error)
+	resolveTargetFunc          func(courseUuid, contentUuid, userUuid uuid.UUID, submittedAt time.Time) (*submission.SubmissionTarget, error)
+	saveFromMessageFunc        func(msg submission.SubmissionMessage) (*submission.IndividualSubmission, error)
+	notifySubmittedFunc        func(target *submission.SubmissionTarget)
+	notifySubmissionFailedFunc func(userUuid, courseUuid uuid.UUID, contentTitle string)
+	checkDeadlineRemindersFunc func(now time.Time) (int, error)
 }
 
 func (m *mockSubmissionService) ResolveTarget(courseUuid, contentUuid, userUuid uuid.UUID, submittedAt time.Time) (*submission.SubmissionTarget, error) {
 	if m.resolveTargetFunc != nil {
 		return m.resolveTargetFunc(courseUuid, contentUuid, userUuid, submittedAt)
 	}
-	return &submission.SubmissionTarget{ContentID: 1, UserID: 1, UserEmail: "student@hvl.no"}, nil
+	return &submission.SubmissionTarget{ContentID: 1, ContentTitle: "Assignment", CourseUuid: courseUuid, UserID: 1, UserUuid: userUuid, UserEmail: "student@hvl.no"}, nil
 }
 
 func (m *mockSubmissionService) SaveFromMessage(msg submission.SubmissionMessage) (*submission.IndividualSubmission, error) {
@@ -48,6 +51,25 @@ func (m *mockSubmissionService) SaveFromMessage(msg submission.SubmissionMessage
 		UserID:    &msg.UserID,
 		UserEmail: msg.UserEmail,
 	}, nil
+}
+
+func (m *mockSubmissionService) NotifySubmitted(target *submission.SubmissionTarget) {
+	if m.notifySubmittedFunc != nil {
+		m.notifySubmittedFunc(target)
+	}
+}
+
+func (m *mockSubmissionService) NotifySubmissionFailed(userUuid, courseUuid uuid.UUID, contentTitle string) {
+	if m.notifySubmissionFailedFunc != nil {
+		m.notifySubmissionFailedFunc(userUuid, courseUuid, contentTitle)
+	}
+}
+
+func (m *mockSubmissionService) CheckDeadlineReminders(now time.Time) (int, error) {
+	if m.checkDeadlineRemindersFunc != nil {
+		return m.checkDeadlineRemindersFunc(now)
+	}
+	return 0, nil
 }
 
 type mockPublisher struct {
@@ -112,12 +134,18 @@ func TestSubmissionCtn_Submit(t *testing.T) {
 	}
 
 	t.Run("202 Accepted on valid submission and enqueues message", func(t *testing.T) {
-		mockSvc := &mockSubmissionService{}
+		notifiedSubmitted := false
+		mockSvc := &mockSubmissionService{
+			notifySubmittedFunc: func(target *submission.SubmissionTarget) {
+				notifiedSubmitted = true
+			},
+		}
 		mockPub := &mockPublisher{}
 		r := setupTestRouter(mockSvc, mockPub)
 
 		rec := doReq(r, http.MethodPost, path, auth, validPayload)
 		assert.Equal(t, http.StatusAccepted, rec.Code)
+		assert.True(t, notifiedSubmitted)
 
 		var resp submission.SubmissionAcceptedDto
 		assert.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
@@ -129,6 +157,9 @@ func TestSubmissionCtn_Submit(t *testing.T) {
 		assert.Equal(t, resp.Uuid, mockPub.lastMsg.Uuid)
 		assert.Equal(t, uint(1), mockPub.lastMsg.ContentID)
 		assert.Equal(t, uint(1), mockPub.lastMsg.UserID)
+		assert.Equal(t, studentUuid, mockPub.lastMsg.UserUuid)
+		assert.Equal(t, courseUuid, mockPub.lastMsg.CourseUuid)
+		assert.Equal(t, "Assignment", mockPub.lastMsg.ContentTitle)
 		assert.Equal(t, "https://git.app.uib.no/student/task1.git", mockPub.lastMsg.PayloadURL)
 	})
 
@@ -259,13 +290,20 @@ func TestSubmissionCtn_Submit(t *testing.T) {
 	})
 
 	t.Run("503 Service Unavailable when publisher fails", func(t *testing.T) {
+		notifiedFailed := false
+		mockSvc := &mockSubmissionService{
+			notifySubmissionFailedFunc: func(userUuid, courseUuid uuid.UUID, contentTitle string) {
+				notifiedFailed = true
+			},
+		}
 		mockPub := &mockPublisher{
 			publishFunc: func(ctx context.Context, msg submission.SubmissionMessage) error {
 				return errors.New("rabbitmq connection lost")
 			},
 		}
-		r := setupTestRouter(&mockSubmissionService{}, mockPub)
+		r := setupTestRouter(mockSvc, mockPub)
 		rec := doReq(r, http.MethodPost, path, auth, validPayload)
 		assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
+		assert.True(t, notifiedFailed)
 	})
 }

@@ -67,3 +67,19 @@ type IndividualSubmission struct {
 	User      *user.User `json:"user,omitempty" gorm:"foreignKey:UserID;constraint:OnDelete:SET NULL;"`
 	UserEmail string     `json:"userEmail,omitempty" gorm:"type:varchar(255);index"`
 }
+
+type ReminderType string
+
+const (
+	ReminderOneDay     ReminderType = "24H"
+	ReminderFifteenMin ReminderType = "15M"
+)
+
+// DeadlineReminder records that a deadline reminder has been sent to a student for an assignment.
+type DeadlineReminder struct {
+	ID           uint         `gorm:"primaryKey"`
+	ContentID    uint         `gorm:"not null;uniqueIndex:idx_deadline_reminder_unique;index"`
+	UserID       uint         `gorm:"not null;uniqueIndex:idx_deadline_reminder_unique;index"`
+	ReminderType ReminderType `gorm:"type:varchar(10);not null;uniqueIndex:idx_deadline_reminder_unique"`
+	SentAt       time.Time    `gorm:"not null"`
+}

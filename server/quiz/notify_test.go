@@ -1,7 +1,6 @@
 package quiz_test
 
 import (
-	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -12,7 +11,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
 )
 
 // draftWithWindow creates a quiz with one question and the given window, but does not publish it.
@@ -209,26 +207,4 @@ func TestNotify_OneFailedDeliveryDoesNotBlockOthers(t *testing.T) {
 
 	assert.Empty(t, f.notes.sent[f.student.Uuid])
 	assert.Len(t, f.notes.sent[second.Uuid], 1)
-}
-
-func TestNotifyWorker_RunChecksOnStartAndStopsOnCancel(t *testing.T) {
-	f := setup(t)
-	f.draftWithWindow(t, timePtr(-time.Hour), nil)
-	// Mark published directly so Publish does not announce it: only the worker can.
-	require.NoError(t, f.db.Table("quizzes").Where("1 = 1").Update("published", true).Error)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() {
-		quiz.NewNotifyWorker(f.svc, zap.NewNop().Sugar()).Run(ctx)
-		close(done)
-	}()
-
-	assert.Eventually(t, func() bool { return f.notes.count(f.student.Uuid) == 1 }, 2*time.Second, 10*time.Millisecond)
-	cancel()
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("worker did not stop after cancel")
-	}
 }

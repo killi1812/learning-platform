@@ -115,20 +115,26 @@ func (ctn *SubmissionCtn) submit(c *gin.Context) {
 
 	subUuid := uuid.New()
 	msg := SubmissionMessage{
-		Uuid:        subUuid,
-		ContentID:   target.ContentID,
-		UserID:      target.UserID,
-		UserEmail:   target.UserEmail,
-		PayloadType: dto.PayloadType,
-		PayloadURL:  dto.PayloadURL,
-		SubmittedAt: submittedAt,
+		Uuid:         subUuid,
+		ContentID:    target.ContentID,
+		ContentTitle: target.ContentTitle,
+		CourseUuid:   target.CourseUuid,
+		UserID:       target.UserID,
+		UserUuid:     target.UserUuid,
+		UserEmail:    target.UserEmail,
+		PayloadType:  dto.PayloadType,
+		PayloadURL:   dto.PayloadURL,
+		SubmittedAt:  submittedAt,
 	}
 
 	if err := ctn.Publisher.Publish(c.Request.Context(), msg); err != nil {
 		ctn.logger.Errorf("Failed to publish submission %s to queue: %v", subUuid, err)
+		ctn.Service.NotifySubmissionFailed(userUuid, courseUuid, target.ContentTitle)
 		ginutil.RespondWithError(c, http.StatusServiceUnavailable, "Failed to queue submission")
 		return
 	}
+
+	ctn.Service.NotifySubmitted(target)
 
 	c.JSON(http.StatusAccepted, SubmissionAcceptedDto{
 		Uuid:        subUuid,

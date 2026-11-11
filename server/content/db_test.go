@@ -10,6 +10,7 @@ import (
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/content"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/course"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/notification"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/testutil"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/storage"
@@ -52,10 +53,12 @@ func setupContentTest(t *testing.T) (*course.Course, *course.Module, content.ICo
 	db := testutil.NewSqliteTestDb(t,
 		&user.User{},
 		&course.Course{},
+		&course.Enrollment{},
 		&course.Module{},
 		&content.Content{},
 		&content.File{},
 		&content.StudentInteraction{},
+		&notification.Notification{},
 	)
 
 	c := &course.Course{
@@ -76,7 +79,8 @@ func setupContentTest(t *testing.T) (*course.Course, *course.Module, content.ICo
 
 	memStorage := storage.NewMemoryStorageService()
 	logger := zap.NewNop().Sugar()
-	svc := content.NewContentService(db, memStorage, logger)
+	notifSvc := notification.NewNotificationService(db, notification.NewHub(), logger)
+	svc := content.NewContentService(db, memStorage, notifSvc, logger)
 
 	return c, m, svc, memStorage, db
 }
@@ -172,10 +176,10 @@ func TestContentService_UploadFile_Failures(t *testing.T) {
 		IStorageService: memStorage,
 		failUpload:      true,
 	}
-	failingDb := testutil.NewSqliteTestDb(t, &user.User{}, &course.Course{}, &course.Module{}, &content.Content{}, &content.File{}, &content.StudentInteraction{})
+	failingDb := testutil.NewSqliteTestDb(t, &user.User{}, &course.Course{}, &course.Enrollment{}, &course.Module{}, &content.Content{}, &content.File{}, &content.StudentInteraction{}, &notification.Notification{})
 	require.NoError(t, failingDb.Create(c).Error)
 	require.NoError(t, failingDb.Create(m).Error)
-	failingSvc := content.NewContentService(failingDb, failingStorage, zap.NewNop().Sugar())
+	failingSvc := content.NewContentService(failingDb, failingStorage, notification.NewNotificationService(failingDb, notification.NewHub(), zap.NewNop().Sugar()), zap.NewNop().Sugar())
 
 	_, err = failingSvc.UploadFile(
 		c.Uuid, m.Uuid,
@@ -269,10 +273,10 @@ func TestContentService_GetFileStream(t *testing.T) {
 		IStorageService: memStorage,
 		failGet:         true,
 	}
-	db := testutil.NewSqliteTestDb(t, &user.User{}, &course.Course{}, &course.Module{}, &content.Content{}, &content.File{}, &content.StudentInteraction{})
+	db := testutil.NewSqliteTestDb(t, &user.User{}, &course.Course{}, &course.Enrollment{}, &course.Module{}, &content.Content{}, &content.File{}, &content.StudentInteraction{}, &notification.Notification{})
 	require.NoError(t, db.Create(c).Error)
 	require.NoError(t, db.Create(m).Error)
-	failingSvc := content.NewContentService(db, failingStorage, zap.NewNop().Sugar())
+	failingSvc := content.NewContentService(db, failingStorage, notification.NewNotificationService(db, notification.NewHub(), zap.NewNop().Sugar()), zap.NewNop().Sugar())
 	spFail, err := failingSvc.UploadFile(c.Uuid, m.Uuid, "Will Fail", "fail.txt", 4, "text/plain", strings.NewReader("test"), "", "")
 	require.NoError(t, err)
 
@@ -328,10 +332,10 @@ func TestContentService_DeleteFile(t *testing.T) {
 		IStorageService: memStorage,
 		failDelete:      true,
 	}
-	db := testutil.NewSqliteTestDb(t, &user.User{}, &course.Course{}, &course.Module{}, &content.Content{}, &content.File{}, &content.StudentInteraction{})
+	db := testutil.NewSqliteTestDb(t, &user.User{}, &course.Course{}, &course.Enrollment{}, &course.Module{}, &content.Content{}, &content.File{}, &content.StudentInteraction{}, &notification.Notification{})
 	require.NoError(t, db.Create(c).Error)
 	require.NoError(t, db.Create(m).Error)
-	failingSvc := content.NewContentService(db, failingStorage, zap.NewNop().Sugar())
+	failingSvc := content.NewContentService(db, failingStorage, notification.NewNotificationService(db, notification.NewHub(), zap.NewNop().Sugar()), zap.NewNop().Sugar())
 
 	sp2, err := failingSvc.UploadFile(c.Uuid, m.Uuid, "Delete Warn", "del.txt", 3, "text/plain", strings.NewReader("abc"), "", "")
 	require.NoError(t, err)
@@ -434,7 +438,9 @@ func TestContentService_StudentPrerequisitesAndVisibility(t *testing.T) {
 
 func TestContentService_CreateAssignmentAndGet(t *testing.T) {
 	db := testutil.NewSqliteTestDb(t,
+		&user.User{},
 		&course.Course{},
+		&course.Enrollment{},
 		&course.Module{},
 		&content.Content{},
 		&content.File{},
@@ -442,9 +448,10 @@ func TestContentService_CreateAssignmentAndGet(t *testing.T) {
 		&content.Quiz{},
 		&content.Question{},
 		&content.CodingExercise{},
+		&notification.Notification{},
 	)
 
-	svc := content.NewContentService(db, storage.NewMemoryStorageService(), zap.NewNop().Sugar())
+	svc := content.NewContentService(db, storage.NewMemoryStorageService(), notification.NewNotificationService(db, notification.NewHub(), zap.NewNop().Sugar()), zap.NewNop().Sugar())
 
 	c := &course.Course{Title: "DAT250", Term: course.TermAutumn, Year: 2026}
 	assert.NoError(t, db.Create(c).Error)
@@ -539,5 +546,83 @@ func TestContentService_CreateAssignmentAndGet(t *testing.T) {
 
 		_, err = svc.GetAssignmentByModule(m.Uuid)
 		assert.Error(t, err)
+	})
+}
+
+func TestContentService_Notifications(t *testing.T) {
+	db := testutil.NewSqliteTestDb(t,
+		&user.User{},
+		&course.Course{},
+		&course.Enrollment{},
+		&course.Module{},
+		&content.Content{},
+		&content.File{},
+		&content.Assignment{},
+		&notification.Notification{},
+	)
+	memStorage := storage.NewMemoryStorageService()
+	logger := zap.NewNop().Sugar()
+	notifSvc := notification.NewNotificationService(db, notification.NewHub(), logger)
+	svc := content.NewContentService(db, memStorage, notifSvc, logger)
+
+	c := &course.Course{Title: "Cloud Computing", Term: course.TermAutumn, Year: 2026}
+	require.NoError(t, db.Create(c).Error)
+
+	m := &course.Module{CourseID: c.ID, Title: "Module 1", Position: 1}
+	require.NoError(t, db.Create(m).Error)
+
+	student := &user.User{
+		Uuid:     uuid.New(),
+		Username: "stud",
+		Email:    "stud@example.com",
+	}
+	teacher := &user.User{
+		Uuid:     uuid.New(),
+		Username: "prof",
+		Email:    "prof@example.com",
+	}
+	require.NoError(t, db.Create(student).Error)
+	require.NoError(t, db.Create(teacher).Error)
+
+	require.NoError(t, db.Create(&course.Enrollment{
+		UserID:   student.ID,
+		CourseID: c.ID,
+		Role:     course.RoleStudent,
+	}).Error)
+	require.NoError(t, db.Create(&course.Enrollment{
+		UserID:   teacher.ID,
+		CourseID: c.ID,
+		Role:     course.RoleTeacher,
+	}).Error)
+
+	t.Run("UploadFile notifies enrolled student", func(t *testing.T) {
+		f, err := svc.UploadFile(c.Uuid, m.Uuid, "Lecture 1 Slides", "l1.pdf", 100, "application/pdf", strings.NewReader("pdf-bytes"), "Intro", "")
+		require.NoError(t, err)
+		require.NotNil(t, f)
+
+		var notifs []notification.Notification
+		require.NoError(t, db.Where("user_id = ?", student.ID).Find(&notifs).Error)
+		require.NotEmpty(t, notifs)
+		assert.Equal(t, "New Course Material: Lecture 1 Slides", notifs[len(notifs)-1].Title)
+		assert.Contains(t, notifs[len(notifs)-1].Body, "Lecture 1 Slides")
+		assert.Contains(t, notifs[len(notifs)-1].URL, "/modules/"+m.Uuid.String()+"/files/")
+
+		var teacherNotifs []notification.Notification
+		require.NoError(t, db.Where("user_id = ?", teacher.ID).Find(&teacherNotifs).Error)
+		assert.Empty(t, teacherNotifs)
+	})
+
+	t.Run("CreateAssignment notifies enrolled student", func(t *testing.T) {
+		cnt := &content.Content{Title: "Homework 1", Position: 2}
+		asgn := &content.Assignment{Type: content.AssignmentHandIn}
+		created, err := svc.CreateAssignment(m.Uuid, cnt, asgn)
+		require.NoError(t, err)
+		require.NotNil(t, created)
+
+		var notifs []notification.Notification
+		require.NoError(t, db.Where("user_id = ?", student.ID).Find(&notifs).Error)
+		assert.Equal(t, "New Assignment: Homework 1", notifs[len(notifs)-1].Title)
+		assert.Contains(t, notifs[len(notifs)-1].Body, "Homework 1")
+		assert.Equal(t, "/courses/"+c.Uuid.String(), notifs[len(notifs)-1].URL)
 	})
 }

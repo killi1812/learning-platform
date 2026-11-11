@@ -1,24 +1,19 @@
 package quiz
 
 import (
-	"context"
 	"fmt"
 	"time"
 
-	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/course"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/notification"
 	"github.com/google/uuid"
-	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
-// notifyInterval is how often the worker looks for quizzes whose window has opened.
-const notifyInterval = time.Minute
-
-// Notifier delivers one notification to one user. notification.INotificationService satisfies it.
+// Notifier delivers notifications to users. notification.INotificationService satisfies it.
 type Notifier interface {
 	NotifySystem(recipientUuid uuid.UUID, content notification.NotificationContent) (*notification.Notification, error)
+	NotifySystemMany(recipientUuids []uuid.UUID, content notification.NotificationContent) ([]notification.Notification, error)
 }
 
 // dueQuiz is a published, not yet announced quiz whose window is open now.
@@ -88,6 +83,10 @@ func (s *QuizService) announce(q dueQuiz, now time.Time) {
 		return
 	}
 
+	if len(studentUuids) == 0 {
+		return
+	}
+
 	content := notification.NotificationContent{
 		Title: "New quiz: " + q.Title,
 		Body:  "A quiz is open now in your course. Open it to start.",
@@ -97,15 +96,11 @@ func (s *QuizService) announce(q dueQuiz, now time.Time) {
 		content.Title = "Quiz updated: " + q.Title
 		content.Body = "Your teacher changed this quiz. Earlier attempts were reset, so take it again."
 	}
-	sent := 0
-	for _, studentUuid := range studentUuids {
-		if _, err := s.notifier.NotifySystem(studentUuid, content); err != nil {
-			s.logger.Warnf("Failed to notify student %s about quiz %s: %v", studentUuid, q.QuizUuid, err)
-			continue
-		}
-		sent++
+	if _, err := s.notifier.NotifySystemMany(studentUuids, content); err != nil {
+		s.logger.Warnf("Failed to notify students about quiz %s: %v", q.QuizUuid, err)
+		return
 	}
-	s.logger.Infof("Notified %d of %d students about quiz %s", sent, len(studentUuids), q.QuizUuid)
+	s.logger.Infof("Notified %d students about quiz %s", len(studentUuids), q.QuizUuid)
 }
 
 // studentUuids returns the uuid of every user enrolled in the course as a student.
@@ -116,33 +111,4 @@ func (s *QuizService) studentUuids(courseID uint) ([]uuid.UUID, error) {
 		Where("enrollments.course_id = ? AND enrollments.role = ? AND enrollments.deleted_at IS NULL", courseID, course.RoleStudent).
 		Pluck("users.uuid", &uuids).Error
 	return uuids, err
-}
-
-// NotifyWorker announces quizzes when their start date arrives.
-type NotifyWorker struct {
-	service IQuizService
-	logger  *zap.SugaredLogger
-}
-
-func NewNotifyWorker(service IQuizService, logger *zap.SugaredLogger) app.Worker {
-	return &NotifyWorker{service: service, logger: logger}
-}
-
-// Run checks once at start, then every notifyInterval, until ctx is canceled.
-func (w *NotifyWorker) Run(ctx context.Context) {
-	w.logger.Infof("Starting quiz notification worker, interval %s", notifyInterval)
-	ticker := time.NewTicker(notifyInterval)
-	defer ticker.Stop()
-
-	for {
-		if err := w.service.NotifyDueQuizzes(); err != nil {
-			w.logger.Errorf("Quiz notification check failed: %v", err)
-		}
-		select {
-		case <-ctx.Done():
-			w.logger.Infof("Quiz notification worker stopped")
-			return
-		case <-ticker.C:
-		}
-	}
 }

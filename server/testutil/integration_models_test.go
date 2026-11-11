@@ -37,6 +37,7 @@ func TestAllLmsModels_EndToEndAutoMigrateAndWorkflow(t *testing.T) {
 		&submission.GroupSubmission{},
 		&submission.IndividualSubmission{},
 		&submission.Grade{},
+		&submission.DeadlineReminder{},
 	)
 
 	// 2. Create Users (Teacher and Student)

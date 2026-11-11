@@ -37,6 +37,20 @@ func (r *recordingNotifier) NotifySystem(recipient uuid.UUID, content notificati
 	return &notification.Notification{}, nil
 }
 
+func (r *recordingNotifier) NotifySystemMany(recipients []uuid.UUID, content notification.NotificationContent) ([]notification.Notification, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	res := make([]notification.Notification, 0, len(recipients))
+	for _, rec := range recipients {
+		if r.fail[rec] {
+			continue
+		}
+		r.sent[rec] = append(r.sent[rec], content)
+		res = append(res, notification.Notification{})
+	}
+	return res, nil
+}
+
 func (r *recordingNotifier) count(recipient uuid.UUID) int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
