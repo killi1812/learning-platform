@@ -89,6 +89,7 @@ func (ctn *CourseCtn) handleError(c *gin.Context, err error, fallbackMsg string)
 	case errors.Is(err, ErrAlreadyEnrolled),
 		errors.Is(err, ErrUserAlreadyInGroup),
 		errors.Is(err, ErrGroupFull),
+		errors.Is(err, ErrCourseGroupLimitExceeded),
 		errors.Is(err, cerror.ErrGroupNameAlreadyTaken):
 		ginutil.RespondWithError(c, http.StatusConflict, err.Error())
 	case errors.Is(err, ErrCannotRemoveTeacher),
@@ -170,7 +171,12 @@ func (ctn *CourseCtn) GetGroup(c *gin.Context) {
 		return
 	}
 
-	if group.Course != nil && !authutils.CheckCourseAccess(c, group.Course.Uuid, ctn.CourseService.IsEnrolledOrAdmin, ErrCourseNotFound) {
+	if group.Course == nil {
+		ginutil.RespondWithError(c, http.StatusInternalServerError, "Group course association missing")
+		return
+	}
+
+	if !authutils.CheckCourseAccess(c, group.Course.Uuid, ctn.CourseService.IsEnrolledOrAdmin, ErrCourseNotFound) {
 		return
 	}
 
@@ -294,7 +300,12 @@ func (ctn *CourseCtn) PatchGroup(c *gin.Context) {
 		return
 	}
 
-	if group.Course != nil && !authutils.CheckCourseAccess(c, group.Course.Uuid, ctn.CourseService.IsTeacherOrAdmin, ErrCourseNotFound) {
+	if group.Course == nil {
+		ginutil.RespondWithError(c, http.StatusInternalServerError, "Group course association missing")
+		return
+	}
+
+	if !authutils.CheckCourseAccess(c, group.Course.Uuid, ctn.CourseService.IsTeacherOrAdmin, ErrCourseNotFound) {
 		return
 	}
 
@@ -338,7 +349,12 @@ func (ctn *CourseCtn) DeleteGroup(c *gin.Context) {
 		return
 	}
 
-	if group.Course != nil && !authutils.CheckCourseAccess(c, group.Course.Uuid, ctn.CourseService.IsTeacherOrAdmin, ErrCourseNotFound) {
+	if group.Course == nil {
+		ginutil.RespondWithError(c, http.StatusInternalServerError, "Group course association missing")
+		return
+	}
+
+	if !authutils.CheckCourseAccess(c, group.Course.Uuid, ctn.CourseService.IsTeacherOrAdmin, ErrCourseNotFound) {
 		return
 	}
 
@@ -378,12 +394,26 @@ func (ctn *CourseCtn) AddStudentToGroup(c *gin.Context) {
 		return
 	}
 
-	group, err := ctn.groupService.UserJoinGroup(groupUuid, userUuid)
+	group, err := ctn.groupService.GetGroup(groupUuid)
+	if ctn.handleError(c, err, "Failed to fetch group") {
+		return
+	}
+
+	if group.Course == nil {
+		ginutil.RespondWithError(c, http.StatusInternalServerError, "Group course association missing")
+		return
+	}
+
+	if !authutils.CheckCourseAccess(c, group.Course.Uuid, ctn.CourseService.IsEnrolledOrAdmin, ErrCourseNotFound) {
+		return
+	}
+
+	joinedGroup, err := ctn.groupService.UserJoinGroup(groupUuid, userUuid)
 	if ctn.handleError(c, err, "Failed to join group") {
 		return
 	}
 
-	c.JSON(http.StatusOK, GroupDto{}.FromModel(group))
+	c.JSON(http.StatusOK, GroupDto{}.FromModel(joinedGroup))
 }
 
 // StudentLeavesGroup godoc
@@ -413,12 +443,26 @@ func (ctn *CourseCtn) StudentLeavesGroup(c *gin.Context) {
 		return
 	}
 
-	group, err := ctn.groupService.RemoveStudentFromGroup(groupUuid, userUuid)
+	group, err := ctn.groupService.GetGroup(groupUuid)
+	if ctn.handleError(c, err, "Failed to fetch group") {
+		return
+	}
+
+	if group.Course == nil {
+		ginutil.RespondWithError(c, http.StatusInternalServerError, "Group course association missing")
+		return
+	}
+
+	if !authutils.CheckCourseAccess(c, group.Course.Uuid, ctn.CourseService.IsEnrolledOrAdmin, ErrCourseNotFound) {
+		return
+	}
+
+	leftGroup, err := ctn.groupService.RemoveStudentFromGroup(groupUuid, userUuid)
 	if ctn.handleError(c, err, "Failed to leave group") {
 		return
 	}
 
-	c.JSON(http.StatusOK, GroupDto{}.FromModel(group))
+	c.JSON(http.StatusOK, GroupDto{}.FromModel(leftGroup))
 }
 
 // ListCourses godoc

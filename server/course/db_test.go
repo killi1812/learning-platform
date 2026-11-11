@@ -1,6 +1,8 @@
 package course
 
 import (
+	"fmt"
+	"sync"
 	"testing"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/notification"
@@ -822,5 +824,76 @@ func TestGroupService(t *testing.T) {
 		reloaded, err := groupSvc.GetGroup(wGrp.Uuid)
 		assert.NoError(t, err)
 		assert.Empty(t, reloaded.Members)
+	})
+
+	t.Run("Concurrent group join race condition prevention", func(t *testing.T) {
+		raceGrp, err := groupSvc.CreateGroup(c.Uuid, "RaceGroup", 1)
+		assert.NoError(t, err)
+
+		// Create 5 distinct students and enroll them
+		const numStudents = 5
+		raceStudents := make([]*user.User, numStudents)
+		for i := 0; i < numStudents; i++ {
+			u := &user.User{
+				Uuid:         uuid.New(),
+				Username:     fmt.Sprintf("race_student_%d", i),
+				Email:        fmt.Sprintf("race_%d@example.com", i),
+				PasswordHash: "pass",
+				Role:         authutils.ROLE_USER,
+			}
+			assert.NoError(t, svc.db.Create(u).Error)
+			_, err := svc.SelfEnroll(c.Uuid, u.Uuid)
+			assert.NoError(t, err)
+			raceStudents[i] = u
+		}
+
+		var wg sync.WaitGroup
+		results := make([]error, numStudents)
+		for i := 0; i < numStudents; i++ {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				_, results[idx] = groupSvc.UserJoinGroup(raceGrp.Uuid, raceStudents[idx].Uuid)
+			}(i)
+		}
+		wg.Wait()
+
+		successCount := 0
+		for _, err := range results {
+			if err == nil {
+				successCount++
+			}
+		}
+		assert.Equal(t, 1, successCount, "Exactly 1 student must succeed in joining group with capacity 1")
+
+		// Verify reloaded group has exactly 1 member
+		reloaded, err := groupSvc.GetGroup(raceGrp.Uuid)
+		assert.NoError(t, err)
+		assert.Len(t, reloaded.Members, 1)
+	})
+
+	t.Run("Course group limit and input sanitization", func(t *testing.T) {
+		// Input sanitization: HTML tags are escaped
+		xssGrp, err := groupSvc.CreateGroup(c.Uuid, "<script>alert('xss')</script>", 4)
+		assert.NoError(t, err)
+		assert.Equal(t, "&lt;script&gt;alert(&#39;xss&#39;)&lt;/script&gt;", xssGrp.Name)
+
+		// Exceeding course group limit
+		limitCourse, err := svc.CreateCourse(&Course{Title: "LimitCourse", Term: TermAutumn, Year: 2026}, teacher.Uuid)
+		assert.NoError(t, err)
+
+		// Bulk create 50 groups
+		_, err = groupSvc.BulkCreateGroups(limitCourse.Uuid, "Batch1", 50, 4)
+		assert.NoError(t, err)
+		// Bulk create another 50 groups (total = 100)
+		_, err = groupSvc.BulkCreateGroups(limitCourse.Uuid, "Batch2", 50, 4)
+		assert.NoError(t, err)
+
+		// 101st group must fail
+		_, err = groupSvc.CreateGroup(limitCourse.Uuid, "OverflowGroup", 4)
+		assert.ErrorIs(t, err, ErrCourseGroupLimitExceeded)
+
+		_, err = groupSvc.BulkCreateGroups(limitCourse.Uuid, "OverflowBatch", 1, 4)
+		assert.ErrorIs(t, err, ErrCourseGroupLimitExceeded)
 	})
 }

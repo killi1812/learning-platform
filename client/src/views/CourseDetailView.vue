@@ -619,6 +619,7 @@
                   <div v-if="isTeacher" class="d-flex justify-end ga-1 mb-1">
                     <v-btn
                       density="comfortable"
+                      :disabled="!!actionLoading[group.uuid]"
                       icon="mdi-pencil-outline"
                       size="small"
                       title="Edit Group"
@@ -628,6 +629,7 @@
                     <v-btn
                       color="error"
                       density="comfortable"
+                      :disabled="!!actionLoading[group.uuid]"
                       icon="mdi-delete-outline"
                       :loading="!!actionLoading[group.uuid]"
                       size="small"
@@ -683,6 +685,7 @@
                     v-if="myGroup?.uuid === group.uuid"
                     block
                     color="error"
+                    :disabled="!!actionLoading[group.uuid]"
                     :loading="!!actionLoading[group.uuid]"
                     prepend-icon="mdi-exit-to-app"
                     size="small"
@@ -695,7 +698,11 @@
                     v-else
                     block
                     color="primary"
-                    :disabled="!!myGroup || group.members.length >= group.maxMembers"
+                    :disabled="
+                      !!myGroup ||
+                      group.members.length >= group.maxMembers ||
+                      !!actionLoading[group.uuid]
+                    "
                     :loading="!!actionLoading[group.uuid]"
                     prepend-icon="mdi-account-plus"
                     size="small"
@@ -1096,8 +1103,14 @@
             v-model="groupForm.name"
             class="mb-3"
             label="Group Name"
+            :maxlength="100"
             placeholder="e.g. Group 1 or Team Alpha"
             required
+            :rules="[
+              v => !!v || 'Group name is required',
+              v => (v && v.trim().length >= 2) || 'Must be at least 2 characters',
+              v => (v && v.trim().length <= 100) || 'Must be at most 100 characters',
+            ]"
             variant="outlined"
           />
 
@@ -1110,6 +1123,7 @@
             min="1"
             persistent-hint
             required
+            :rules="[v => (v >= 1 && v <= 100) || 'Must be between 1 and 100']"
             type="number"
             variant="outlined"
           />
@@ -1143,8 +1157,10 @@
             class="mb-3"
             hint="Prefix for group names (e.g. 'Group' produces 'Group 1', 'Group 2', ...)"
             label="Group Prefix"
+            :maxlength="50"
             persistent-hint
             placeholder="Group"
+            :rules="[v => !v || v.length <= 50 || 'Must be at most 50 characters']"
             variant="outlined"
           />
 

@@ -772,10 +772,10 @@ func TestCourseCtn_GroupEndpoints(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, doReq(errR, http.MethodGet, "/api/group/"+gID, auth, nil).Code)
 		assert.Equal(t, http.StatusNotFound, doReq(errR, http.MethodPost, "/api/group", auth, CreateGroupDto{CourseUuid: cID, Name: "Group Valid", MaxMembers: 4}).Code)
 		assert.Equal(t, http.StatusInternalServerError, doReq(errR, http.MethodPost, "/api/group/bulk", auth, BulkCreateGroupsDto{CourseUuid: cID, Count: 2, MaxMembers: 4}).Code)
-		assert.Equal(t, http.StatusConflict, doReq(errR, http.MethodPost, "/api/group/join/"+gID, auth, nil).Code)
-		assert.Equal(t, http.StatusBadRequest, doReq(errR, http.MethodPatch, "/api/group/leave/"+gID, auth, nil).Code)
+		assert.Equal(t, http.StatusNotFound, doReq(errR, http.MethodPost, "/api/group/join/"+gID, auth, nil).Code)
+		assert.Equal(t, http.StatusNotFound, doReq(errR, http.MethodPatch, "/api/group/leave/"+gID, auth, nil).Code)
 
-		// Patch & Delete errors when group exists
+		// Patch & Delete & Join & Leave domain errors when group exists
 		patchDeleteGroupSvc := &mockGroupService{
 			getGroupFunc: func(gUuid uuid.UUID) (*Group, error) {
 				return &Group{Uuid: gUuid, Course: &Course{Uuid: courseUuid}}, nil
@@ -786,9 +786,42 @@ func TestCourseCtn_GroupEndpoints(t *testing.T) {
 			deleteGroupFunc: func(gUuid uuid.UUID) error {
 				return errors.New("delete error")
 			},
+			userJoinGroupFunc: func(gUuid, uUuid uuid.UUID) (*Group, error) {
+				return nil, ErrUserAlreadyInGroup
+			},
+			removeStudentFromGroupFunc: func(gUuid, uUuid uuid.UUID) (*Group, error) {
+				return nil, ErrUserNotInGroup
+			},
 		}
 		patchDeleteR, _ := setupCourseTestRouter(errCourseSvc, patchDeleteGroupSvc)
+		assert.Equal(t, http.StatusConflict, doReq(patchDeleteR, http.MethodPost, "/api/group/join/"+gID, auth, nil).Code)
+		assert.Equal(t, http.StatusBadRequest, doReq(patchDeleteR, http.MethodPatch, "/api/group/leave/"+gID, auth, nil).Code)
 		assert.Equal(t, http.StatusBadRequest, doReq(patchDeleteR, http.MethodPatch, "/api/group/"+gID, auth, UpdateGroupDto{Name: "Renamed", MaxMembers: 4}).Code)
 		assert.Equal(t, http.StatusInternalServerError, doReq(patchDeleteR, http.MethodDelete, "/api/group/"+gID, auth, nil).Code)
+
+		// Authorization failures: unenrolled user cannot get, join, leave, or modify a group
+		unauthCourseSvc := &mockCourseService{
+			isEnrolledOrAdminFunc: func(cUuid, uUuid uuid.UUID, isSystemAdmin bool) (bool, error) { return false, nil },
+			isTeacherOrAdminFunc:  func(cUuid, uUuid uuid.UUID, isSystemAdmin bool) (bool, error) { return false, nil },
+		}
+		unauthR, _ := setupCourseTestRouter(unauthCourseSvc, patchDeleteGroupSvc)
+		assert.Equal(t, http.StatusForbidden, doReq(unauthR, http.MethodGet, "/api/group/"+gID, auth, nil).Code)
+		assert.Equal(t, http.StatusForbidden, doReq(unauthR, http.MethodPost, "/api/group/join/"+gID, auth, nil).Code)
+		assert.Equal(t, http.StatusForbidden, doReq(unauthR, http.MethodPatch, "/api/group/leave/"+gID, auth, nil).Code)
+		assert.Equal(t, http.StatusForbidden, doReq(unauthR, http.MethodPatch, "/api/group/"+gID, auth, UpdateGroupDto{Name: "Renamed", MaxMembers: 4}).Code)
+		assert.Equal(t, http.StatusForbidden, doReq(unauthR, http.MethodDelete, "/api/group/"+gID, auth, nil).Code)
+
+		// Missing group course association returns 500 without bypassing auth
+		nilCourseGroupSvc := &mockGroupService{
+			getGroupFunc: func(gUuid uuid.UUID) (*Group, error) {
+				return &Group{Uuid: gUuid, Course: nil}, nil
+			},
+		}
+		nilCourseR, _ := setupCourseTestRouter(errCourseSvc, nilCourseGroupSvc)
+		assert.Equal(t, http.StatusInternalServerError, doReq(nilCourseR, http.MethodGet, "/api/group/"+gID, auth, nil).Code)
+		assert.Equal(t, http.StatusInternalServerError, doReq(nilCourseR, http.MethodPost, "/api/group/join/"+gID, auth, nil).Code)
+		assert.Equal(t, http.StatusInternalServerError, doReq(nilCourseR, http.MethodPatch, "/api/group/leave/"+gID, auth, nil).Code)
+		assert.Equal(t, http.StatusInternalServerError, doReq(nilCourseR, http.MethodPatch, "/api/group/"+gID, auth, UpdateGroupDto{Name: "Renamed", MaxMembers: 4}).Code)
+		assert.Equal(t, http.StatusInternalServerError, doReq(nilCourseR, http.MethodDelete, "/api/group/"+gID, auth, nil).Code)
 	})
 }

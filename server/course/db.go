@@ -3,6 +3,7 @@ package course
 import (
 	"errors"
 	"fmt"
+	"html"
 	"strings"
 	"time"
 
@@ -13,26 +14,35 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+)
+
+const (
+	DefaultGroupMaxMembers = 4
+	MaxGroupCapacity       = 100
+	MaxGroupsPerCourse     = 100
+	MaxBulkCreateCount     = 50
 )
 
 var (
-	ErrCourseNotFound          = errors.New("course not found")
-	ErrAlreadyEnrolled         = errors.New("user is already enrolled in this course")
-	ErrEnrollmentNotFound      = errors.New("enrollment not found")
-	ErrCannotRemoveTeacher     = errors.New("cannot remove teacher from course")
-	ErrUserNotFound            = errors.New("user not found")
-	ErrUnauthorized            = errors.New("user does not have required permissions for this course")
-	ErrModuleNotFound          = errors.New("module not found")
-	ErrSelfPrerequisite        = errors.New("module cannot depend on itself")
-	ErrCrossCoursePrerequisite = errors.New("prerequisite module belongs to a different course")
-	ErrCircularPrerequisite    = errors.New("circular module prerequisite dependency detected")
-	ErrInvalidReorderList      = errors.New("reorder list must contain all modules of the course without duplicates")
-	ErrGroupNotFound           = errors.New("group not found")
-	ErrUserAlreadyInGroup      = errors.New("user is already in a group for this course")
-	ErrUserNotInGroup          = errors.New("user is not a member of this group")
-	ErrGroupFull               = errors.New("group has reached its maximum member capacity")
-	ErrGroupMaxMembersTooSmall = errors.New("max members cannot be less than current member count")
-	ErrUserAlreadyInGroupError = ErrUserAlreadyInGroup
+	ErrCourseNotFound           = errors.New("course not found")
+	ErrAlreadyEnrolled          = errors.New("user is already enrolled in this course")
+	ErrEnrollmentNotFound       = errors.New("enrollment not found")
+	ErrCannotRemoveTeacher      = errors.New("cannot remove teacher from course")
+	ErrUserNotFound             = errors.New("user not found")
+	ErrUnauthorized             = errors.New("user does not have required permissions for this course")
+	ErrModuleNotFound           = errors.New("module not found")
+	ErrSelfPrerequisite         = errors.New("module cannot depend on itself")
+	ErrCrossCoursePrerequisite  = errors.New("prerequisite module belongs to a different course")
+	ErrCircularPrerequisite     = errors.New("circular module prerequisite dependency detected")
+	ErrInvalidReorderList       = errors.New("reorder list must contain all modules of the course without duplicates")
+	ErrGroupNotFound            = errors.New("group not found")
+	ErrUserAlreadyInGroup       = errors.New("user is already in a group for this course")
+	ErrUserNotInGroup           = errors.New("user is not a member of this group")
+	ErrGroupFull                = errors.New("group has reached its maximum member capacity")
+	ErrGroupMaxMembersTooSmall  = errors.New("max members cannot be less than current member count")
+	ErrCourseGroupLimitExceeded = errors.New("course cannot exceed 100 groups")
+	ErrUserAlreadyInGroupError  = ErrUserAlreadyInGroup
 )
 
 type ICourseService interface {
@@ -714,23 +724,33 @@ func (g *GroupService) CreateGroup(courseUuid uuid.UUID, name string, maxMembers
 		return nil, err
 	}
 
-	trimmedName := strings.TrimSpace(name)
+	trimmedName := html.EscapeString(strings.TrimSpace(name))
 	if trimmedName == "" {
 		return nil, errors.New("group name cannot be empty")
+	}
+
+	var existingCount int64
+	if err := g.db.Model(&Group{}).Where("course_id = ?", c.ID).Count(&existingCount).Error; err != nil {
+		return nil, fmt.Errorf("failed to count existing groups: %w", err)
+	}
+	if existingCount >= MaxGroupsPerCourse {
+		return nil, ErrCourseGroupLimitExceeded
 	}
 
 	var count int64
 	if err := g.db.Model(&Group{}).
 		Where("course_id = ? AND LOWER(name) = LOWER(?)", c.ID, trimmedName).
 		Count(&count).Error; err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to check duplicate group name: %w", err)
 	}
 	if count > 0 {
 		return nil, cerror.ErrGroupNameAlreadyTaken
 	}
 
 	if maxMembers <= 0 {
-		maxMembers = 4
+		maxMembers = DefaultGroupMaxMembers
+	} else if maxMembers > MaxGroupCapacity {
+		maxMembers = MaxGroupCapacity
 	}
 
 	group := Group{
@@ -743,7 +763,7 @@ func (g *GroupService) CreateGroup(courseUuid uuid.UUID, name string, maxMembers
 	}
 
 	if err := g.db.Create(&group).Error; err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create group: %w", err)
 	}
 	return &group, nil
 }
@@ -754,23 +774,34 @@ func (g *GroupService) BulkCreateGroups(courseUuid uuid.UUID, prefix string, cou
 		return nil, err
 	}
 
-	prefix = strings.TrimSpace(prefix)
+	prefix = html.EscapeString(strings.TrimSpace(prefix))
 	if prefix == "" {
 		prefix = "Group"
 	}
 	if count <= 0 {
 		return nil, errors.New("count must be greater than zero")
 	}
-	if count > 50 {
-		return nil, errors.New("count cannot exceed 50")
+	if count > MaxBulkCreateCount {
+		return nil, fmt.Errorf("count cannot exceed %d", MaxBulkCreateCount)
 	}
+
+	var existingCount int64
+	if err := g.db.Model(&Group{}).Where("course_id = ?", c.ID).Count(&existingCount).Error; err != nil {
+		return nil, fmt.Errorf("failed to count existing groups: %w", err)
+	}
+	if existingCount+int64(count) > MaxGroupsPerCourse {
+		return nil, ErrCourseGroupLimitExceeded
+	}
+
 	if maxMembers <= 0 {
-		maxMembers = 4
+		maxMembers = DefaultGroupMaxMembers
+	} else if maxMembers > MaxGroupCapacity {
+		maxMembers = MaxGroupCapacity
 	}
 
 	var existingNames []string
 	if err := g.db.Model(&Group{}).Where("course_id = ?", c.ID).Pluck("name", &existingNames).Error; err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to fetch existing group names: %w", err)
 	}
 	existingMap := make(map[string]bool, len(existingNames))
 	for _, n := range existingNames {
@@ -806,48 +837,63 @@ func (g *GroupService) BulkCreateGroups(courseUuid uuid.UUID, prefix string, cou
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to bulk create groups: %w", err)
 	}
 
 	return newGroups, nil
 }
 
 func (g *GroupService) UpdateGroup(groupUuid uuid.UUID, name string, maxMembers int) (*Group, error) {
-	group, err := g.GetGroup(groupUuid)
-	if err != nil {
-		return nil, err
-	}
-
-	trimmedName := strings.TrimSpace(name)
+	trimmedName := html.EscapeString(strings.TrimSpace(name))
 	if trimmedName == "" {
 		return nil, errors.New("group name cannot be empty")
 	}
 
 	if maxMembers <= 0 {
-		maxMembers = 4
-	}
-	if maxMembers < len(group.Members) {
-		return nil, ErrGroupMaxMembersTooSmall
+		maxMembers = DefaultGroupMaxMembers
+	} else if maxMembers > MaxGroupCapacity {
+		maxMembers = MaxGroupCapacity
 	}
 
-	var count int64
-	if err := g.db.Model(&Group{}).
-		Where("course_id = ? AND id != ? AND LOWER(name) = LOWER(?)", group.CourseID, group.ID, trimmedName).
-		Count(&count).Error; err != nil {
+	err := g.db.Transaction(func(tx *gorm.DB) error {
+		var group Group
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Preload("Members").
+			Where("uuid = ?", groupUuid).
+			First(&group).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrGroupNotFound
+			}
+			return fmt.Errorf("failed to fetch group: %w", err)
+		}
+
+		if maxMembers < len(group.Members) {
+			return ErrGroupMaxMembersTooSmall
+		}
+
+		var count int64
+		if err := tx.Model(&Group{}).
+			Where("course_id = ? AND id != ? AND LOWER(name) = LOWER(?)", group.CourseID, group.ID, trimmedName).
+			Count(&count).Error; err != nil {
+			return fmt.Errorf("failed to check duplicate group name: %w", err)
+		}
+		if count > 0 {
+			return cerror.ErrGroupNameAlreadyTaken
+		}
+
+		group.Name = trimmedName
+		group.MaxMembers = maxMembers
+
+		if err := tx.Save(&group).Error; err != nil {
+			return fmt.Errorf("failed to save group: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
-	if count > 0 {
-		return nil, cerror.ErrGroupNameAlreadyTaken
-	}
 
-	group.Name = trimmedName
-	group.MaxMembers = maxMembers
-
-	if err := g.db.Save(group).Error; err != nil {
-		return nil, err
-	}
-
-	return group, nil
+	return g.GetGroup(groupUuid)
 }
 
 func (g *GroupService) DeleteGroup(groupUuid uuid.UUID) error {
@@ -858,76 +904,104 @@ func (g *GroupService) DeleteGroup(groupUuid uuid.UUID) error {
 
 	return g.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(group).Association("Members").Clear(); err != nil {
-			return err
+			return fmt.Errorf("failed to clear group members: %w", err)
 		}
-		return tx.Unscoped().Delete(group).Error
+		if err := tx.Delete(group).Error; err != nil {
+			return fmt.Errorf("failed to delete group: %w", err)
+		}
+		return nil
 	})
 }
 
 func (g *GroupService) UserJoinGroup(groupUuid uuid.UUID, userUuid uuid.UUID) (*Group, error) {
-	group, err := g.GetGroup(groupUuid)
-	if err != nil {
-		return nil, err
-	}
-
 	u, err := g.findUser(userUuid)
 	if err != nil {
 		return nil, err
 	}
 
-	var enrollment Enrollment
-	if err := g.db.Where("course_id = ? AND user_id = ? AND role = ?", group.CourseID, u.ID, RoleStudent).First(&enrollment).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrEnrollmentNotFound
+	err = g.db.Transaction(func(tx *gorm.DB) error {
+		var group Group
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Preload("Members").
+			Where("uuid = ?", groupUuid).
+			First(&group).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrGroupNotFound
+			}
+			return fmt.Errorf("failed to load group: %w", err)
 		}
-		return nil, err
-	}
 
-	var inAnyGroupCount int64
-	err = g.db.Table("group_members").
-		Joins("JOIN groups ON groups.id = group_members.group_id").
-		Where("groups.course_id = ? AND group_members.user_id = ?", group.CourseID, u.ID).
-		Count(&inAnyGroupCount).Error
+		var enrollment Enrollment
+		if err := tx.Where("course_id = ? AND user_id = ? AND role = ?", group.CourseID, u.ID, RoleStudent).First(&enrollment).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrEnrollmentNotFound
+			}
+			return fmt.Errorf("failed to verify enrollment: %w", err)
+		}
+
+		var inAnyGroupCount int64
+		err := tx.Table("group_members").
+			Joins("JOIN groups ON groups.id = group_members.group_id").
+			Where("groups.course_id = ? AND group_members.user_id = ?", group.CourseID, u.ID).
+			Count(&inAnyGroupCount).Error
+		if err != nil {
+			return fmt.Errorf("failed to check existing group membership: %w", err)
+		}
+		if inAnyGroupCount > 0 {
+			return ErrUserAlreadyInGroup
+		}
+
+		if len(group.Members) >= group.MaxMembers {
+			return ErrGroupFull
+		}
+
+		if err := tx.Model(&group).Association("Members").Append(u); err != nil {
+			return fmt.Errorf("failed to append member: %w", err)
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	if inAnyGroupCount > 0 {
-		return nil, ErrUserAlreadyInGroup
-	}
 
-	if len(group.Members) >= group.MaxMembers {
-		return nil, ErrGroupFull
-	}
-
-	if err := g.db.Model(group).Association("Members").Append(u); err != nil {
-		return nil, err
-	}
 	return g.GetGroup(groupUuid)
 }
 
 func (g *GroupService) RemoveStudentFromGroup(groupUuid uuid.UUID, userUuid uuid.UUID) (*Group, error) {
-	group, err := g.GetGroup(groupUuid)
-	if err != nil {
-		return nil, err
-	}
-
 	u, err := g.findUser(userUuid)
 	if err != nil {
 		return nil, err
 	}
 
-	found := false
-	for _, m := range group.Members {
-		if m.ID == u.ID {
-			found = true
-			break
+	err = g.db.Transaction(func(tx *gorm.DB) error {
+		var group Group
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Preload("Members").
+			Where("uuid = ?", groupUuid).
+			First(&group).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrGroupNotFound
+			}
+			return fmt.Errorf("failed to load group: %w", err)
 		}
-	}
-	if !found {
-		return nil, ErrUserNotInGroup
-	}
 
-	if err := g.db.Model(group).Association("Members").Delete(u); err != nil {
+		found := false
+		for _, m := range group.Members {
+			if m.ID == u.ID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return ErrUserNotInGroup
+		}
+
+		if err := tx.Model(&group).Association("Members").Delete(u); err != nil {
+			return fmt.Errorf("failed to delete member: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 
