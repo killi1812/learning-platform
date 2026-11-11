@@ -649,6 +649,10 @@ func TestContentService_HandinAssignment(t *testing.T) {
 	m := &course.Module{CourseID: c.ID, Title: "Module 1", Position: 1}
 	assert.NoError(t, db.Create(m).Error)
 
+	student := &user.User{Uuid: uuid.New(), Username: "handin_stud", Email: "handin_stud@example.com"}
+	assert.NoError(t, db.Create(student).Error)
+	assert.NoError(t, db.Create(&course.Enrollment{UserID: student.ID, CourseID: c.ID, Role: course.RoleStudent}).Error)
+
 	deadline := time.Now().Add(48 * time.Hour)
 
 	// 1. CreateHandin
@@ -660,6 +664,12 @@ func TestContentService_HandinAssignment(t *testing.T) {
 	assert.Equal(t, content.TypeAssignment, created.Type)
 	assert.Equal(t, content.AssignmentHandIn, created.Assignment.Type)
 	assert.True(t, created.Assignment.AcceptsLateSubmissions)
+
+	var notifs []notification.Notification
+	assert.NoError(t, db.Where("user_id = ?", student.ID).Find(&notifs).Error)
+	assert.Len(t, notifs, 1)
+	assert.Equal(t, "New Assignment: Assignment 1", notifs[0].Title)
+	assert.Equal(t, "/courses/"+c.Uuid.String(), notifs[0].URL)
 
 	// Create second handin to test auto-position
 	created2, err := svc.CreateHandin(c.Uuid, m.Uuid, "Assignment 2", nil, false)

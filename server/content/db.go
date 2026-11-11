@@ -527,6 +527,17 @@ func (s *ContentService) CreateHandin(courseUuid, moduleUuid uuid.UUID, title st
 		return nil, err
 	}
 	cnt.Module = module
+
+	courseTitle := "Course"
+	if module.Course != nil && module.Course.Title != "" {
+		courseTitle = module.Course.Title
+	}
+	s.notifyCourseStudents(module.CourseID, notification.NotificationContent{
+		Title: fmt.Sprintf("New Assignment: %s", cnt.Title),
+		Body:  fmt.Sprintf("A new assignment %q was published in %q (%s).", cnt.Title, courseTitle, module.Title),
+		URL:   fmt.Sprintf("/courses/%s", courseUuid),
+	})
+
 	return cnt, nil
 }
 

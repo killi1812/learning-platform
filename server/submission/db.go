@@ -170,14 +170,15 @@ func (s *SubmissionService) InitFileSubmission(courseUuid, contentUuid, userUuid
 	}
 
 	ticket := UploadTicket{
-		Uuid:        uuid.New(),
-		CourseID:    target.CourseID,
-		ContentID:   target.ContentID,
-		UserID:      target.UserID,
-		UserEmail:   target.UserEmail,
-		SubmittedAt: submittedAt,
-		ExpiresAt:   submittedAt.Add(30 * time.Minute),
-		Consumed:    false,
+		Uuid:         uuid.New(),
+		CourseID:     target.CourseID,
+		ContentID:    target.ContentID,
+		ContentTitle: target.ContentTitle,
+		UserID:       target.UserID,
+		UserEmail:    target.UserEmail,
+		SubmittedAt:  submittedAt,
+		ExpiresAt:    submittedAt.Add(30 * time.Minute),
+		Consumed:     false,
 	}
 
 	if err := s.db.Create(&ticket).Error; err != nil {
@@ -368,7 +369,7 @@ func (s *SubmissionService) NotifySubmissionFailed(userUuid, courseUuid uuid.UUI
 	}
 	_, err := s.notifications.NotifySystem(userUuid, notification.NotificationContent{
 		Title: "Assignment Submission Failed",
-		Body:  fmt.Sprintf("We could not process your submission for %q. Please try submitting again.", contentTitle),
+		Body:  fmt.Sprintf("We could not process your submission for %q. Please contact your professor so they can help you resolve it.", contentTitle),
 		URL:   fmt.Sprintf("/courses/%s", courseUuid),
 	})
 	if err != nil {

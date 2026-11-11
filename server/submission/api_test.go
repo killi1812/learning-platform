@@ -65,13 +65,14 @@ func (m *mockSubmissionService) ValidateAndExtendTicket(ticketUuid, courseUuid, 
 		return m.validateAndExtendTicketFunc(ticketUuid, courseUuid, contentUuid, userUuid, now)
 	}
 	return &submission.UploadTicket{
-		Uuid:        ticketUuid,
-		CourseID:    1,
-		ContentID:   1,
-		UserID:      1,
-		UserEmail:   "student@hvl.no",
-		SubmittedAt: now.Add(-5 * time.Minute),
-		ExpiresAt:   now.Add(25 * time.Minute),
+		Uuid:         ticketUuid,
+		CourseID:     1,
+		ContentID:    1,
+		ContentTitle: "Lab 1",
+		UserID:       1,
+		UserEmail:    "student@hvl.no",
+		SubmittedAt:  now.Add(-5 * time.Minute),
+		ExpiresAt:    now.Add(25 * time.Minute),
 	}, nil
 }
 
@@ -535,7 +536,10 @@ func TestSubmissionCtn_UploadFileSubmission(t *testing.T) {
 	t.Run("202 Accepted on valid file upload", func(t *testing.T) {
 		memStorage := storage.NewMemoryStorageService()
 		pub := &mockPublisher{}
-		r := setupTestRouterWithStorage(&mockSubmissionService{}, pub, memStorage, &mockCourseServiceForSubmission{})
+		var notified *submission.SubmissionTarget
+		r := setupTestRouterWithStorage(&mockSubmissionService{notifySubmittedFunc: func(target *submission.SubmissionTarget) {
+			notified = target
+		}}, pub, memStorage, &mockCourseServiceForSubmission{})
 
 		req, err := createMultipartFileRequest(url, "file", "project.pdf", []byte("%PDF-fake-content"), auth)
 		assert.NoError(t, err)
@@ -547,6 +551,13 @@ func TestSubmissionCtn_UploadFileSubmission(t *testing.T) {
 		assert.NotNil(t, pub.lastMsg)
 		assert.Equal(t, submission.PayloadTypeFile, pub.lastMsg.PayloadType)
 		assert.Equal(t, "project.pdf", pub.lastMsg.FileName)
+		assert.Equal(t, userUuid, pub.lastMsg.UserUuid)
+		assert.Equal(t, courseUuid, pub.lastMsg.CourseUuid)
+		assert.Equal(t, "Lab 1", pub.lastMsg.ContentTitle)
+		assert.NotNil(t, notified)
+		assert.Equal(t, userUuid, notified.UserUuid)
+		assert.Equal(t, courseUuid, notified.CourseUuid)
+		assert.Equal(t, "Lab 1", notified.ContentTitle)
 	})
 
 	t.Run("400 Bad Request on invalid ticket uuid", func(t *testing.T) {
@@ -666,18 +677,25 @@ func TestSubmissionCtn_UploadFileSubmission(t *testing.T) {
 	})
 
 	t.Run("503 Service Unavailable when publisher fails during upload", func(t *testing.T) {
+		notifiedFailed := false
 		pub := &mockPublisher{
 			publishFunc: func(ctx context.Context, msg submission.SubmissionMessage) error {
 				return errors.New("rabbitmq error")
 			},
 		}
-		r := setupTestRouterWithStorage(&mockSubmissionService{}, pub, storage.NewMemoryStorageService(), &mockCourseServiceForSubmission{})
+		r := setupTestRouterWithStorage(&mockSubmissionService{notifySubmissionFailedFunc: func(u, c uuid.UUID, title string) {
+			notifiedFailed = true
+			assert.Equal(t, userUuid, u)
+			assert.Equal(t, courseUuid, c)
+			assert.Equal(t, "Lab 1", title)
+		}}, pub, storage.NewMemoryStorageService(), &mockCourseServiceForSubmission{})
 		req, err := createMultipartFileRequest(url, "file", "project.pdf", []byte("pdf"), auth)
 		assert.NoError(t, err)
 
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, req)
 		assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
+		assert.True(t, notifiedFailed)
 	})
 }
 

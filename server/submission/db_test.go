@@ -476,6 +476,7 @@ func TestSubmissionService_SaveFromMessage(t *testing.T) {
 		assert.NoError(t, db.Where("user_id = ? AND title = ?", u.ID, "Assignment Submission Failed").Find(&notifs).Error)
 		assert.NotEmpty(t, notifs)
 		assert.Contains(t, notifs[len(notifs)-1].Body, "could not process your submission")
+		assert.Contains(t, notifs[len(notifs)-1].Body, "contact your professor")
 	})
 
 	t.Run("NotifySubmissionFailed with nil userUuid logs error and skips", func(t *testing.T) {

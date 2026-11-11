@@ -408,26 +408,40 @@ func (ctn *SubmissionCtn) uploadFileSubmission(c *gin.Context) {
 	}
 
 	msg := SubmissionMessage{
-		Uuid:        ticket.Uuid,
-		ContentID:   ticket.ContentID,
-		UserID:      ticket.UserID,
-		UserEmail:   ticket.UserEmail,
-		PayloadType: PayloadTypeFile,
-		FileName:    fileName,
-		FileSize:    bytesRead,
-		ContentType: contentType,
-		StorageKey:  storageKey,
-		SubmittedAt: ticket.SubmittedAt,
+		Uuid:         ticket.Uuid,
+		ContentID:    ticket.ContentID,
+		ContentTitle: ticket.ContentTitle,
+		CourseUuid:   courseUuid,
+		UserID:       ticket.UserID,
+		UserUuid:     userUuid,
+		UserEmail:    ticket.UserEmail,
+		PayloadType:  PayloadTypeFile,
+		FileName:     fileName,
+		FileSize:     bytesRead,
+		ContentType:  contentType,
+		StorageKey:   storageKey,
+		SubmittedAt:  ticket.SubmittedAt,
 	}
 
 	if err := ctn.Publisher.Publish(c.Request.Context(), msg); err != nil {
 		ctn.logger.Errorf("Failed to publish submission %s to queue: %v", ticket.Uuid, err)
 		_ = ctn.storageService.Delete(storageKey)
+		ctn.Service.NotifySubmissionFailed(userUuid, courseUuid, ticket.ContentTitle)
 		ginutil.RespondWithError(c, http.StatusServiceUnavailable, "Failed to queue submission")
 		return
 	}
 
 	_ = ctn.Service.ConsumeUploadTicket(ticket.Uuid)
+
+	ctn.Service.NotifySubmitted(&SubmissionTarget{
+		CourseID:     ticket.CourseID,
+		ContentID:    ticket.ContentID,
+		ContentTitle: ticket.ContentTitle,
+		CourseUuid:   courseUuid,
+		UserID:       ticket.UserID,
+		UserUuid:     userUuid,
+		UserEmail:    ticket.UserEmail,
+	})
 
 	c.JSON(http.StatusAccepted, SubmissionAcceptedDto{
 		Uuid:        ticket.Uuid,

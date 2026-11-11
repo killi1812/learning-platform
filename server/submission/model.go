@@ -91,14 +91,15 @@ type DeadlineReminder struct {
 // UploadTicket reserves a submission slot and locks the submission receipt timestamp during two-phase file uploads.
 type UploadTicket struct {
 	gorm.Model
-	Uuid        uuid.UUID `json:"uuid" gorm:"type:uuid;uniqueIndex;not null"`
-	CourseID    uint      `json:"courseId" gorm:"not null;index"`
-	ContentID   uint      `json:"contentId" gorm:"not null;index"`
-	UserID      uint      `json:"userId" gorm:"not null;index"`
-	UserEmail   string    `json:"userEmail" gorm:"type:varchar(255);not null"`
-	SubmittedAt time.Time `json:"submittedAt" gorm:"not null"`
-	ExpiresAt   time.Time `json:"expiresAt" gorm:"not null;index"`
-	Consumed    bool      `json:"consumed" gorm:"not null;default:false"`
+	Uuid         uuid.UUID `json:"uuid" gorm:"type:uuid;uniqueIndex;not null"`
+	CourseID     uint      `json:"courseId" gorm:"not null;index"`
+	ContentID    uint      `json:"contentId" gorm:"not null;index"`
+	ContentTitle string    `json:"contentTitle,omitempty" gorm:"type:varchar(255)"`
+	UserID       uint      `json:"userId" gorm:"not null;index"`
+	UserEmail    string    `json:"userEmail" gorm:"type:varchar(255);not null"`
+	SubmittedAt  time.Time `json:"submittedAt" gorm:"not null"`
+	ExpiresAt    time.Time `json:"expiresAt" gorm:"not null;index"`
+	Consumed     bool      `json:"consumed" gorm:"not null;default:false"`
 }
 
 func (t *UploadTicket) BeforeCreate(tx *gorm.DB) error {
