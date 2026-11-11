@@ -423,6 +423,12 @@ func (ctn *SubmissionCtn) uploadFileSubmission(c *gin.Context) {
 		SubmittedAt:  ticket.SubmittedAt,
 	}
 
+	if err := ctn.Service.ConsumeUploadTicket(ticket.Uuid); err != nil {
+		_ = ctn.storageService.Delete(storageKey)
+		ctn.handleError(c, err, "Failed to consume upload ticket")
+		return
+	}
+
 	if err := ctn.Publisher.Publish(c.Request.Context(), msg); err != nil {
 		ctn.logger.Errorf("Failed to publish submission %s to queue: %v", ticket.Uuid, err)
 		_ = ctn.storageService.Delete(storageKey)
@@ -430,8 +436,6 @@ func (ctn *SubmissionCtn) uploadFileSubmission(c *gin.Context) {
 		ginutil.RespondWithError(c, http.StatusServiceUnavailable, "Failed to queue submission")
 		return
 	}
-
-	_ = ctn.Service.ConsumeUploadTicket(ticket.Uuid)
 
 	ctn.Service.NotifySubmitted(&SubmissionTarget{
 		CourseID:     ticket.CourseID,

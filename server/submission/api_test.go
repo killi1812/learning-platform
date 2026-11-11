@@ -50,13 +50,14 @@ func (m *mockSubmissionService) InitFileSubmission(courseUuid, contentUuid, user
 		return m.initFileSubmissionFunc(courseUuid, contentUuid, userUuid, submittedAt)
 	}
 	return &submission.UploadTicket{
-		Uuid:        uuid.New(),
-		CourseID:    1,
-		ContentID:   1,
-		UserID:      1,
-		UserEmail:   "student@hvl.no",
-		SubmittedAt: submittedAt,
-		ExpiresAt:   submittedAt.Add(30 * time.Minute),
+		Uuid:         uuid.New(),
+		CourseID:     1,
+		ContentID:    1,
+		ContentTitle: "Lab 1",
+		UserID:       1,
+		UserEmail:    "student@hvl.no",
+		SubmittedAt:  submittedAt,
+		ExpiresAt:    submittedAt.Add(30 * time.Minute),
 	}, nil
 }
 
@@ -696,6 +697,25 @@ func TestSubmissionCtn_UploadFileSubmission(t *testing.T) {
 		r.ServeHTTP(rec, req)
 		assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
 		assert.True(t, notifiedFailed)
+	})
+
+	t.Run("400 Bad Request when consume upload ticket fails", func(t *testing.T) {
+		memStorage := storage.NewMemoryStorageService()
+		pub := &mockPublisher{}
+		r := setupTestRouterWithStorage(&mockSubmissionService{
+			consumeUploadTicketFunc: func(ticketUuid uuid.UUID) error {
+				return submission.ErrTicketConsumed
+			},
+		}, pub, memStorage, &mockCourseServiceForSubmission{})
+
+		req, err := createMultipartFileRequest(url, "file", "project.pdf", []byte("pdf"), auth)
+		assert.NoError(t, err)
+
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusBadRequest, rec.Code)
+		assert.Contains(t, rec.Body.String(), "upload ticket has already been used")
+		assert.Nil(t, pub.lastMsg, "message must not be published if ticket consumption fails")
 	})
 }
 

@@ -61,7 +61,7 @@ func NewContentService(db *gorm.DB, storage storage.IStorageService, notificatio
 func (s *ContentService) notifyCourseStudents(courseID uint, msg notification.NotificationContent) {
 	var studentUuids []uuid.UUID
 	err := s.db.Model(&course.Enrollment{}).
-		Joins("JOIN users ON users.id = enrollments.user_id").
+		Joins("JOIN users ON users.id = enrollments.user_id AND users.deleted_at IS NULL").
 		Where("enrollments.course_id = ? AND enrollments.role = ?", courseID, course.RoleStudent).
 		Pluck("users.uuid", &studentUuids).Error
 	if err != nil {

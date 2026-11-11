@@ -169,6 +169,11 @@ func (s *SubmissionService) InitFileSubmission(courseUuid, contentUuid, userUuid
 		return nil, err
 	}
 
+	// Invalidate any existing unconsumed tickets for this student and assignment
+	_ = s.db.Model(&UploadTicket{}).
+		Where("user_id = ? AND content_id = ? AND consumed = ?", target.UserID, target.ContentID, false).
+		Update("consumed", true).Error
+
 	ticket := UploadTicket{
 		Uuid:         uuid.New(),
 		CourseID:     target.CourseID,
@@ -220,9 +225,20 @@ func (s *SubmissionService) ValidateAndExtendTicket(ticketUuid, courseUuid, cont
 	return &ticket, nil
 }
 
-// ConsumeUploadTicket marks the upload ticket as consumed.
+// ConsumeUploadTicket marks the upload ticket as consumed atomically.
 func (s *SubmissionService) ConsumeUploadTicket(ticketUuid uuid.UUID) error {
-	return s.db.Model(&UploadTicket{}).Where("uuid = ?", ticketUuid).Update("consumed", true).Error
+	res := s.db.Model(&UploadTicket{}).Where("uuid = ? AND consumed = ?", ticketUuid, false).Update("consumed", true)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		var exists int64
+		if err := s.db.Model(&UploadTicket{}).Where("uuid = ?", ticketUuid).Count(&exists).Error; err == nil && exists == 0 {
+			return ErrTicketNotFound
+		}
+		return ErrTicketConsumed
+	}
+	return nil
 }
 
 // SaveFromMessage persists an enqueued submission into the database. Idempotent on msg.Uuid.
@@ -367,10 +383,14 @@ func (s *SubmissionService) NotifySubmissionFailed(userUuid, courseUuid uuid.UUI
 		s.logger.Error("Cannot notify submission failed: user uuid is nil")
 		return
 	}
+	targetURL := "/dashboard"
+	if courseUuid != uuid.Nil {
+		targetURL = fmt.Sprintf("/courses/%s", courseUuid)
+	}
 	_, err := s.notifications.NotifySystem(userUuid, notification.NotificationContent{
 		Title: "Assignment Submission Failed",
 		Body:  fmt.Sprintf("We could not process your submission for %q. Please contact your professor so they can help you resolve it.", contentTitle),
-		URL:   fmt.Sprintf("/courses/%s", courseUuid),
+		URL:   targetURL,
 	})
 	if err != nil {
 		s.logger.Errorf("Failed to send submission failed notification: %v", err)

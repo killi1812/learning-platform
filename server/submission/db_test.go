@@ -485,6 +485,15 @@ func TestSubmissionService_SaveFromMessage(t *testing.T) {
 		})
 	})
 
+	t.Run("NotifySubmissionFailed with nil courseUuid falls back to dashboard URL", func(t *testing.T) {
+		svc.NotifySubmissionFailed(u.Uuid, uuid.Nil, "Assignment 1")
+
+		var notifs []notification.Notification
+		assert.NoError(t, db.Where("user_id = ? AND title = ?", u.ID, "Assignment Submission Failed").Find(&notifs).Error)
+		assert.NotEmpty(t, notifs)
+		assert.Equal(t, "/dashboard", notifs[len(notifs)-1].URL)
+	})
+
 	t.Run("NotifySubmitted with nil target or nil userUuid logs error and skips", func(t *testing.T) {
 		assert.NotPanics(t, func() {
 			svc.NotifySubmitted(nil)
@@ -629,8 +638,28 @@ func TestSubmissionService_FileSubmissionWorkflow(t *testing.T) {
 
 	// 3. ConsumeUploadTicket
 	assert.NoError(t, svc.ConsumeUploadTicket(ticket.Uuid))
+	assert.ErrorIs(t, svc.ConsumeUploadTicket(ticket.Uuid), submission.ErrTicketConsumed)
+	assert.ErrorIs(t, svc.ConsumeUploadTicket(uuid.New()), submission.ErrTicketNotFound)
 	_, err = svc.ValidateAndExtendTicket(ticket.Uuid, c.Uuid, cnt.Uuid, student.Uuid, now)
 	assert.ErrorIs(t, err, submission.ErrTicketConsumed)
+
+	// InitFileSubmission supersedes any previously unconsumed ticket for same student & assignment
+	ticket1, err := svc.InitFileSubmission(c.Uuid, cnt.Uuid, student.Uuid, now)
+	assert.NoError(t, err)
+	assert.False(t, ticket1.Consumed)
+
+	ticket2, err := svc.InitFileSubmission(c.Uuid, cnt.Uuid, student.Uuid, now)
+	assert.NoError(t, err)
+	assert.False(t, ticket2.Consumed)
+
+	// ticket1 was superseded (marked consumed)
+	_, err = svc.ValidateAndExtendTicket(ticket1.Uuid, c.Uuid, cnt.Uuid, student.Uuid, now)
+	assert.ErrorIs(t, err, submission.ErrTicketConsumed)
+
+	// ticket2 is valid
+	val2, err := svc.ValidateAndExtendTicket(ticket2.Uuid, c.Uuid, cnt.Uuid, student.Uuid, now)
+	assert.NoError(t, err)
+	assert.Equal(t, ticket2.Uuid, val2.Uuid)
 
 	// 4. SaveFromMessage with PayloadTypeFile
 	fileMsg := submission.SubmissionMessage{
