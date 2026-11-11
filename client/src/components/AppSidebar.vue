@@ -4,7 +4,11 @@
       <v-list-item to="/dashboard" title="Dashboard" prepend-icon="mdi-home" />
       <v-list-item to="/courses" title="My Courses" prepend-icon="mdi-book-open" />
       <v-list-item to="/catalog" title="Course Catalog" prepend-icon="mdi-book-open-page-variant" />
-      <v-list-item to="/messages" title="Messages" prepend-icon="mdi-message" />
+      <v-list-item
+        to="/assignments"
+        title="Assignments"
+        prepend-icon="mdi-clipboard-text-outline"
+      />
       <v-list-item to="/groups" title="Groups" prepend-icon="mdi-account-group" />
       <v-list-item to="/grades" title="Grades" prepend-icon="mdi-chart-bar" />
       <v-list-item
