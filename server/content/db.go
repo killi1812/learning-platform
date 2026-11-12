@@ -45,11 +45,11 @@ type IContentService interface {
 type ContentService struct {
 	db            *gorm.DB
 	storage       storage.IStorageService
-	notifications notification.INotificationService
+	notifications notification.INotifier
 	logger        *zap.SugaredLogger
 }
 
-func NewContentService(db *gorm.DB, storage storage.IStorageService, notifications notification.INotificationService, logger *zap.SugaredLogger) IContentService {
+func NewContentService(db *gorm.DB, storage storage.IStorageService, notifications notification.INotifier, logger *zap.SugaredLogger) IContentService {
 	return &ContentService{
 		db:            db,
 		storage:       storage,

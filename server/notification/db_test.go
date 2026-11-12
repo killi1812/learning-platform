@@ -14,25 +14,28 @@ import (
 )
 
 type notificationFixture struct {
-	db      *gorm.DB
-	svc     INotificationService
-	hub     *Hub
-	teacher uuid.UUID
-	alice   uuid.UUID
-	bob     uuid.UUID
+	db       *gorm.DB
+	svc      INotificationService
+	notifier INotifier
+	hub      *Hub
+	teacher  uuid.UUID
+	alice    uuid.UUID
+	bob      uuid.UUID
 }
 
 func newNotificationFixture(t *testing.T) *notificationFixture {
 	t.Helper()
 	db := testutil.NewSqliteTestDb(t, &user.User{}, &Notification{})
 	hub := NewHub()
+	logger := zap.NewNop().Sugar()
 	f := &notificationFixture{
-		db:      db,
-		hub:     hub,
-		svc:     NewNotificationService(db, hub, zap.NewNop().Sugar()),
-		teacher: uuid.New(),
-		alice:   uuid.New(),
-		bob:     uuid.New(),
+		db:       db,
+		hub:      hub,
+		svc:      NewNotificationService(db, hub, logger),
+		notifier: NewNotifier(db, hub, logger),
+		teacher:  uuid.New(),
+		alice:    uuid.New(),
+		bob:      uuid.New(),
 	}
 	for i, u := range []uuid.UUID{f.teacher, f.alice, f.bob} {
 		require.NoError(t, db.Create(&user.User{
@@ -51,7 +54,7 @@ func TestNotifySystem_CreatesSystemNotificationAndPublishes(t *testing.T) {
 	events, cancel := f.hub.Subscribe(f.alice)
 	defer cancel()
 
-	n, err := f.svc.NotifySystem(f.alice, NotificationContent{Title: "Sys", Body: "Msg", URL: "/test"})
+	n, err := f.notifier.NotifySystem(f.alice, NotificationContent{Title: "Sys", Body: "Msg", URL: "/test"})
 	require.NoError(t, err)
 	assert.NotNil(t, n)
 	assert.Equal(t, "Sys", n.Title)
@@ -65,14 +68,14 @@ func TestNotifySystem_CreatesSystemNotificationAndPublishes(t *testing.T) {
 	}
 
 	// Unknown recipient returns ErrUserNotFound
-	_, err = f.svc.NotifySystem(uuid.New(), NotificationContent{Title: "Ghost", Body: "Ghost"})
+	_, err = f.notifier.NotifySystem(uuid.New(), NotificationContent{Title: "Ghost", Body: "Ghost"})
 	assert.ErrorIs(t, err, ErrUserNotFound)
 }
 
 func TestNotifySystemMany_FansOutSystemRows(t *testing.T) {
 	f := newNotificationFixture(t)
 
-	sent, err := f.svc.NotifySystemMany([]uuid.UUID{f.alice, f.bob}, NotificationContent{Title: "System Alert", Body: "Maintenance at midnight", URL: "/settings"})
+	sent, err := f.notifier.NotifySystemMany([]uuid.UUID{f.alice, f.bob}, NotificationContent{Title: "System Alert", Body: "Maintenance at midnight", URL: "/settings"})
 	require.NoError(t, err)
 	assert.Len(t, sent, 2)
 
@@ -93,7 +96,7 @@ func TestNotifySystemMany_FansOutSystemRows(t *testing.T) {
 func TestNotifySystemMany_EmptyListReturnsEmptyWithoutError(t *testing.T) {
 	f := newNotificationFixture(t)
 
-	sent, err := f.svc.NotifySystemMany([]uuid.UUID{}, NotificationContent{Title: "None", Body: "Empty"})
+	sent, err := f.notifier.NotifySystemMany([]uuid.UUID{}, NotificationContent{Title: "None", Body: "Empty"})
 	require.NoError(t, err)
 	assert.Empty(t, sent)
 }
@@ -101,7 +104,7 @@ func TestNotifySystemMany_EmptyListReturnsEmptyWithoutError(t *testing.T) {
 func TestNotifySystemMany_UnknownRecipientReturnsError(t *testing.T) {
 	f := newNotificationFixture(t)
 
-	_, err := f.svc.NotifySystemMany([]uuid.UUID{f.alice, uuid.New()}, NotificationContent{Title: "Missing", Body: "Fail"})
+	_, err := f.notifier.NotifySystemMany([]uuid.UUID{f.alice, uuid.New()}, NotificationContent{Title: "Missing", Body: "Fail"})
 	assert.ErrorIs(t, err, ErrRecipientNotFound)
 }
 
@@ -255,6 +258,12 @@ func TestNotificationService_ClosedDBErrors(t *testing.T) {
 	assert.Error(t, err)
 
 	err = f.svc.Delete(f.alice, uuid.New())
+	assert.Error(t, err)
+
+	_, err = f.notifier.NotifySystem(f.alice, NotificationContent{Title: "t", Body: "b"})
+	assert.Error(t, err)
+
+	_, err = f.notifier.NotifySystemMany([]uuid.UUID{f.alice}, NotificationContent{Title: "t", Body: "b"})
 	assert.Error(t, err)
 }
 

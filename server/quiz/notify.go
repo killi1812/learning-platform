@@ -10,12 +10,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// Notifier delivers notifications to users. notification.INotificationService satisfies it.
-type Notifier interface {
-	NotifySystem(recipientUuid uuid.UUID, content notification.NotificationContent) (*notification.Notification, error)
-	NotifySystemMany(recipientUuids []uuid.UUID, content notification.NotificationContent) ([]notification.Notification, error)
-}
-
 // dueQuiz is a published, not yet announced quiz whose window is open now.
 type dueQuiz struct {
 	ContentID  uint

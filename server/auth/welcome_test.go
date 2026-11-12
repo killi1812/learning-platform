@@ -22,7 +22,7 @@ func TestRegister_SendsWelcomeNotification(t *testing.T) {
 	svc := &AuthService{
 		db:            gormDb,
 		logger:        logger,
-		notifications: notification.NewNotificationService(gormDb, notification.NewHub(), logger),
+		notifications: notification.NewNotifier(gormDb, notification.NewHub(), logger),
 	}
 
 	_, err := svc.Register("welcome", "welcome@example.com", "Password123", "", "")
@@ -50,7 +50,7 @@ func TestLogoutAll_SendsLogoutNotification(t *testing.T) {
 	svc := &AuthService{
 		db:            gormDb,
 		logger:        logger,
-		notifications: notification.NewNotificationService(gormDb, notification.NewHub(), logger),
+		notifications: notification.NewNotifier(gormDb, notification.NewHub(), logger),
 	}
 
 	userUUID := uuid.New()

@@ -7,6 +7,7 @@
       <router-view />
     </v-main>
 
+    <ConfirmDialog />
     <v-snackbar-queue v-model="toastQueue" closable location="bottom end" :total-visible="3" />
   </v-app>
 </template>
@@ -16,6 +17,7 @@ import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import AppHeader from '@/components/AppHeader.vue'
 import AppSidebar from '@/components/AppSidebar.vue'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import { useToast } from '@/composables/useToast'
 
 const route = useRoute()

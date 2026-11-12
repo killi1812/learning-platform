@@ -111,6 +111,7 @@ func TestSeedInsert(t *testing.T) {
 		app.Provide(func() storage.IStorageService { return storage.NewMemoryStorageService() })
 		app.Provide(notification.NewHub)
 		app.Provide(notification.NewNotificationService)
+		app.Provide(notification.NewNotifier)
 		app.Provide(user.NewUserCrudService)
 		app.Provide(course.NewCourseService)
 		app.Provide(content.NewContentService)
@@ -135,6 +136,7 @@ func TestSeedInsert(t *testing.T) {
 			&user.User{},
 			&course.Course{},
 			&course.Enrollment{},
+			&course.Group{},
 			&course.Module{},
 			&content.Content{},
 			&content.Assignment{},
@@ -148,8 +150,10 @@ func TestSeedInsert(t *testing.T) {
 		app.Provide(func() storage.IStorageService { return storage.NewMemoryStorageService() })
 		app.Provide(notification.NewHub)
 		app.Provide(notification.NewNotificationService)
+		app.Provide(notification.NewNotifier)
 		app.Provide(user.NewUserCrudService)
 		app.Provide(course.NewCourseService)
+		app.Provide(course.NewGroupService)
 		app.Provide(content.NewContentService)
 
 		assert.NotPanics(t, func() {
@@ -170,6 +174,10 @@ func TestSeedInsert(t *testing.T) {
 		var courseCount int64
 		db.Model(&course.Course{}).Count(&courseCount)
 		assert.Equal(t, int64(2), courseCount)
+
+		var groupCount int64
+		db.Model(&course.Group{}).Count(&groupCount)
+		assert.Equal(t, int64(4), groupCount)
 
 		var moduleCount int64
 		db.Model(&course.Module{}).Count(&moduleCount)
@@ -202,6 +210,7 @@ func TestSeedInsert(t *testing.T) {
 			&user.User{},
 			&course.Course{},
 			&course.Enrollment{},
+			&course.Group{},
 			&course.Module{},
 			&content.Content{},
 			&content.Assignment{},
@@ -215,8 +224,10 @@ func TestSeedInsert(t *testing.T) {
 		app.Provide(func() storage.IStorageService { return storage.NewMemoryStorageService() })
 		app.Provide(notification.NewHub)
 		app.Provide(notification.NewNotificationService)
+		app.Provide(notification.NewNotifier)
 		app.Provide(user.NewUserCrudService)
 		app.Provide(course.NewCourseService)
+		app.Provide(course.NewGroupService)
 		app.Provide(content.NewContentService)
 
 		teachers, err := seedTeachers()
@@ -236,6 +247,14 @@ func TestSeedInsert(t *testing.T) {
 		enrollments, err := seedEnrollments(courses, teachers, students)
 		assert.NoError(t, err)
 		assert.NotEmpty(t, enrollments)
+
+		groups, err := seedGroups(courses, students)
+		assert.NoError(t, err)
+		assert.Len(t, groups, 4)
+
+		groupsAgain, err := seedGroups(courses, students)
+		assert.NoError(t, err)
+		assert.Len(t, groupsAgain, 4)
 
 		modules, err := seedModules(courses)
 		assert.NoError(t, err)

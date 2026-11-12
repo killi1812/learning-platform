@@ -228,3 +228,60 @@ func (ModuleDto) FromModel(m *Module) ModuleDto {
 type ReorderModulesDto struct {
 	ModuleUuids []uuid.UUID `json:"moduleUuids" binding:"required,min=1"`
 }
+
+type CreateGroupDto struct {
+	CourseUuid string `json:"courseUuid" binding:"required"`
+	Name       string `json:"name" binding:"required,min=2,max=255"`
+	MaxMembers int    `json:"maxMembers" binding:"required,min=1,max=100"`
+}
+
+type BulkCreateGroupsDto struct {
+	CourseUuid string `json:"courseUuid" binding:"required"`
+	Prefix     string `json:"prefix" binding:"omitempty,max=200"`
+	Count      int    `json:"count" binding:"required,min=1,max=50"`
+	MaxMembers int    `json:"maxMembers" binding:"required,min=1,max=100"`
+}
+
+type UpdateGroupDto struct {
+	Name       string `json:"name" binding:"required,min=2,max=255"`
+	MaxMembers int    `json:"maxMembers" binding:"required,min=1,max=100"`
+}
+
+type GroupMemberDto struct {
+	Uuid     string `json:"uuid"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
+}
+
+type GroupDto struct {
+	Uuid       string           `json:"uuid"`
+	CourseUuid string           `json:"courseUuid"`
+	Name       string           `json:"name"`
+	MaxMembers int              `json:"maxMembers"`
+	Members    []GroupMemberDto `json:"members"`
+}
+
+func (GroupDto) FromModel(m *Group) GroupDto {
+	if m == nil {
+		return GroupDto{}
+	}
+	courseUuid := ""
+	if m.Course != nil && m.Course.Uuid != uuid.Nil {
+		courseUuid = m.Course.Uuid.String()
+	}
+	members := make([]GroupMemberDto, 0, len(m.Members))
+	for _, u := range m.Members {
+		members = append(members, GroupMemberDto{
+			Uuid:     u.Uuid.String(),
+			Username: u.Username,
+			Email:    u.Email,
+		})
+	}
+	return GroupDto{
+		Uuid:       m.Uuid.String(),
+		CourseUuid: courseUuid,
+		Name:       m.Name,
+		MaxMembers: m.MaxMembers,
+		Members:    members,
+	}
+}

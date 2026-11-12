@@ -21,8 +21,6 @@ const sendBatchSize = 100
 
 type INotificationService interface {
 	SendToUsers(senderUuid uuid.UUID, recipientUuids []uuid.UUID, content NotificationContent) ([]Notification, error)
-	NotifySystem(recipientUuid uuid.UUID, content NotificationContent) (*Notification, error)
-	NotifySystemMany(recipientUuids []uuid.UUID, content NotificationContent) ([]Notification, error)
 	List(userUuid uuid.UUID, limit int, before *time.Time) ([]Notification, error)
 	CountUnseen(userUuid uuid.UUID) (int64, error)
 	MarkSeen(userUuid uuid.UUID, notificationUuid uuid.UUID) (*Notification, error)
@@ -44,9 +42,9 @@ func NewNotificationService(db *gorm.DB, hub *Hub, logger *zap.SugaredLogger) IN
 	}
 }
 
-func (s *NotificationService) userID(userUuid uuid.UUID) (uint, error) {
+func lookupUserID(db *gorm.DB, userUuid uuid.UUID) (uint, error) {
 	var u user.User
-	if err := s.db.Select("id").Where("uuid = ?", userUuid).First(&u).Error; err != nil {
+	if err := db.Select("id").Where("uuid = ?", userUuid).First(&u).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return 0, ErrUserNotFound
 		}
@@ -55,28 +53,8 @@ func (s *NotificationService) userID(userUuid uuid.UUID) (uint, error) {
 	return u.ID, nil
 }
 
-// NotifySystem writes one row with no sender for a single recipient, for example a welcome message.
-// The row is pushed to the recipient's open streams, like SendToUsers.
-func (s *NotificationService) NotifySystem(recipientUuid uuid.UUID, content NotificationContent) (*Notification, error) {
-	userID, err := s.userID(recipientUuid)
-	if err != nil {
-		return nil, err
-	}
-
-	n := Notification{
-		UserID:    userID,
-		Title:     content.Title,
-		Body:      content.Body,
-		URL:       content.URL,
-		CreatedAt: time.Now(),
-	}
-	if err := s.db.Create(&n).Error; err != nil {
-		s.logger.Errorf("Failed to create system notification: %v", err)
-		return nil, err
-	}
-
-	s.hub.Publish(recipientUuid, NotificationDto{}.FromModel(&n))
-	return &n, nil
+func (s *NotificationService) userID(userUuid uuid.UUID) (uint, error) {
+	return lookupUserID(s.db, userUuid)
 }
 
 // SendToUsers writes one private row per recipient and pushes each row to that user's open streams.
@@ -86,15 +64,10 @@ func (s *NotificationService) SendToUsers(senderUuid uuid.UUID, recipientUuids [
 	if err != nil {
 		return nil, err
 	}
-	return s.sendBatch(&senderID, recipientUuids, content)
+	return sendBatch(s.db, s.hub, s.logger, &senderID, recipientUuids, content)
 }
 
-// NotifySystemMany writes system notifications (SenderID = nil) to multiple recipients in batches.
-func (s *NotificationService) NotifySystemMany(recipientUuids []uuid.UUID, content NotificationContent) ([]Notification, error) {
-	return s.sendBatch(nil, recipientUuids, content)
-}
-
-func (s *NotificationService) sendBatch(senderID *uint, recipientUuids []uuid.UUID, content NotificationContent) ([]Notification, error) {
+func sendBatch(db *gorm.DB, hub *Hub, logger *zap.SugaredLogger, senderID *uint, recipientUuids []uuid.UUID, content NotificationContent) ([]Notification, error) {
 	if len(recipientUuids) == 0 {
 		return []Notification{}, nil
 	}
@@ -109,7 +82,7 @@ func (s *NotificationService) sendBatch(senderID *uint, recipientUuids []uuid.UU
 	}
 
 	var recipients []user.User
-	if err := s.db.Select("id", "uuid").Where("uuid IN ?", uuids).Find(&recipients).Error; err != nil {
+	if err := db.Select("id", "uuid").Where("uuid IN ?", uuids).Find(&recipients).Error; err != nil {
 		return nil, err
 	}
 	if len(recipients) != len(uuids) {
@@ -131,16 +104,16 @@ func (s *NotificationService) sendBatch(senderID *uint, recipientUuids []uuid.UU
 		})
 	}
 
-	err := s.db.Transaction(func(tx *gorm.DB) error {
+	err := db.Transaction(func(tx *gorm.DB) error {
 		return tx.CreateInBatches(&rows, sendBatchSize).Error
 	})
 	if err != nil {
-		s.logger.Errorf("Failed to send notifications: %v", err)
+		logger.Errorf("Failed to send notifications: %v", err)
 		return nil, err
 	}
 
 	for i := range rows {
-		s.hub.Publish(uuidByID[rows[i].UserID], NotificationDto{}.FromModel(&rows[i]))
+		hub.Publish(uuidByID[rows[i].UserID], NotificationDto{}.FromModel(&rows[i]))
 	}
 	return rows, nil
 }

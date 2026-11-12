@@ -141,13 +141,18 @@ export const routes: RouteRecordRaw[] = [
     },
   },
   {
+    path: '/assignments',
+    name: 'Assignments',
+    component: () => import('@/views/AssignmentsView.vue'),
+    meta: {
+      requiresAuth: true,
+      title: 'Assignments',
+    },
+  },
+  {
     path: '/groups',
     name: 'Groups',
-    component: GenericView,
-    props: {
-      title: 'Groups',
-      icon: 'mdi-account-group',
-    },
+    component: () => import('@/views/GroupsView.vue'),
     meta: {
       requiresAuth: true,
       title: 'Groups',
@@ -155,16 +160,7 @@ export const routes: RouteRecordRaw[] = [
   },
   {
     path: '/messages',
-    name: 'Messages',
-    component: GenericView,
-    props: {
-      title: 'Messages',
-      icon: 'mdi-message',
-    },
-    meta: {
-      requiresAuth: true,
-      title: 'Messages',
-    },
+    redirect: '/assignments',
   },
   {
     path: '/grades',

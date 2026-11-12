@@ -18,7 +18,7 @@ export default createVuetify({
       light: {
         colors: {
           primary: '#E85D75',
-          'on-primary': '#000000',
+          'on-primary': '#FFFFFF',
           secondary: '#6BAA5E',
           'on-secondary': '#FFFFFF',
           accent: '#6BAA5E',
@@ -28,12 +28,13 @@ export default createVuetify({
           surface: '#FFFFFF',
           'on-surface': '#1a1a1a',
           'surface-variant': '#f5f5f5',
+          'on-surface-variant': '#1a1a1a',
         },
       },
       dark: {
         colors: {
           primary: '#E85D75',
-          'on-primary': '#000000',
+          'on-primary': '#FFFFFF',
           secondary: '#6BAA5E',
           'on-secondary': '#FFFFFF',
           accent: '#6BAA5E',
@@ -43,6 +44,7 @@ export default createVuetify({
           surface: '#1a1a1a',
           'on-surface': '#f5f5f5',
           'surface-variant': '#2a2a2a',
+          'on-surface-variant': '#f5f5f5',
         },
       },
     },

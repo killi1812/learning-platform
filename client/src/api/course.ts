@@ -9,6 +9,10 @@ import type {
   Module,
   CreateModulePayload,
   UpdateModulePayload,
+  Group,
+  CreateGroupPayload,
+  BulkCreateGroupsPayload,
+  UpdateGroupPayload,
 } from '@/types/course'
 
 async function wrapRequest<T>(promise: Promise<{ data: T }>): Promise<T> {
@@ -96,4 +100,36 @@ export async function deleteModule(courseUuid: string, moduleUuid: string): Prom
 
 export async function reorderModules(courseUuid: string, moduleUuids: string[]): Promise<void> {
   await wrapRequest(authApi.put<void>(`/course/${courseUuid}/module/reorder`, { moduleUuids }))
+}
+
+export async function listCourseGroups(courseUuid: string): Promise<Group[]> {
+  return wrapRequest(authApi.get<Group[]>(`/course/${courseUuid}/group`))
+}
+
+export async function getGroup(groupUuid: string): Promise<Group> {
+  return wrapRequest(authApi.get<Group>(`/group/${groupUuid}`))
+}
+
+export async function createGroup(data: CreateGroupPayload): Promise<Group> {
+  return wrapRequest(authApi.post<Group>('/group', data))
+}
+
+export async function bulkCreateGroups(data: BulkCreateGroupsPayload): Promise<Group[]> {
+  return wrapRequest(authApi.post<Group[]>('/group/bulk', data))
+}
+
+export async function updateGroup(groupUuid: string, data: UpdateGroupPayload): Promise<Group> {
+  return wrapRequest(authApi.patch<Group>(`/group/${groupUuid}`, data))
+}
+
+export async function deleteGroup(groupUuid: string): Promise<void> {
+  await wrapRequest(authApi.delete<void>(`/group/${groupUuid}`))
+}
+
+export async function joinGroup(groupUuid: string): Promise<Group> {
+  return wrapRequest(authApi.post<Group>(`/group/join/${groupUuid}`))
+}
+
+export async function leaveGroup(groupUuid: string): Promise<Group> {
+  return wrapRequest(authApi.patch<Group>(`/group/leave/${groupUuid}`))
 }
