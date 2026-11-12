@@ -537,8 +537,8 @@ func TestSubmissionService_FileSubmissionWorkflow(t *testing.T) {
 		&submission.UploadTicket{},
 	)
 
-	notifSvc := notification.NewNotificationService(db, notification.NewHub(), zap.NewNop().Sugar())
-	svc := submission.NewSubmissionService(db, notifSvc, zap.NewNop().Sugar())
+	notifier := notification.NewNotifier(db, notification.NewHub(), zap.NewNop().Sugar())
+	svc := submission.NewSubmissionService(db, notifier, zap.NewNop().Sugar())
 
 	c := &course.Course{Title: "DAT250", Term: course.TermAutumn, Year: 2026}
 	assert.NoError(t, db.Create(c).Error)

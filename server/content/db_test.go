@@ -640,8 +640,8 @@ func TestContentService_HandinAssignment(t *testing.T) {
 
 	memStorage := storage.NewMemoryStorageService()
 	logger := zap.NewNop().Sugar()
-	notifSvc := notification.NewNotificationService(db, notification.NewHub(), logger)
-	svc := content.NewContentService(db, memStorage, notifSvc, logger)
+	notifier := notification.NewNotifier(db, notification.NewHub(), logger)
+	svc := content.NewContentService(db, memStorage, notifier, logger)
 
 	c := &course.Course{Title: "DAT250", Term: course.TermAutumn, Year: 2026}
 	assert.NoError(t, db.Create(c).Error)
