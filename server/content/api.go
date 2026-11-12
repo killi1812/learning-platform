@@ -70,6 +70,9 @@ func (ctn *ContentCtn) handleError(c *gin.Context, err error) bool {
 		errors.Is(err, ErrContentNotAvailable):
 		ginutil.RespondWithError(c, http.StatusForbidden, err.Error())
 		return true
+	case errors.Is(err, ErrGroupModeLocked):
+		ginutil.RespondWithError(c, http.StatusConflict, err.Error())
+		return true
 	default:
 		ctn.logger.Errorf("Unexpected content error: %v", err)
 		ginutil.RespondWithError(c, http.StatusInternalServerError, "Internal server error")
@@ -502,7 +505,7 @@ func (ctn *ContentCtn) createHandin(c *gin.Context) {
 		return
 	}
 
-	cnt, err := ctn.contentService.CreateHandin(courseUuid, moduleUuid, dto.Title, dto.Deadline, dto.AcceptsLateSubmissions)
+	cnt, err := ctn.contentService.CreateHandin(courseUuid, moduleUuid, dto.Title, dto.Deadline, dto.AcceptsLateSubmissions, dto.AllowsGroupSubmission)
 	if ctn.handleError(c, err) {
 		return
 	}
@@ -611,6 +614,7 @@ func (ctn *ContentCtn) getHandin(c *gin.Context) {
 //	@Failure		401				{object}	ginutil.ErrorResponse
 //	@Failure		403				{object}	ginutil.ErrorResponse
 //	@Failure		404				{object}	ginutil.ErrorResponse
+//	@Failure		409				{object}	ginutil.ErrorResponse
 //	@Failure		500				{object}	ginutil.ErrorResponse
 //	@Router			/course/{uuid}/module/{moduleUuid}/assignment/{assignmentUuid} [put]
 func (ctn *ContentCtn) updateHandin(c *gin.Context) {
@@ -637,7 +641,7 @@ func (ctn *ContentCtn) updateHandin(c *gin.Context) {
 		return
 	}
 
-	cnt, err := ctn.contentService.UpdateHandin(courseUuid, moduleUuid, assignmentUuid, dto.Title, dto.Deadline, dto.AcceptsLateSubmissions)
+	cnt, err := ctn.contentService.UpdateHandin(courseUuid, moduleUuid, assignmentUuid, dto.Title, dto.Deadline, dto.AcceptsLateSubmissions, dto.AllowsGroupSubmission)
 	if ctn.handleError(c, err) {
 		return
 	}

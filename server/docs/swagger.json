@@ -2283,6 +2283,12 @@
                             "$ref": "#/definitions/ginutil.ErrorResponse"
                         }
                     },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -4902,6 +4908,9 @@
                 "acceptsLateSubmissions": {
                     "type": "boolean"
                 },
+                "allowsGroupSubmission": {
+                    "type": "boolean"
+                },
                 "deadline": {
                     "type": "string"
                 },
@@ -4954,6 +4963,9 @@
             "type": "object",
             "properties": {
                 "acceptsLateSubmissions": {
+                    "type": "boolean"
+                },
+                "allowsGroupSubmission": {
                     "type": "boolean"
                 },
                 "createdAt": {
@@ -5019,6 +5031,9 @@
             ],
             "properties": {
                 "acceptsLateSubmissions": {
+                    "type": "boolean"
+                },
+                "allowsGroupSubmission": {
                     "type": "boolean"
                 },
                 "deadline": {
@@ -5479,6 +5494,9 @@
                 "acceptsLateSubmissions": {
                     "type": "boolean"
                 },
+                "allowsGroupSubmission": {
+                    "type": "boolean"
+                },
                 "attemptsUsed": {
                     "type": "integer"
                 },
@@ -5838,8 +5856,20 @@
                 "fileSize": {
                     "type": "integer"
                 },
+                "groupName": {
+                    "type": "string"
+                },
+                "isGroup": {
+                    "type": "boolean"
+                },
                 "isLate": {
                     "type": "boolean"
+                },
+                "memberEmails": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "payloadType": {
                     "$ref": "#/definitions/submission.PayloadType"

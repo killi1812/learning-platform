@@ -2294,6 +2294,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/ginutil.ErrorResponse"
                         }
                     },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -4913,6 +4919,9 @@ const docTemplate = `{
                 "acceptsLateSubmissions": {
                     "type": "boolean"
                 },
+                "allowsGroupSubmission": {
+                    "type": "boolean"
+                },
                 "deadline": {
                     "type": "string"
                 },
@@ -4965,6 +4974,9 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "acceptsLateSubmissions": {
+                    "type": "boolean"
+                },
+                "allowsGroupSubmission": {
                     "type": "boolean"
                 },
                 "createdAt": {
@@ -5030,6 +5042,9 @@ const docTemplate = `{
             ],
             "properties": {
                 "acceptsLateSubmissions": {
+                    "type": "boolean"
+                },
+                "allowsGroupSubmission": {
                     "type": "boolean"
                 },
                 "deadline": {
@@ -5490,6 +5505,9 @@ const docTemplate = `{
                 "acceptsLateSubmissions": {
                     "type": "boolean"
                 },
+                "allowsGroupSubmission": {
+                    "type": "boolean"
+                },
                 "attemptsUsed": {
                     "type": "integer"
                 },
@@ -5849,8 +5867,20 @@ const docTemplate = `{
                 "fileSize": {
                     "type": "integer"
                 },
+                "groupName": {
+                    "type": "string"
+                },
+                "isGroup": {
+                    "type": "boolean"
+                },
                 "isLate": {
                     "type": "boolean"
+                },
+                "memberEmails": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "payloadType": {
                     "$ref": "#/definitions/submission.PayloadType"

@@ -55,13 +55,15 @@ func (s *Submission) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
-// GroupSubmission
+// GroupSubmission records a submission made on behalf of a group.
 type GroupSubmission struct {
 	Submission
-	GroupID *uint         `json:"groupId,omitempty" gorm:"index"`
-	Group   *course.Group `json:"group,omitempty" gorm:"foreignKey:GroupID;constraint:OnDelete:SET NULL;"`
-	UserID  *uint         `json:"userId,omitempty" gorm:"index"` // User that Submited
-	User    *user.User    `json:"user,omitempty" gorm:"foreignKey:UserID;constraint:OnDelete:SET NULL;"`
+	GroupID   *uint         `json:"groupId,omitempty" gorm:"index"`
+	Group     *course.Group `json:"group,omitempty" gorm:"foreignKey:GroupID;constraint:OnDelete:SET NULL;"`
+	UserID    *uint         `json:"userId,omitempty" gorm:"index"` // User that Submited
+	User      *user.User    `json:"user,omitempty" gorm:"foreignKey:UserID;constraint:OnDelete:SET NULL;"`
+	UserEmail string        `json:"userEmail,omitempty" gorm:"type:varchar(255)"`
+	Members   []user.User   `json:"members,omitempty" gorm:"many2many:group_submission_members;"`
 }
 
 // IndividualSubmission
@@ -97,6 +99,7 @@ type UploadTicket struct {
 	ContentTitle string    `json:"contentTitle,omitempty" gorm:"type:varchar(255)"`
 	UserID       uint      `json:"userId" gorm:"not null;index"`
 	UserEmail    string    `json:"userEmail" gorm:"type:varchar(255);not null"`
+	GroupID      *uint     `json:"groupId,omitempty" gorm:"index"`
 	SubmittedAt  time.Time `json:"submittedAt" gorm:"not null"`
 	ExpiresAt    time.Time `json:"expiresAt" gorm:"not null;index"`
 	Consumed     bool      `json:"consumed" gorm:"not null;default:false"`

@@ -52,6 +52,8 @@ definitions:
     properties:
       acceptsLateSubmissions:
         type: boolean
+      allowsGroupSubmission:
+        type: boolean
       deadline:
         type: string
       title:
@@ -89,6 +91,8 @@ definitions:
   content.HandinDto:
     properties:
       acceptsLateSubmissions:
+        type: boolean
+      allowsGroupSubmission:
         type: boolean
       createdAt:
         type: string
@@ -133,6 +137,8 @@ definitions:
   content.UpdateHandinDto:
     properties:
       acceptsLateSubmissions:
+        type: boolean
+      allowsGroupSubmission:
         type: boolean
       deadline:
         type: string
@@ -451,6 +457,8 @@ definitions:
     properties:
       acceptsLateSubmissions:
         type: boolean
+      allowsGroupSubmission:
+        type: boolean
       attemptsUsed:
         type: integer
       deadline:
@@ -692,8 +700,16 @@ definitions:
         type: string
       fileSize:
         type: integer
+      groupName:
+        type: string
+      isGroup:
+        type: boolean
       isLate:
         type: boolean
+      memberEmails:
+        items:
+          type: string
+        type: array
       payloadType:
         $ref: '#/definitions/submission.PayloadType'
       payloadUrl:
@@ -2207,6 +2223,10 @@ paths:
             $ref: '#/definitions/ginutil.ErrorResponse'
         "404":
           description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "409":
+          description: Conflict
           schema:
             $ref: '#/definitions/ginutil.ErrorResponse'
         "500":

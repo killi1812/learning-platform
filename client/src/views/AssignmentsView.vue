@@ -142,6 +142,13 @@
           />
 
           <v-switch v-model="handinLateAllowed" color="primary" label="Accept late submissions" />
+
+          <v-switch
+            v-model="handinGroupAllowed"
+            color="primary"
+            label="Group assignment"
+            messages="One member submits on behalf of the whole group"
+          />
         </v-card-text>
 
         <v-card-actions class="pa-4">
@@ -182,6 +189,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { getApiErrorMessage } from '@/api/client'
 import { getMyCourses } from '@/api/course'
 import { listAssignments, deleteQuiz } from '@/api/quiz'
 import { updateHandin, deleteHandin } from '@/api/submission'
@@ -216,6 +224,7 @@ const targetHandinUuid = ref('')
 const handinTitle = ref('')
 const handinDeadline = ref('')
 const handinLateAllowed = ref(false)
+const handinGroupAllowed = ref(false)
 
 const studentSubmitDialogOpen = ref(false)
 const selectedHandinForSubmit = ref<Assignment | undefined>(undefined)
@@ -318,6 +327,7 @@ function openEditHandinDialog(courseUuid: string, asgn: Assignment) {
   handinTitle.value = asgn.title
   handinDeadline.value = asgn.deadline ? asgn.deadline.slice(0, 16) : ''
   handinLateAllowed.value = asgn.acceptsLateSubmissions || false
+  handinGroupAllowed.value = asgn.allowsGroupSubmission || false
   handinDialogOpen.value = true
 }
 
@@ -332,12 +342,13 @@ async function handleSaveHandin() {
       title: handinTitle.value.trim(),
       deadline: deadlineIso,
       acceptsLateSubmissions: handinLateAllowed.value,
+      allowsGroupSubmission: handinGroupAllowed.value,
     })
     toast.success('Assignment updated successfully.')
     handinDialogOpen.value = false
     await loadAssignments()
   } catch (err: unknown) {
-    toast.error(err instanceof Error ? err.message : 'Failed to save assignment.')
+    toast.error(getApiErrorMessage(err, 'Failed to save assignment.'))
   } finally {
     savingHandin.value = false
   }

@@ -26,16 +26,19 @@ type UploadTicketDto struct {
 	ExpiresAt   time.Time `json:"expiresAt"`
 }
 
-// SubmissionDto represents an individual submission returned in student/teacher listings.
+// SubmissionDto represents an individual or group submission returned in student/teacher listings.
 type SubmissionDto struct {
-	Uuid        uuid.UUID   `json:"uuid"`
-	Attempt     int         `json:"attempt"`
-	IsLate      bool        `json:"isLate"`
-	PayloadType PayloadType `json:"payloadType"`
-	PayloadURL  string      `json:"payloadUrl,omitempty"`
-	FileName    string      `json:"fileName,omitempty"`
-	FileSize    int64       `json:"fileSize,omitempty"`
-	ContentType string      `json:"contentType,omitempty"`
-	SubmittedAt time.Time   `json:"submittedAt"`
-	UserEmail   string      `json:"userEmail,omitempty"`
+	Uuid         uuid.UUID   `json:"uuid"`
+	Attempt      int         `json:"attempt"`
+	IsLate       bool        `json:"isLate"`
+	PayloadType  PayloadType `json:"payloadType"`
+	PayloadURL   string      `json:"payloadUrl,omitempty"`
+	FileName     string      `json:"fileName,omitempty"`
+	FileSize     int64       `json:"fileSize,omitempty"`
+	ContentType  string      `json:"contentType,omitempty"`
+	SubmittedAt  time.Time   `json:"submittedAt"`
+	UserEmail    string      `json:"userEmail,omitempty"`
+	IsGroup      bool        `json:"isGroup"`
+	GroupName    string      `json:"groupName,omitempty"`
+	MemberEmails []string    `json:"memberEmails,omitempty"`
 }

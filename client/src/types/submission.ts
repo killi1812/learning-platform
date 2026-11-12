@@ -23,18 +23,23 @@ export interface Submission {
   contentType?: string
   submittedAt: string
   userEmail?: string
+  isGroup?: boolean
+  groupName?: string
+  memberEmails?: string[]
 }
 
 export interface CreateHandinPayload {
   title: string
   deadline?: string
   acceptsLateSubmissions: boolean
+  allowsGroupSubmission?: boolean
 }
 
 export interface UpdateHandinPayload {
   title: string
   deadline?: string
   acceptsLateSubmissions: boolean
+  allowsGroupSubmission?: boolean
 }
 
 export interface HandinAssignment {
@@ -44,6 +49,7 @@ export interface HandinAssignment {
   position: number
   deadline?: string
   acceptsLateSubmissions: boolean
+  allowsGroupSubmission?: boolean
   createdAt: string
   updatedAt: string
 }

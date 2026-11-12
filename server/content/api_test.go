@@ -31,6 +31,7 @@ type mockContentService struct {
 	getFileStreamFunc func(courseUuid, moduleUuid, contentUuid, userUuid uuid.UUID, isPrivileged bool) (io.ReadCloser, *content.File, error)
 	updateFileFunc    func(courseUuid, moduleUuid, contentUuid uuid.UUID, title, description string) (*content.File, error)
 	deleteFileFunc    func(courseUuid, moduleUuid, contentUuid uuid.UUID) error
+	updateHandinErr   error
 }
 
 func (m *mockContentService) UploadFile(courseUuid, moduleUuid uuid.UUID, title, fileName string, fileSize int64, contentType string, fileReader io.Reader, description string, sourceUrl string) (*content.File, error) {
@@ -132,7 +133,7 @@ func (m *mockContentService) GetAssignmentByModule(moduleUuid uuid.UUID) (*conte
 	return nil, content.ErrContentNotFound
 }
 
-func (m *mockContentService) CreateHandin(courseUuid, moduleUuid uuid.UUID, title string, deadline *time.Time, lateAllowed bool) (*content.Content, error) {
+func (m *mockContentService) CreateHandin(courseUuid, moduleUuid uuid.UUID, title string, deadline *time.Time, lateAllowed, groupAllowed bool) (*content.Content, error) {
 	return &content.Content{
 		Uuid:  uuid.New(),
 		Title: title,
@@ -141,11 +142,15 @@ func (m *mockContentService) CreateHandin(courseUuid, moduleUuid uuid.UUID, titl
 			Type:                   content.AssignmentHandIn,
 			Deadline:               deadline,
 			AcceptsLateSubmissions: lateAllowed,
+			AllowsGroupSubmission:  groupAllowed,
 		},
 	}, nil
 }
 
-func (m *mockContentService) UpdateHandin(courseUuid, moduleUuid, assignmentUuid uuid.UUID, title string, deadline *time.Time, lateAllowed bool) (*content.Content, error) {
+func (m *mockContentService) UpdateHandin(courseUuid, moduleUuid, assignmentUuid uuid.UUID, title string, deadline *time.Time, lateAllowed, groupAllowed bool) (*content.Content, error) {
+	if m.updateHandinErr != nil {
+		return nil, m.updateHandinErr
+	}
 	return &content.Content{
 		Uuid:  assignmentUuid,
 		Title: title,
@@ -154,6 +159,7 @@ func (m *mockContentService) UpdateHandin(courseUuid, moduleUuid, assignmentUuid
 			Type:                   content.AssignmentHandIn,
 			Deadline:               deadline,
 			AcceptsLateSubmissions: lateAllowed,
+			AllowsGroupSubmission:  groupAllowed,
 		},
 	}, nil
 }
@@ -724,9 +730,19 @@ func TestContentCtn_Handin(t *testing.T) {
 
 	t.Run("update handin success", func(t *testing.T) {
 		r := setupContentApiTest(&mockContentService{}, &mockCourseServiceForContent{})
-		payload := content.UpdateHandinDto{Title: "Updated HW 1"}
+		payload := content.UpdateHandinDto{Title: "Updated HW 1", AllowsGroupSubmission: true}
 		w := doReq(r, http.MethodPut, basePath+"/"+asgnUuid.String(), auth, payload)
 		assert.Equal(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("update handin conflict when group mode locked", func(t *testing.T) {
+		mockSvc := &mockContentService{
+			updateHandinErr: content.ErrGroupModeLocked,
+		}
+		r := setupContentApiTest(mockSvc, &mockCourseServiceForContent{})
+		payload := content.UpdateHandinDto{Title: "Updated HW 1", AllowsGroupSubmission: true}
+		w := doReq(r, http.MethodPut, basePath+"/"+asgnUuid.String(), auth, payload)
+		assert.Equal(t, http.StatusConflict, w.Code)
 	})
 
 	t.Run("delete handin success", func(t *testing.T) {

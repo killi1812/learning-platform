@@ -47,17 +47,15 @@ func TestSubmissionConsumer_Process(t *testing.T) {
 		called := false
 		subUUID := uuid.New()
 		mockSvc := &mockSubmissionService{
-			saveFromMessageFunc: func(msg submission.SubmissionMessage) (*submission.IndividualSubmission, error) {
+			saveFromMessageFunc: func(msg submission.SubmissionMessage) (*submission.Submission, error) {
 				called = true
 				assert.Equal(t, subUUID, msg.Uuid)
 				assert.Equal(t, uint(10), msg.ContentID)
 				assert.Equal(t, uint(20), msg.UserID)
-				return &submission.IndividualSubmission{
-					Submission: submission.Submission{
-						Uuid:    subUUID,
-						Attempt: 1,
-						IsLate:  false,
-					},
+				return &submission.Submission{
+					Uuid:    subUUID,
+					Attempt: 1,
+					IsLate:  false,
 				}, nil
 			},
 		}
@@ -140,17 +138,15 @@ func TestSubmissionConsumer_Process(t *testing.T) {
 		called := false
 		subUUID := uuid.New()
 		mockSvc := &mockSubmissionService{
-			saveFromMessageFunc: func(msg submission.SubmissionMessage) (*submission.IndividualSubmission, error) {
+			saveFromMessageFunc: func(msg submission.SubmissionMessage) (*submission.Submission, error) {
 				called = true
 				assert.Equal(t, submission.PayloadTypeFile, msg.PayloadType)
 				assert.Equal(t, "submissions/test.pdf", msg.StorageKey)
-				return &submission.IndividualSubmission{
-					Submission: submission.Submission{
-						Uuid:        subUUID,
-						Attempt:     1,
-						PayloadType: submission.PayloadTypeFile,
-						StorageKey:  msg.StorageKey,
-					},
+				return &submission.Submission{
+					Uuid:        subUUID,
+					Attempt:     1,
+					PayloadType: submission.PayloadTypeFile,
+					StorageKey:  msg.StorageKey,
 				}, nil
 			},
 		}
@@ -177,7 +173,7 @@ func TestSubmissionConsumer_Process(t *testing.T) {
 
 	t.Run("Service failure returns error", func(t *testing.T) {
 		mockSvc := &mockSubmissionService{
-			saveFromMessageFunc: func(msg submission.SubmissionMessage) (*submission.IndividualSubmission, error) {
+			saveFromMessageFunc: func(msg submission.SubmissionMessage) (*submission.Submission, error) {
 				return nil, errors.New("db connection failure")
 			},
 		}
@@ -271,7 +267,7 @@ func TestSubmissionConsumer_RunAndHandle(t *testing.T) {
 
 		notifiedDLQ := false
 		mockSvc := &mockSubmissionService{
-			saveFromMessageFunc: func(msg submission.SubmissionMessage) (*submission.IndividualSubmission, error) {
+			saveFromMessageFunc: func(msg submission.SubmissionMessage) (*submission.Submission, error) {
 				return nil, errors.New("transient db timeout")
 			},
 			notifySubmissionFailedFunc: func(u, c uuid.UUID, title string) {

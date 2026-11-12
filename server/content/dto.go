@@ -58,6 +58,7 @@ type CreateHandinDto struct {
 	Title                  string     `json:"title" binding:"required,min=2,max=255"`
 	Deadline               *time.Time `json:"deadline,omitempty"`
 	AcceptsLateSubmissions bool       `json:"acceptsLateSubmissions"`
+	AllowsGroupSubmission  bool       `json:"allowsGroupSubmission"`
 }
 
 // UpdateHandinDto defines the payload for updating a hand-in assignment.
@@ -65,6 +66,7 @@ type UpdateHandinDto struct {
 	Title                  string     `json:"title" binding:"required,min=2,max=255"`
 	Deadline               *time.Time `json:"deadline,omitempty"`
 	AcceptsLateSubmissions bool       `json:"acceptsLateSubmissions"`
+	AllowsGroupSubmission  bool       `json:"allowsGroupSubmission"`
 }
 
 // HandinDto represents the public view of a hand-in assignment.
@@ -75,6 +77,7 @@ type HandinDto struct {
 	Position               int        `json:"position"`
 	Deadline               *time.Time `json:"deadline,omitempty"`
 	AcceptsLateSubmissions bool       `json:"acceptsLateSubmissions"`
+	AllowsGroupSubmission  bool       `json:"allowsGroupSubmission"`
 	CreatedAt              time.Time  `json:"createdAt"`
 	UpdatedAt              time.Time  `json:"updatedAt"`
 }
@@ -97,6 +100,7 @@ func (HandinDto) FromModel(cnt *Content) HandinDto {
 	if cnt.Assignment != nil {
 		dto.Deadline = cnt.Assignment.Deadline
 		dto.AcceptsLateSubmissions = cnt.Assignment.AcceptsLateSubmissions
+		dto.AllowsGroupSubmission = cnt.Assignment.AllowsGroupSubmission
 	}
 	return dto
 }

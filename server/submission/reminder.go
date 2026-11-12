@@ -18,6 +18,7 @@ import (
 // CheckDeadlineReminders inspects active assignments due within 24 hours or 15 minutes,
 // records reminders idempotently, and notifies enrolled students who haven't submitted yet.
 func (s *SubmissionService) CheckDeadlineReminders(now time.Time) (int, error) {
+	s.logger.Info("Checking deadlines")
 	windowMax := now.Add(24 * time.Hour)
 
 	var assignments []content.Assignment
@@ -103,10 +104,10 @@ func (s *SubmissionService) CheckDeadlineReminders(now time.Time) (int, error) {
 				continue
 			}
 
-			// Check if already submitted via GroupSubmission (if group submission exists for user or their group)
+			// Check if already submitted via GroupSubmission (if group submission exists for user in snapshot or user submitted)
 			var grpCount int64
-			if err := s.db.Model(&GroupSubmission{}).
-				Where("content_id = ? AND (user_id = ? OR group_id IN (SELECT group_id FROM group_members WHERE user_id = ?))",
+			if err := s.db.Table("group_submissions").
+				Where("content_id = ? AND (user_id = ? OR id IN (SELECT group_submission_id FROM group_submission_members WHERE user_id = ?))",
 					contentID, enr.UserID, enr.UserID).
 				Count(&grpCount).Error; err != nil {
 				continue

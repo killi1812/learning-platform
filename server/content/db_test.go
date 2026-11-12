@@ -656,7 +656,7 @@ func TestContentService_HandinAssignment(t *testing.T) {
 	deadline := time.Now().Add(48 * time.Hour)
 
 	// 1. CreateHandin
-	created, err := svc.CreateHandin(c.Uuid, m.Uuid, "Assignment 1", &deadline, true)
+	created, err := svc.CreateHandin(c.Uuid, m.Uuid, "Assignment 1", &deadline, true, false)
 	assert.NoError(t, err)
 	assert.NotNil(t, created)
 	assert.Equal(t, "Assignment 1", created.Title)
@@ -664,6 +664,7 @@ func TestContentService_HandinAssignment(t *testing.T) {
 	assert.Equal(t, content.TypeAssignment, created.Type)
 	assert.Equal(t, content.AssignmentHandIn, created.Assignment.Type)
 	assert.True(t, created.Assignment.AcceptsLateSubmissions)
+	assert.False(t, created.Assignment.AllowsGroupSubmission)
 
 	var notifs []notification.Notification
 	assert.NoError(t, db.Where("user_id = ?", student.ID).Find(&notifs).Error)
@@ -671,10 +672,11 @@ func TestContentService_HandinAssignment(t *testing.T) {
 	assert.Equal(t, "New Assignment: Assignment 1", notifs[0].Title)
 	assert.Equal(t, "/courses/"+c.Uuid.String(), notifs[0].URL)
 
-	// Create second handin to test auto-position
-	created2, err := svc.CreateHandin(c.Uuid, m.Uuid, "Assignment 2", nil, false)
+	// Create second handin to test auto-position and groupAllowed = true
+	created2, err := svc.CreateHandin(c.Uuid, m.Uuid, "Assignment 2", nil, false, true)
 	assert.NoError(t, err)
 	assert.Equal(t, 2, created2.Position)
+	assert.True(t, created2.Assignment.AllowsGroupSubmission)
 
 	// 2. GetHandin
 	fetched, err := svc.GetHandin(c.Uuid, m.Uuid, created.Uuid)
@@ -686,12 +688,21 @@ func TestContentService_HandinAssignment(t *testing.T) {
 	_, err = svc.GetHandin(c.Uuid, m.Uuid, uuid.New())
 	assert.ErrorIs(t, err, content.ErrContentNotFound)
 
+	// Ensure submission tables exist for lock check
+	assert.NoError(t, db.Exec("CREATE TABLE IF NOT EXISTS individual_submissions (content_id INTEGER); CREATE TABLE IF NOT EXISTS group_submissions (content_id INTEGER);").Error)
+
 	// 3. UpdateHandin
 	newDeadline := time.Now().Add(72 * time.Hour)
-	updated, err := svc.UpdateHandin(c.Uuid, m.Uuid, created.Uuid, "Assignment 1 Updated", &newDeadline, false)
+	updated, err := svc.UpdateHandin(c.Uuid, m.Uuid, created.Uuid, "Assignment 1 Updated", &newDeadline, false, true)
 	assert.NoError(t, err)
 	assert.Equal(t, "Assignment 1 Updated", updated.Title)
 	assert.False(t, updated.Assignment.AcceptsLateSubmissions)
+	assert.True(t, updated.Assignment.AllowsGroupSubmission)
+
+	// Test ErrGroupModeLocked: simulate existing submission
+	assert.NoError(t, db.Exec("INSERT INTO individual_submissions (content_id) VALUES (?)", created.ID).Error)
+	_, err = svc.UpdateHandin(c.Uuid, m.Uuid, created.Uuid, "Assignment 1 Updated Again", &newDeadline, false, false)
+	assert.ErrorIs(t, err, content.ErrGroupModeLocked)
 
 	// 4. ListHandins
 	list, err := svc.ListHandins(c.Uuid, m.Uuid)

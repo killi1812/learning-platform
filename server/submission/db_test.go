@@ -301,12 +301,14 @@ func TestSubmissionService_SaveFromMessage(t *testing.T) {
 	db := testutil.NewSqliteTestDb(t,
 		&user.User{},
 		&course.Course{},
+		&course.Group{},
 		&course.Module{},
 		&content.Content{},
 		&content.Assignment{},
 		&content.StudentInteraction{},
 		&submission.Submission{},
 		&submission.IndividualSubmission{},
+		&submission.GroupSubmission{},
 		&submission.DeadlineReminder{},
 		&notification.Notification{},
 		&submission.UploadTicket{},
@@ -364,7 +366,10 @@ func TestSubmissionService_SaveFromMessage(t *testing.T) {
 		assert.Equal(t, 1, saved.Attempt)
 		assert.False(t, saved.IsLate)
 		assert.Equal(t, msg.PayloadURL, saved.PayloadURL)
-		assert.Equal(t, u.Email, saved.UserEmail)
+
+		var ind submission.IndividualSubmission
+		assert.NoError(t, db.Where("uuid = ?", msg.Uuid).First(&ind).Error)
+		assert.Equal(t, u.Email, ind.UserEmail)
 
 		var inter content.StudentInteraction
 		assert.NoError(t, db.Where("user_id = ? AND content_id = ?", u.ID, cnt.ID).First(&inter).Error)
@@ -532,6 +537,7 @@ func TestSubmissionService_FileSubmissionWorkflow(t *testing.T) {
 		&content.StudentInteraction{},
 		&submission.Submission{},
 		&submission.IndividualSubmission{},
+		&submission.GroupSubmission{},
 		&submission.DeadlineReminder{},
 		&notification.Notification{},
 		&submission.UploadTicket{},
@@ -734,6 +740,12 @@ func TestSubmissionService_FileSubmissionWorkflow(t *testing.T) {
 	_, err = svc.ListCourseAssignmentSubmissions(uuid.New(), cnt.Uuid)
 	assert.ErrorIs(t, err, submission.ErrContentNotFound)
 
+	// ListMySubmissions with unknown user and content
+	_, err = svc.ListMySubmissions(c.Uuid, cnt.Uuid, uuid.New())
+	assert.ErrorIs(t, err, submission.ErrNotEnrolled)
+	_, err = svc.ListMySubmissions(uuid.New(), cnt.Uuid, student.Uuid)
+	assert.ErrorIs(t, err, submission.ErrContentNotFound)
+
 	// InitFileSubmission with unknown content
 	_, err = svc.InitFileSubmission(uuid.New(), cnt.Uuid, student.Uuid, now)
 	assert.ErrorIs(t, err, submission.ErrContentNotFound)
@@ -763,4 +775,246 @@ func TestSubmissionService_FileSubmissionWorkflow(t *testing.T) {
 	}
 	assert.NoError(t, db.Create(subCustom).Error)
 	assert.Equal(t, customUuid, subCustom.Uuid)
+}
+
+func TestSubmissionService_GroupSubmissionsWorkflow(t *testing.T) {
+	db := testutil.NewSqliteTestDb(t,
+		&user.User{},
+		&course.Course{},
+		&course.Enrollment{},
+		&course.Group{},
+		&course.Module{},
+		&content.Content{},
+		&content.Assignment{},
+		&content.StudentInteraction{},
+		&submission.Submission{},
+		&submission.IndividualSubmission{},
+		&submission.GroupSubmission{},
+		&submission.DeadlineReminder{},
+		&notification.Notification{},
+		&submission.UploadTicket{},
+	)
+
+	notifier := notification.NewNotifier(db, notification.NewHub(), zap.NewNop().Sugar())
+	svc := submission.NewSubmissionService(db, notifier, zap.NewNop().Sugar())
+
+	c := &course.Course{Title: "DAT250", Term: course.TermAutumn, Year: 2026}
+	assert.NoError(t, db.Create(c).Error)
+
+	m := &course.Module{CourseID: c.ID, Title: "Module 1", Position: 1}
+	assert.NoError(t, db.Create(m).Error)
+
+	s1 := &user.User{Uuid: uuid.New(), Username: "stud1", Email: "stud1@hvl.no"}
+	s2 := &user.User{Uuid: uuid.New(), Username: "stud2", Email: "stud2@hvl.no"}
+	s3 := &user.User{Uuid: uuid.New(), Username: "stud3_alone", Email: "stud3@hvl.no"}
+	otherStud := &user.User{Uuid: uuid.New(), Username: "stud_other", Email: "other@hvl.no"}
+	teacher := &user.User{Uuid: uuid.New(), Username: "prof", Email: "prof@hvl.no"}
+	assert.NoError(t, db.Create(s1).Error)
+	assert.NoError(t, db.Create(s2).Error)
+	assert.NoError(t, db.Create(s3).Error)
+	assert.NoError(t, db.Create(otherStud).Error)
+	assert.NoError(t, db.Create(teacher).Error)
+
+	assert.NoError(t, db.Create(&course.Enrollment{UserID: s1.ID, CourseID: c.ID, Role: course.RoleStudent}).Error)
+	assert.NoError(t, db.Create(&course.Enrollment{UserID: s2.ID, CourseID: c.ID, Role: course.RoleStudent}).Error)
+	assert.NoError(t, db.Create(&course.Enrollment{UserID: s3.ID, CourseID: c.ID, Role: course.RoleStudent}).Error)
+	assert.NoError(t, db.Create(&course.Enrollment{UserID: otherStud.ID, CourseID: c.ID, Role: course.RoleStudent}).Error)
+
+	grp := &course.Group{
+		Uuid:       uuid.New(),
+		CourseID:   c.ID,
+		Name:       "Group Alpha",
+		MaxMembers: 4,
+		Members:    []user.User{*s1, *s2},
+	}
+	assert.NoError(t, db.Create(grp).Error)
+
+	deadline := time.Now().Add(48 * time.Hour)
+	cnt := &content.Content{
+		Uuid:     uuid.New(),
+		ModuleID: m.ID,
+		Title:    "Group Project Handin",
+		Type:     content.TypeAssignment,
+		Assignment: &content.Assignment{
+			Type:                   content.AssignmentHandIn,
+			Deadline:               &deadline,
+			AcceptsLateSubmissions: false,
+			AllowsGroupSubmission:  true,
+		},
+	}
+	assert.NoError(t, db.Create(cnt).Error)
+
+	now := time.Now().UTC()
+
+	// 1. ResolveTarget fails when student has no group in this course
+	_, err := svc.ResolveTarget(c.Uuid, cnt.Uuid, s3.Uuid, now)
+	assert.ErrorIs(t, err, submission.ErrNoGroup)
+
+	// 2. ResolveTarget succeeds when student has a group
+	target1, err := svc.ResolveTarget(c.Uuid, cnt.Uuid, s1.Uuid, now)
+	assert.NoError(t, err)
+	assert.NotNil(t, target1)
+	assert.NotNil(t, target1.GroupID)
+	assert.Equal(t, grp.ID, *target1.GroupID)
+	assert.Equal(t, "Group Alpha", target1.GroupName)
+	assert.Len(t, target1.Members, 2)
+
+	// Test ResolveGroupMembers helper
+	grpName, gMembers, err := svc.ResolveGroupMembers(grp.ID)
+	assert.NoError(t, err)
+	assert.Equal(t, "Group Alpha", grpName)
+	assert.Len(t, gMembers, 2)
+
+	_, _, err = svc.ResolveGroupMembers(99999)
+	assert.ErrorIs(t, err, submission.ErrNoGroup)
+
+	// 3. SaveFromMessage: student 1 submits attempt 1
+	sub1Uuid := uuid.New()
+	msg1 := submission.SubmissionMessage{
+		Uuid:         sub1Uuid,
+		ContentID:    cnt.ID,
+		ContentTitle: cnt.Title,
+		CourseUuid:   c.Uuid,
+		UserID:       s1.ID,
+		UserUuid:     s1.Uuid,
+		UserEmail:    s1.Email,
+		GroupID:      target1.GroupID,
+		GroupName:    target1.GroupName,
+		Members:      target1.Members,
+		PayloadType:  submission.PayloadTypeURL,
+		PayloadURL:   "https://git.app.uib.no/group-alpha/repo.git",
+		SubmittedAt:  now,
+	}
+	saved1, err := svc.SaveFromMessage(msg1)
+	assert.NoError(t, err)
+	assert.NotNil(t, saved1)
+	assert.Equal(t, 1, saved1.Attempt)
+	assert.False(t, saved1.IsLate)
+
+	// Check interactions recorded for both group members
+	var inter1, inter2 content.StudentInteraction
+	assert.NoError(t, db.Where("user_id = ? AND content_id = ?", s1.ID, cnt.ID).First(&inter1).Error)
+	assert.NoError(t, db.Where("user_id = ? AND content_id = ?", s2.ID, cnt.ID).First(&inter2).Error)
+	assert.NotNil(t, inter1.CompletedAt)
+	assert.NotNil(t, inter2.CompletedAt)
+
+	// Check notifications sent to group members
+	var notifs []notification.Notification
+	assert.NoError(t, db.Where("title = ?", "Assignment Saved").Find(&notifs).Error)
+	assert.Len(t, notifs, 2)
+
+	// Idempotent duplicate delivery test
+	dupSaved, err := svc.SaveFromMessage(msg1)
+	assert.NoError(t, err)
+	assert.Equal(t, saved1.Uuid, dupSaved.Uuid)
+
+	// 4. SaveFromMessage: student 2 submits attempt 2 for the same group
+	sub2Uuid := uuid.New()
+	msg2 := submission.SubmissionMessage{
+		Uuid:         sub2Uuid,
+		ContentID:    cnt.ID,
+		ContentTitle: cnt.Title,
+		CourseUuid:   c.Uuid,
+		UserID:       s2.ID,
+		UserUuid:     s2.Uuid,
+		UserEmail:    s2.Email,
+		GroupID:      target1.GroupID,
+		GroupName:    target1.GroupName,
+		Members:      target1.Members,
+		PayloadType:  submission.PayloadTypeURL,
+		PayloadURL:   "https://git.app.uib.no/group-alpha/repo-v2.git",
+		SubmittedAt:  now.Add(1 * time.Hour),
+	}
+	saved2, err := svc.SaveFromMessage(msg2)
+	assert.NoError(t, err)
+	assert.NotNil(t, saved2)
+	assert.Equal(t, 2, saved2.Attempt)
+
+	// 5. ListMySubmissions for both members
+	list1, err := svc.ListMySubmissions(c.Uuid, cnt.Uuid, s1.Uuid)
+	assert.NoError(t, err)
+	assert.Len(t, list1, 2)
+	assert.True(t, list1[0].IsGroup)
+	assert.Equal(t, "Group Alpha", list1[0].GroupName)
+	assert.Equal(t, 2, list1[0].Attempt)
+	assert.Contains(t, list1[0].MemberEmails, s1.Email)
+	assert.Contains(t, list1[0].MemberEmails, s2.Email)
+
+	list2, err := svc.ListMySubmissions(c.Uuid, cnt.Uuid, s2.Uuid)
+	assert.NoError(t, err)
+	assert.Len(t, list2, 2)
+
+	// Unrelated student sees no submissions
+	listOther, err := svc.ListMySubmissions(c.Uuid, cnt.Uuid, otherStud.Uuid)
+	assert.NoError(t, err)
+	assert.Empty(t, listOther)
+
+	// 6. ListCourseAssignmentSubmissions (teacher view)
+	instructorList, err := svc.ListCourseAssignmentSubmissions(c.Uuid, cnt.Uuid)
+	assert.NoError(t, err)
+	assert.Len(t, instructorList, 2)
+	assert.True(t, instructorList[0].IsGroup)
+	assert.Equal(t, "Group Alpha", instructorList[0].GroupName)
+
+	// 7. GetSubmissionForDownload on group submission
+	fileSubUuid := uuid.New()
+	fileMsg := submission.SubmissionMessage{
+		Uuid:         fileSubUuid,
+		ContentID:    cnt.ID,
+		ContentTitle: cnt.Title,
+		CourseUuid:   c.Uuid,
+		UserID:       s1.ID,
+		UserUuid:     s1.Uuid,
+		UserEmail:    s1.Email,
+		GroupID:      target1.GroupID,
+		GroupName:    target1.GroupName,
+		Members:      target1.Members,
+		PayloadType:  submission.PayloadTypeFile,
+		FileName:     "group_report.pdf",
+		FileSize:     1024,
+		ContentType:  "application/pdf",
+		StorageKey:   "submissions/group_report.pdf",
+		SubmittedAt:  now.Add(2 * time.Hour),
+	}
+	_, err = svc.SaveFromMessage(fileMsg)
+	assert.NoError(t, err)
+
+	// Member 1 can download
+	dl1, err := svc.GetSubmissionForDownload(c.Uuid, cnt.Uuid, fileSubUuid, s1.Uuid, false)
+	assert.NoError(t, err)
+	assert.Equal(t, "group_report.pdf", dl1.FileName)
+
+	// Member 2 can download
+	dl2, err := svc.GetSubmissionForDownload(c.Uuid, cnt.Uuid, fileSubUuid, s2.Uuid, false)
+	assert.NoError(t, err)
+	assert.Equal(t, "group_report.pdf", dl2.FileName)
+
+	// Teacher can download
+	dlTeacher, err := svc.GetSubmissionForDownload(c.Uuid, cnt.Uuid, fileSubUuid, teacher.Uuid, true)
+	assert.NoError(t, err)
+	assert.Equal(t, "group_report.pdf", dlTeacher.FileName)
+
+	// Non-member cannot download
+	_, err = svc.GetSubmissionForDownload(c.Uuid, cnt.Uuid, fileSubUuid, otherStud.Uuid, false)
+	assert.ErrorIs(t, err, submission.ErrUnauthorizedSubmission)
+
+	// 8. InitFileSubmission and ValidateAndExtendTicket with GroupChanged
+	ticket, err := svc.InitFileSubmission(c.Uuid, cnt.Uuid, s1.Uuid, now)
+	assert.NoError(t, err)
+	assert.NotNil(t, ticket)
+	assert.NotNil(t, ticket.GroupID)
+	assert.Equal(t, grp.ID, *ticket.GroupID)
+
+	// Validation succeeds while still member
+	validTicket, err := svc.ValidateAndExtendTicket(ticket.Uuid, c.Uuid, cnt.Uuid, s1.Uuid, now)
+	assert.NoError(t, err)
+	assert.NotNil(t, validTicket)
+
+	// Simulate member leaving group before upload completes
+	assert.NoError(t, db.Exec("DELETE FROM group_members WHERE group_id = ? AND user_id = ?", grp.ID, s1.ID).Error)
+	_, err = svc.ValidateAndExtendTicket(ticket.Uuid, c.Uuid, cnt.Uuid, s1.Uuid, now)
+	assert.ErrorIs(t, err, submission.ErrGroupChanged)
+
+	// Test NotifySubmitted with group target
+	svc.NotifySubmitted(target1)
 }

@@ -161,6 +161,7 @@ func TestSubmissionService_CheckDeadlineReminders(t *testing.T) {
 			},
 			GroupID: &grp.ID,
 			UserID:  &student3.ID,
+			Members: []user.User{*student3},
 		}
 		require.NoError(t, db.Create(&grpSub).Error)
 

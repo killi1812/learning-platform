@@ -1059,6 +1059,13 @@
           />
 
           <v-switch v-model="handinLateAllowed" color="primary" label="Accept late submissions" />
+
+          <v-switch
+            v-model="handinGroupAllowed"
+            color="primary"
+            label="Group assignment"
+            messages="One member submits on behalf of the whole group"
+          />
         </v-card-text>
 
         <v-card-actions class="pa-4 bg-surface-variant">
@@ -1427,6 +1434,7 @@ const targetHandinUuid = ref('')
 const handinTitle = ref('')
 const handinDeadline = ref('')
 const handinLateAllowed = ref(false)
+const handinGroupAllowed = ref(false)
 const savingHandin = ref(false)
 
 // Student submit dialog state
@@ -1522,6 +1530,7 @@ function openCreateHandinDialog(moduleUuid: string) {
   handinTitle.value = ''
   handinDeadline.value = ''
   handinLateAllowed.value = false
+  handinGroupAllowed.value = false
   handinDialogOpen.value = true
 }
 
@@ -1532,6 +1541,7 @@ function openEditHandinDialog(asgn: Assignment) {
   handinTitle.value = asgn.title
   handinDeadline.value = asgn.deadline ? asgn.deadline.slice(0, 16) : ''
   handinLateAllowed.value = asgn.acceptsLateSubmissions || false
+  handinGroupAllowed.value = asgn.allowsGroupSubmission || false
   handinDialogOpen.value = true
 }
 
@@ -1551,6 +1561,7 @@ async function handleSaveHandin() {
           title: handinTitle.value.trim(),
           deadline: deadlineIso,
           acceptsLateSubmissions: handinLateAllowed.value,
+          allowsGroupSubmission: handinGroupAllowed.value,
         },
       )
       toast.success('Assignment updated successfully.')
@@ -1559,13 +1570,14 @@ async function handleSaveHandin() {
         title: handinTitle.value.trim(),
         deadline: deadlineIso,
         acceptsLateSubmissions: handinLateAllowed.value,
+        allowsGroupSubmission: handinGroupAllowed.value,
       })
       toast.success('Assignment created successfully.')
     }
     handinDialogOpen.value = false
     await loadAssignments()
   } catch (err: unknown) {
-    toast.error(err instanceof Error ? err.message : 'Failed to save assignment.')
+    toast.error(getApiErrorMessage(err, 'Failed to save assignment.'))
   } finally {
     savingHandin.value = false
   }

@@ -77,7 +77,9 @@ func (ctn *SubmissionCtn) handleError(c *gin.Context, err error, fallbackMsg str
 		ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
 	case errors.Is(err, ErrNotEnrolled),
 		errors.Is(err, ErrModuleLocked),
-		errors.Is(err, ErrUnauthorizedSubmission):
+		errors.Is(err, ErrUnauthorizedSubmission),
+		errors.Is(err, ErrNoGroup),
+		errors.Is(err, ErrGroupChanged):
 		ginutil.RespondWithError(c, http.StatusForbidden, err.Error())
 	default:
 		ctn.logger.Errorf("%s: %v", fallbackMsg, err)
@@ -150,6 +152,9 @@ func (ctn *SubmissionCtn) submit(c *gin.Context) {
 		UserID:       target.UserID,
 		UserUuid:     target.UserUuid,
 		UserEmail:    target.UserEmail,
+		GroupID:      target.GroupID,
+		GroupName:    target.GroupName,
+		Members:      target.Members,
 		PayloadType:  dto.PayloadType,
 		PayloadURL:   dto.PayloadURL,
 		SubmittedAt:  submittedAt,
@@ -407,6 +412,18 @@ func (ctn *SubmissionCtn) uploadFileSubmission(c *gin.Context) {
 		return
 	}
 
+	var groupName string
+	var groupMembers []GroupMember
+	if ticket.GroupID != nil {
+		var gErr error
+		groupName, groupMembers, gErr = ctn.Service.ResolveGroupMembers(*ticket.GroupID)
+		if gErr != nil {
+			_ = ctn.storageService.Delete(storageKey)
+			ctn.handleError(c, gErr, "Failed to resolve group members for upload")
+			return
+		}
+	}
+
 	msg := SubmissionMessage{
 		Uuid:         ticket.Uuid,
 		ContentID:    ticket.ContentID,
@@ -415,6 +432,9 @@ func (ctn *SubmissionCtn) uploadFileSubmission(c *gin.Context) {
 		UserID:       ticket.UserID,
 		UserUuid:     userUuid,
 		UserEmail:    ticket.UserEmail,
+		GroupID:      ticket.GroupID,
+		GroupName:    groupName,
+		Members:      groupMembers,
 		PayloadType:  PayloadTypeFile,
 		FileName:     fileName,
 		FileSize:     bytesRead,
@@ -445,6 +465,9 @@ func (ctn *SubmissionCtn) uploadFileSubmission(c *gin.Context) {
 		UserID:       ticket.UserID,
 		UserUuid:     userUuid,
 		UserEmail:    ticket.UserEmail,
+		GroupID:      ticket.GroupID,
+		GroupName:    groupName,
+		Members:      groupMembers,
 	})
 
 	c.JSON(http.StatusAccepted, SubmissionAcceptedDto{

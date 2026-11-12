@@ -58,3 +58,41 @@ func TestFileDto_FromModel(t *testing.T) {
 		assert.Equal(t, now, dto.CreatedAt)
 	})
 }
+
+func TestHandinDto_FromModel(t *testing.T) {
+	t.Run("nil model returns empty dto", func(t *testing.T) {
+		dto := HandinDto{}.FromModel(nil)
+		assert.Empty(t, dto.Uuid)
+		assert.Empty(t, dto.Title)
+	})
+
+	t.Run("valid handin model converts successfully", func(t *testing.T) {
+		contentUuid := uuid.New()
+		moduleUuid := uuid.New()
+		deadline := time.Now().Add(24 * time.Hour)
+
+		cnt := &Content{
+			Uuid:     contentUuid,
+			Title:    "Project Handin",
+			Position: 3,
+			Module: &course.Module{
+				Uuid: moduleUuid,
+			},
+			Assignment: &Assignment{
+				Type:                   AssignmentHandIn,
+				Deadline:               &deadline,
+				AcceptsLateSubmissions: true,
+				AllowsGroupSubmission:  true,
+			},
+		}
+
+		dto := HandinDto{}.FromModel(cnt)
+		assert.Equal(t, contentUuid.String(), dto.Uuid)
+		assert.Equal(t, moduleUuid.String(), dto.ModuleUuid)
+		assert.Equal(t, "Project Handin", dto.Title)
+		assert.Equal(t, 3, dto.Position)
+		assert.Equal(t, &deadline, dto.Deadline)
+		assert.True(t, dto.AcceptsLateSubmissions)
+		assert.True(t, dto.AllowsGroupSubmission)
+	})
+}

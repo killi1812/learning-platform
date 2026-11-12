@@ -28,14 +28,15 @@ type mockSubmissionService struct {
 	resolveTargetFunc                   func(courseUuid, contentUuid, userUuid uuid.UUID, submittedAt time.Time) (*submission.SubmissionTarget, error)
 	initFileSubmissionFunc              func(courseUuid, contentUuid, userUuid uuid.UUID, submittedAt time.Time) (*submission.UploadTicket, error)
 	validateAndExtendTicketFunc         func(ticketUuid, courseUuid, contentUuid, userUuid uuid.UUID, now time.Time) (*submission.UploadTicket, error)
+	resolveGroupMembersFunc             func(groupID uint) (string, []submission.GroupMember, error)
 	consumeUploadTicketFunc             func(ticketUuid uuid.UUID) error
-	saveFromMessageFunc                 func(msg submission.SubmissionMessage) (*submission.IndividualSubmission, error)
+	saveFromMessageFunc                 func(msg submission.SubmissionMessage) (*submission.Submission, error)
 	notifySubmittedFunc                 func(target *submission.SubmissionTarget)
 	notifySubmissionFailedFunc          func(userUuid, courseUuid uuid.UUID, contentTitle string)
 	checkDeadlineRemindersFunc          func(now time.Time) (int, error)
 	listMySubmissionsFunc               func(courseUuid, contentUuid, userUuid uuid.UUID) ([]submission.SubmissionDto, error)
 	listCourseAssignmentSubmissionsFunc func(courseUuid, contentUuid uuid.UUID) ([]submission.SubmissionDto, error)
-	getSubmissionForDownloadFunc        func(courseUuid, contentUuid, subUuid, userUuid uuid.UUID, isPrivileged bool) (*submission.IndividualSubmission, error)
+	getSubmissionForDownloadFunc        func(courseUuid, contentUuid, subUuid, userUuid uuid.UUID, isPrivileged bool) (*submission.Submission, error)
 }
 
 func (m *mockSubmissionService) ResolveTarget(courseUuid, contentUuid, userUuid uuid.UUID, submittedAt time.Time) (*submission.SubmissionTarget, error) {
@@ -43,6 +44,15 @@ func (m *mockSubmissionService) ResolveTarget(courseUuid, contentUuid, userUuid 
 		return m.resolveTargetFunc(courseUuid, contentUuid, userUuid, submittedAt)
 	}
 	return &submission.SubmissionTarget{ContentID: 1, ContentTitle: "Assignment", CourseUuid: courseUuid, UserID: 1, UserUuid: userUuid, UserEmail: "student@hvl.no"}, nil
+}
+
+func (m *mockSubmissionService) ResolveGroupMembers(groupID uint) (string, []submission.GroupMember, error) {
+	if m.resolveGroupMembersFunc != nil {
+		return m.resolveGroupMembersFunc(groupID)
+	}
+	return "Group 1", []submission.GroupMember{
+		{UserID: 1, Uuid: uuid.New(), Email: "student@hvl.no"},
+	}, nil
 }
 
 func (m *mockSubmissionService) InitFileSubmission(courseUuid, contentUuid, userUuid uuid.UUID, submittedAt time.Time) (*submission.UploadTicket, error) {
@@ -98,44 +108,36 @@ func (m *mockSubmissionService) ListCourseAssignmentSubmissions(courseUuid, cont
 	return []submission.SubmissionDto{}, nil
 }
 
-func (m *mockSubmissionService) GetSubmissionForDownload(courseUuid, contentUuid, subUuid, userUuid uuid.UUID, isPrivileged bool) (*submission.IndividualSubmission, error) {
+func (m *mockSubmissionService) GetSubmissionForDownload(courseUuid, contentUuid, subUuid, userUuid uuid.UUID, isPrivileged bool) (*submission.Submission, error) {
 	if m.getSubmissionForDownloadFunc != nil {
 		return m.getSubmissionForDownloadFunc(courseUuid, contentUuid, subUuid, userUuid, isPrivileged)
 	}
-	uID := uint(1)
-	return &submission.IndividualSubmission{
-		Submission: submission.Submission{
-			Uuid:        subUuid,
-			PayloadType: submission.PayloadTypeFile,
-			FileName:    "file.pdf",
-			FileSize:    100,
-			ContentType: "application/pdf",
-			StorageKey:  "submissions/key.pdf",
-		},
-		UserID: &uID,
+	return &submission.Submission{
+		Uuid:        subUuid,
+		PayloadType: submission.PayloadTypeFile,
+		FileName:    "file.pdf",
+		FileSize:    100,
+		ContentType: "application/pdf",
+		StorageKey:  "submissions/key.pdf",
 	}, nil
 }
 
-func (m *mockSubmissionService) SaveFromMessage(msg submission.SubmissionMessage) (*submission.IndividualSubmission, error) {
+func (m *mockSubmissionService) SaveFromMessage(msg submission.SubmissionMessage) (*submission.Submission, error) {
 	if m.saveFromMessageFunc != nil {
 		return m.saveFromMessageFunc(msg)
 	}
-	return &submission.IndividualSubmission{
-		Submission: submission.Submission{
-			Uuid:        msg.Uuid,
-			ContentID:   msg.ContentID,
-			Attempt:     1,
-			IsLate:      false,
-			PayloadType: msg.PayloadType,
-			PayloadURL:  msg.PayloadURL,
-			FileName:    msg.FileName,
-			FileSize:    msg.FileSize,
-			ContentType: msg.ContentType,
-			StorageKey:  msg.StorageKey,
-			SubmittedAt: msg.SubmittedAt,
-		},
-		UserID:    &msg.UserID,
-		UserEmail: msg.UserEmail,
+	return &submission.Submission{
+		Uuid:        msg.Uuid,
+		ContentID:   msg.ContentID,
+		Attempt:     1,
+		IsLate:      false,
+		PayloadType: msg.PayloadType,
+		PayloadURL:  msg.PayloadURL,
+		FileName:    msg.FileName,
+		FileSize:    msg.FileSize,
+		ContentType: msg.ContentType,
+		StorageKey:  msg.StorageKey,
+		SubmittedAt: msg.SubmittedAt,
 	}, nil
 }
 
@@ -405,6 +407,54 @@ func TestSubmissionCtn_Submit(t *testing.T) {
 		rec := doReq(r, http.MethodPost, path, auth, validPayload)
 		assert.Equal(t, http.StatusForbidden, rec.Code)
 		assert.Contains(t, rec.Body.String(), "prerequisite")
+	})
+
+	t.Run("403 Forbidden when user has no group for group assignment", func(t *testing.T) {
+		mockSvc := &mockSubmissionService{
+			resolveTargetFunc: func(courseUuid, contentUuid, userUuid uuid.UUID, submittedAt time.Time) (*submission.SubmissionTarget, error) {
+				return nil, submission.ErrNoGroup
+			},
+		}
+		r := setupTestRouter(mockSvc, &mockPublisher{})
+		rec := doReq(r, http.MethodPost, path, auth, validPayload)
+		assert.Equal(t, http.StatusForbidden, rec.Code)
+		assert.Contains(t, rec.Body.String(), "group")
+	})
+
+	t.Run("202 Accepted when submitting as group", func(t *testing.T) {
+		grpID := uint(42)
+		var publishedMsg submission.SubmissionMessage
+		mockPub := &mockPublisher{
+			publishFunc: func(ctx context.Context, msg submission.SubmissionMessage) error {
+				publishedMsg = msg
+				return nil
+			},
+		}
+		mockSvc := &mockSubmissionService{
+			resolveTargetFunc: func(courseUuid, contentUuid, userUuid uuid.UUID, submittedAt time.Time) (*submission.SubmissionTarget, error) {
+				return &submission.SubmissionTarget{
+					CourseID:     1,
+					ContentID:    2,
+					ContentTitle: "Group Project",
+					CourseUuid:   courseUuid,
+					UserID:       10,
+					UserUuid:     userUuid,
+					UserEmail:    "stud1@hvl.no",
+					GroupID:      &grpID,
+					GroupName:    "Team Alpha",
+					Members: []submission.GroupMember{
+						{UserID: 10, Uuid: userUuid, Email: "stud1@hvl.no"},
+						{UserID: 11, Uuid: uuid.New(), Email: "stud2@hvl.no"},
+					},
+				}, nil
+			},
+		}
+		r := setupTestRouter(mockSvc, mockPub)
+		rec := doReq(r, http.MethodPost, path, auth, validPayload)
+		assert.Equal(t, http.StatusAccepted, rec.Code)
+		assert.Equal(t, &grpID, publishedMsg.GroupID)
+		assert.Equal(t, "Team Alpha", publishedMsg.GroupName)
+		assert.Len(t, publishedMsg.Members, 2)
 	})
 
 	t.Run("500 Internal Server Error on unexpected service error", func(t *testing.T) {
@@ -717,6 +767,91 @@ func TestSubmissionCtn_UploadFileSubmission(t *testing.T) {
 		assert.Contains(t, rec.Body.String(), "upload ticket has already been used")
 		assert.Nil(t, pub.lastMsg, "message must not be published if ticket consumption fails")
 	})
+
+	t.Run("403 Forbidden when group membership changed", func(t *testing.T) {
+		memStorage := storage.NewMemoryStorageService()
+		pub := &mockPublisher{}
+		r := setupTestRouterWithStorage(&mockSubmissionService{
+			validateAndExtendTicketFunc: func(ticketUuid, courseUuid, contentUuid, userUuid uuid.UUID, now time.Time) (*submission.UploadTicket, error) {
+				return nil, submission.ErrGroupChanged
+			},
+		}, pub, memStorage, &mockCourseServiceForSubmission{})
+
+		req, err := createMultipartFileRequest(url, "file", "project.pdf", []byte("pdf"), auth)
+		assert.NoError(t, err)
+
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusForbidden, rec.Code)
+		assert.Contains(t, rec.Body.String(), "group")
+	})
+
+	t.Run("403 Forbidden when resolve group members fails during upload", func(t *testing.T) {
+		memStorage := storage.NewMemoryStorageService()
+		pub := &mockPublisher{}
+		grpID := uint(5)
+		mockSvc := &mockSubmissionService{
+			validateAndExtendTicketFunc: func(ticketUuid, courseUuid, contentUuid, userUuid uuid.UUID, now time.Time) (*submission.UploadTicket, error) {
+				return &submission.UploadTicket{
+					Uuid:        ticketUuid,
+					CourseID:    1,
+					ContentID:   1,
+					GroupID:     &grpID,
+					SubmittedAt: now,
+					ExpiresAt:   now.Add(30 * time.Minute),
+				}, nil
+			},
+			resolveGroupMembersFunc: func(groupID uint) (string, []submission.GroupMember, error) {
+				return "", nil, submission.ErrNoGroup
+			},
+		}
+		r := setupTestRouterWithStorage(mockSvc, pub, memStorage, &mockCourseServiceForSubmission{})
+		req, err := createMultipartFileRequest(url, "file", "project.pdf", []byte("pdf"), auth)
+		assert.NoError(t, err)
+
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusForbidden, rec.Code)
+	})
+
+	t.Run("202 Accepted on successful group file upload", func(t *testing.T) {
+		memStorage := storage.NewMemoryStorageService()
+		pub := &mockPublisher{}
+		grpID := uint(5)
+		mockSvc := &mockSubmissionService{
+			validateAndExtendTicketFunc: func(ticketUuid, courseUuid, contentUuid, userUuid uuid.UUID, now time.Time) (*submission.UploadTicket, error) {
+				return &submission.UploadTicket{
+					Uuid:         ticketUuid,
+					CourseID:     1,
+					ContentID:    1,
+					ContentTitle: "Group Task",
+					UserID:       1,
+					UserEmail:    "stud1@hvl.no",
+					GroupID:      &grpID,
+					SubmittedAt:  now,
+					ExpiresAt:    now.Add(30 * time.Minute),
+				}, nil
+			},
+			resolveGroupMembersFunc: func(groupID uint) (string, []submission.GroupMember, error) {
+				return "Team Beta", []submission.GroupMember{
+					{UserID: 1, Uuid: userUuid, Email: "stud1@hvl.no"},
+					{UserID: 2, Uuid: uuid.New(), Email: "stud2@hvl.no"},
+				}, nil
+			},
+		}
+		r := setupTestRouterWithStorage(mockSvc, pub, memStorage, &mockCourseServiceForSubmission{})
+
+		req, err := createMultipartFileRequest(url, "file", "group_lab.pdf", []byte("file data"), auth)
+		assert.NoError(t, err)
+
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusAccepted, rec.Code)
+		assert.NotNil(t, pub.lastMsg)
+		assert.Equal(t, &grpID, pub.lastMsg.GroupID)
+		assert.Equal(t, "Team Beta", pub.lastMsg.GroupName)
+		assert.Len(t, pub.lastMsg.Members, 2)
+	})
 }
 
 func TestSubmissionCtn_ListMySubmissions(t *testing.T) {
@@ -851,7 +986,7 @@ func TestSubmissionCtn_DownloadSubmissionFile(t *testing.T) {
 
 	t.Run("404 Not Found when submission not found", func(t *testing.T) {
 		mockSvc := &mockSubmissionService{
-			getSubmissionForDownloadFunc: func(courseUuid, contentUuid, subUuid, userUuid uuid.UUID, isPrivileged bool) (*submission.IndividualSubmission, error) {
+			getSubmissionForDownloadFunc: func(courseUuid, contentUuid, subUuid, userUuid uuid.UUID, isPrivileged bool) (*submission.Submission, error) {
 				return nil, submission.ErrSubmissionNotFound
 			},
 		}
@@ -862,14 +997,10 @@ func TestSubmissionCtn_DownloadSubmissionFile(t *testing.T) {
 
 	t.Run("400 Bad Request when submission is not a file payload", func(t *testing.T) {
 		mockSvc := &mockSubmissionService{
-			getSubmissionForDownloadFunc: func(courseUuid, contentUuid, subUuid, userUuid uuid.UUID, isPrivileged bool) (*submission.IndividualSubmission, error) {
-				uID := uint(1)
-				return &submission.IndividualSubmission{
-					Submission: submission.Submission{
-						Uuid:        subUuid,
-						PayloadType: submission.PayloadTypeURL,
-					},
-					UserID: &uID,
+			getSubmissionForDownloadFunc: func(courseUuid, contentUuid, subUuid, userUuid uuid.UUID, isPrivileged bool) (*submission.Submission, error) {
+				return &submission.Submission{
+					Uuid:        subUuid,
+					PayloadType: submission.PayloadTypeURL,
 				}, nil
 			},
 		}
@@ -892,7 +1023,7 @@ func TestSubmissionCtn_DownloadSubmissionFile(t *testing.T) {
 
 	t.Run("403 Forbidden when unauthorized", func(t *testing.T) {
 		mockSvc := &mockSubmissionService{
-			getSubmissionForDownloadFunc: func(courseUuid, contentUuid, subUuid, userUuid uuid.UUID, isPrivileged bool) (*submission.IndividualSubmission, error) {
+			getSubmissionForDownloadFunc: func(courseUuid, contentUuid, subUuid, userUuid uuid.UUID, isPrivileged bool) (*submission.Submission, error) {
 				return nil, submission.ErrUnauthorizedSubmission
 			},
 		}
@@ -906,18 +1037,14 @@ func TestSubmissionCtn_DownloadSubmissionFile(t *testing.T) {
 		_ = memStorage.Upload("submissions/fallback.bin", strings.NewReader("fallback content"), "")
 
 		mockSvc := &mockSubmissionService{
-			getSubmissionForDownloadFunc: func(courseUuid, contentUuid, subUuid, userUuid uuid.UUID, isPrivileged bool) (*submission.IndividualSubmission, error) {
-				uID := uint(1)
-				return &submission.IndividualSubmission{
-					Submission: submission.Submission{
-						Uuid:        subUuid,
-						PayloadType: submission.PayloadTypeFile,
-						FileName:    "",
-						FileSize:    16,
-						ContentType: "",
-						StorageKey:  "submissions/fallback.bin",
-					},
-					UserID: &uID,
+			getSubmissionForDownloadFunc: func(courseUuid, contentUuid, subUuid, userUuid uuid.UUID, isPrivileged bool) (*submission.Submission, error) {
+				return &submission.Submission{
+					Uuid:        subUuid,
+					PayloadType: submission.PayloadTypeFile,
+					FileName:    "",
+					FileSize:    16,
+					ContentType: "",
+					StorageKey:  "submissions/fallback.bin",
 				}, nil
 			},
 		}
