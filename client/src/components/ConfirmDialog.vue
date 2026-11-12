@@ -7,7 +7,7 @@
       <v-card-text class="px-4 py-2 text-body-1 text-medium-emphasis">
         {{ state.message }}
       </v-card-text>
-      <v-card-actions class="pa-4 bg-surface-variant d-flex justify-end ga-2">
+      <v-card-actions class="px-4 pb-3 pt-2 d-flex justify-end ga-2">
         <v-btn color="medium-emphasis" variant="text" @click="handleCancel">
           {{ state.cancelText || 'Cancel' }}
         </v-btn>

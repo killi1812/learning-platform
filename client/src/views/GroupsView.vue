@@ -127,7 +127,7 @@
                   variant="text"
                   prepend-icon="mdi-account-remove-outline"
                   :loading="leavingUuid === item.group.uuid"
-                  @click="promptLeaveGroup(item.group)"
+                  @click="handleLeaveGroup(item.group)"
                 >
                   Leave
                 </v-btn>
@@ -146,33 +146,6 @@
         </v-col>
       </v-row>
     </div>
-
-    <!-- Confirm Leave Dialog -->
-    <v-dialog v-model="leaveDialogOpen" max-width="450">
-      <v-card class="bg-surface pa-2" rounded="lg">
-        <v-card-title class="text-h6 font-weight-bold pt-4 px-4 text-high-emphasis">
-          Leave Group
-        </v-card-title>
-        <v-card-text class="px-4 py-2 text-body-2 text-medium-emphasis">
-          Are you sure you want to leave <strong>{{ groupToLeave?.name }}</strong
-          >? You will give up your reserved slot in this group.
-        </v-card-text>
-        <v-card-actions class="pa-4 bg-surface-variant">
-          <v-spacer />
-          <v-btn color="medium-emphasis" variant="text" @click="leaveDialogOpen = false">
-            Cancel
-          </v-btn>
-          <v-btn
-            color="error"
-            variant="elevated"
-            :loading="leavingUuid === groupToLeave?.uuid"
-            @click="confirmLeaveGroup"
-          >
-            Leave Group
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
   </v-container>
 </template>
 
@@ -181,6 +154,7 @@ import { ref, onMounted } from 'vue'
 import { getMyCourses, listCourseGroups, leaveGroup } from '@/api/course'
 import { useAuth } from '@/composables/useAuth'
 import { useToast } from '@/composables/useToast'
+import { useConfirm } from '@/composables/useConfirm'
 import type { Course, Group, GroupMember } from '@/types/course'
 
 interface UserGroupItem {
@@ -190,12 +164,11 @@ interface UserGroupItem {
 
 const { currentUser } = useAuth()
 const toast = useToast()
+const { confirm } = useConfirm()
 
 const loading = ref(false)
 const userGroups = ref<UserGroupItem[]>([])
 const leavingUuid = ref<string | null>(null)
-const leaveDialogOpen = ref(false)
-const groupToLeave = ref<Group | null>(null)
 
 function isMe(member: GroupMember): boolean {
   if (!currentUser.value) return false
@@ -246,20 +219,21 @@ async function loadGroups() {
   }
 }
 
-function promptLeaveGroup(group: Group) {
-  groupToLeave.value = group
-  leaveDialogOpen.value = true
-}
-
-async function confirmLeaveGroup() {
-  if (!groupToLeave.value) return
-  const g = groupToLeave.value
-  leavingUuid.value = g.uuid
+async function handleLeaveGroup(group: Group) {
+  if (
+    !(await confirm({
+      title: 'Leave Group',
+      message: `Are you sure you want to leave "${group.name}"?`,
+      confirmText: 'Leave Group',
+      confirmColor: 'error',
+    }))
+  ) {
+    return
+  }
+  leavingUuid.value = group.uuid
   try {
-    await leaveGroup(g.uuid)
-    toast.success(`You have left ${g.name}.`)
-    leaveDialogOpen.value = false
-    groupToLeave.value = null
+    await leaveGroup(group.uuid)
+    toast.success(`You have left ${group.name}.`)
     await loadGroups()
   } catch (err: unknown) {
     toast.error(err instanceof Error ? err.message : 'Failed to leave group.')
