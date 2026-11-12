@@ -1266,6 +1266,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useToast } from '@/composables/useToast'
+import { useConfirm } from '@/composables/useConfirm'
 import {
   getCourse,
   getMyCourses,
@@ -1313,6 +1314,7 @@ const route = useRoute()
 const router = useRouter()
 const { hasRole, currentUser } = useAuth()
 const toast = useToast()
+const { confirm } = useConfirm()
 
 const resolvedCourseUuid = computed(() => props.courseUuid || String(route.params.uuid || ''))
 
@@ -1495,7 +1497,15 @@ function takeQuiz(quiz: Assignment) {
 }
 
 async function handleDeleteQuiz(quiz: Assignment) {
-  if (!confirm(`Delete quiz "${quiz.title}" and all student attempts?`)) return
+  if (
+    !(await confirm({
+      title: 'Delete Quiz',
+      message: `Delete quiz "${quiz.title}" and all student attempts?`,
+      confirmText: 'Delete',
+      confirmColor: 'error',
+    }))
+  )
+    return
   try {
     await deleteQuiz(resolvedCourseUuid.value, quiz.uuid)
     toast.success('Quiz deleted.')
@@ -1699,7 +1709,15 @@ async function handleUploadMaterial() {
 }
 
 async function handleDeleteMaterial(moduleUuid: string, pageUuid: string) {
-  if (!confirm('Are you sure you want to delete this course material?')) return
+  if (
+    !(await confirm({
+      title: 'Delete Material',
+      message: 'Are you sure you want to delete this course material?',
+      confirmText: 'Delete',
+      confirmColor: 'error',
+    }))
+  )
+    return
   try {
     await deleteFile(resolvedCourseUuid.value, moduleUuid, pageUuid)
     toast.success('Course material deleted.')
@@ -1901,7 +1919,15 @@ async function moveModule(index: number, direction: -1 | 1) {
 }
 
 async function handleDeleteModule(moduleUuid: string) {
-  if (!confirm('Are you sure you want to delete this module?')) return
+  if (
+    !(await confirm({
+      title: 'Delete Module',
+      message: 'Are you sure you want to delete this module?',
+      confirmText: 'Delete',
+      confirmColor: 'error',
+    }))
+  )
+    return
   try {
     await deleteModule(resolvedCourseUuid.value, moduleUuid)
     toast.success('Module deleted.')
@@ -1934,7 +1960,15 @@ async function handleAddEnrollment() {
 
 async function handleRemoveEnrollment(enrollment: Enrollment) {
   if (!enrollment.userUuid || enrollment.role !== 'STUDENT') return
-  if (!confirm(`Are you sure you want to remove ${enrollment.userEmail} from this course?`)) return
+  if (
+    !(await confirm({
+      title: 'Remove Participant',
+      message: `Are you sure you want to remove ${enrollment.userEmail} from this course?`,
+      confirmText: 'Remove',
+      confirmColor: 'error',
+    }))
+  )
+    return
   deletingEnrollmentUserUuid.value = enrollment.userUuid
   try {
     await removeEnrollment(resolvedCourseUuid.value, enrollment.userUuid)
@@ -1963,9 +1997,13 @@ async function handleUpdateCourse() {
 
 async function handleDeleteCourse() {
   if (
-    !confirm(
-      'Are you ABSOLUTELY sure you want to delete this course? This action cannot be undone.',
-    )
+    !(await confirm({
+      title: 'Delete Course',
+      message:
+        'Are you ABSOLUTELY sure you want to delete this course? This action cannot be undone.',
+      confirmText: 'Delete Course',
+      confirmColor: 'error',
+    }))
   )
     return
   deletingCourse.value = true
@@ -2086,7 +2124,14 @@ async function handleBulkCreateGroups() {
 }
 
 async function handleDeleteGroup(group: Group) {
-  if (!confirm(`Are you sure you want to delete "${group.name}"? Members will be unassigned.`)) {
+  if (
+    !(await confirm({
+      title: 'Delete Group',
+      message: `Are you sure you want to delete "${group.name}"? Members will be unassigned.`,
+      confirmText: 'Delete Group',
+      confirmColor: 'error',
+    }))
+  ) {
     return
   }
   actionLoading.value[group.uuid] = true
@@ -2115,7 +2160,14 @@ async function handleJoinGroup(group: Group) {
 }
 
 async function handleLeaveGroup(group: Group) {
-  if (!confirm(`Are you sure you want to leave "${group.name}"?`)) {
+  if (
+    !(await confirm({
+      title: 'Leave Group',
+      message: `Are you sure you want to leave "${group.name}"?`,
+      confirmText: 'Leave Group',
+      confirmColor: 'error',
+    }))
+  ) {
     return
   }
   actionLoading.value[group.uuid] = true

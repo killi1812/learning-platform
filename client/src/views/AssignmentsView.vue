@@ -110,6 +110,7 @@ import { useRouter } from 'vue-router'
 import { getMyCourses } from '@/api/course'
 import { listAssignments, deleteQuiz } from '@/api/quiz'
 import { useToast } from '@/composables/useToast'
+import { useConfirm } from '@/composables/useConfirm'
 import QuizListItem from '@/components/QuizListItem.vue'
 import type { Course, CourseRole } from '@/types/course'
 import type { Assignment } from '@/types/quiz'
@@ -122,6 +123,7 @@ interface CourseAssignmentGroup {
 
 const router = useRouter()
 const toast = useToast()
+const { confirm } = useConfirm()
 
 const loading = ref(false)
 const courseAssignments = ref<CourseAssignmentGroup[]>([])
@@ -194,7 +196,15 @@ function handleResultsQuiz(courseUuid: string, assignment: Assignment) {
 }
 
 async function handleDeleteQuiz(courseUuid: string, assignment: Assignment) {
-  if (!confirm(`Delete quiz "${assignment.title}"?`)) return
+  if (
+    !(await confirm({
+      title: 'Delete Quiz',
+      message: `Delete quiz "${assignment.title}"?`,
+      confirmText: 'Delete',
+      confirmColor: 'error',
+    }))
+  )
+    return
   try {
     await deleteQuiz(courseUuid, assignment.uuid)
     toast.success('Quiz deleted.')

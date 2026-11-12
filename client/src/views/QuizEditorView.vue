@@ -245,6 +245,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { getQuizForEdit, publishQuiz, replaceQuestions, updateQuiz } from '@/api/quiz'
 import { useToast } from '@/composables/useToast'
+import { useConfirm } from '@/composables/useConfirm'
 import type { EditQuiz, QuestionType } from '@/types/quiz'
 
 interface DraftQuestion {
@@ -263,6 +264,7 @@ const props = defineProps<{
 
 const router = useRouter()
 const toast = useToast()
+const { confirm } = useConfirm()
 
 const loading = ref(true)
 const saving = ref(false)
@@ -373,7 +375,16 @@ async function save(publish: boolean) {
     toast.error('Add at least one question before publishing.')
     return
   }
-  if (quiz.value?.published && !confirm('Saving resets all student attempts. Continue?')) return
+  if (
+    quiz.value?.published &&
+    !(await confirm({
+      title: 'Reset Attempts',
+      message: 'Saving resets all student attempts. Continue?',
+      confirmText: 'Continue',
+      confirmColor: 'warning',
+    }))
+  )
+    return
 
   saving.value = true
   try {
