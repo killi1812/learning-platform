@@ -42,9 +42,9 @@ func main() {
 	app.Provide(content.NewContentService)
 	app.Provide(notification.NewHub)
 	app.Provide(notification.NewNotificationService)
+	app.Provide(notification.NewNotifier)
 	app.Provide(submission.NewSubmissionService)
 	app.Provide(submission.NewSubmissionPublisher)
-	app.Provide(func(s notification.INotificationService) quiz.Notifier { return s })
 	app.Provide(quiz.NewQuizService)
 	app.Provide(course.NewGroupService)
 

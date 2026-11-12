@@ -59,12 +59,12 @@ type ISubmissionService interface {
 // SubmissionService implements ISubmissionService using GORM.
 type SubmissionService struct {
 	db            *gorm.DB
-	notifications notification.INotificationService
+	notifications notification.INotifier
 	logger        *zap.SugaredLogger
 }
 
 // NewSubmissionService constructs a new SubmissionService.
-func NewSubmissionService(db *gorm.DB, notifications notification.INotificationService, logger *zap.SugaredLogger) ISubmissionService {
+func NewSubmissionService(db *gorm.DB, notifications notification.INotifier, logger *zap.SugaredLogger) ISubmissionService {
 	return &SubmissionService{
 		db:            db,
 		notifications: notifications,

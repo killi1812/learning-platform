@@ -30,8 +30,8 @@ func (f *fixture) router() http.Handler {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	logger := zap.NewNop().Sugar()
-	notifSvc := notification.NewNotificationService(f.db, notification.NewHub(), logger)
-	courseSvc := course.NewCourseService(f.db, storage.NewMemoryStorageService(), notifSvc, logger)
+	notifier := notification.NewNotifier(f.db, notification.NewHub(), logger)
+	courseSvc := course.NewCourseService(f.db, storage.NewMemoryStorageService(), notifier, logger)
 	quiz.NewQuizCtn(f.svc, courseSvc, logger).RegisterEndpoints(r.Group("/api"))
 	return r
 }

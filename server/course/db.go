@@ -70,7 +70,7 @@ type ICourseService interface {
 type CourseService struct {
 	db            *gorm.DB
 	storage       storage.IStorageService
-	notifications notification.INotificationService
+	notifications notification.INotifier
 	logger        *zap.SugaredLogger
 }
 
@@ -89,7 +89,7 @@ type GroupService struct {
 	logger *zap.SugaredLogger
 }
 
-func NewCourseService(db *gorm.DB, storage storage.IStorageService, notifications notification.INotificationService, logger *zap.SugaredLogger) ICourseService {
+func NewCourseService(db *gorm.DB, storage storage.IStorageService, notifications notification.INotifier, logger *zap.SugaredLogger) ICourseService {
 	return &CourseService{
 		db:            db,
 		storage:       storage,

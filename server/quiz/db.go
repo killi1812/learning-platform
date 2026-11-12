@@ -9,6 +9,7 @@ import (
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/content"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/course"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/notification"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -57,11 +58,11 @@ type IQuizService interface {
 
 type QuizService struct {
 	db       *gorm.DB
-	notifier Notifier
+	notifier notification.INotifier
 	logger   *zap.SugaredLogger
 }
 
-func NewQuizService(db *gorm.DB, notifier Notifier, logger *zap.SugaredLogger) IQuizService {
+func NewQuizService(db *gorm.DB, notifier notification.INotifier, logger *zap.SugaredLogger) IQuizService {
 	return &QuizService{db: db, notifier: notifier, logger: logger}
 }
 

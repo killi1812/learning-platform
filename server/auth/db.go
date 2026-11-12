@@ -45,7 +45,7 @@ type AuthService struct {
 	db            *gorm.DB
 	mongoDb       *mongo.Database
 	logger        *zap.SugaredLogger
-	notifications notification.INotificationService
+	notifications notification.INotifier
 }
 
 type AuthServiceParams struct {
@@ -53,7 +53,7 @@ type AuthServiceParams struct {
 	GormDb        *gorm.DB
 	MongoDb       *mongo.Database
 	Logger        *zap.SugaredLogger
-	Notifications notification.INotificationService
+	Notifications notification.INotifier
 }
 
 func NewAuthService(params AuthServiceParams) IAuthService {

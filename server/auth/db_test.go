@@ -75,7 +75,7 @@ func TestAuthService_Unit(t *testing.T) {
 	svc := &AuthService{
 		db:            gormDb,
 		logger:        logger,
-		notifications: notification.NewNotificationService(gormDb, notification.NewHub(), logger),
+		notifications: notification.NewNotifier(gormDb, notification.NewHub(), logger),
 	}
 
 	// Insert test user
@@ -249,7 +249,7 @@ func TestAuthService_Unit(t *testing.T) {
 }
 
 type mockFailingNotifier struct {
-	notification.INotificationService
+	notification.INotifier
 }
 
 func (m *mockFailingNotifier) NotifySystem(recipientUuid uuid.UUID, content notification.NotificationContent) (*notification.Notification, error) {
@@ -273,7 +273,7 @@ func TestAuthService_Integration(t *testing.T) {
 		db:            gormDb,
 		mongoDb:       mongoDb,
 		logger:        logger,
-		notifications: notification.NewNotificationService(gormDb, notification.NewHub(), logger),
+		notifications: notification.NewNotifier(gormDb, notification.NewHub(), logger),
 	}
 
 	// Insert test user

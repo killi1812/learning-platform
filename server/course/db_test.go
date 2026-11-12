@@ -19,8 +19,8 @@ func setupTestDB(t *testing.T) (*CourseService, *user.User, *user.User) {
 	db := testutil.NewSqliteTestDb(t, &user.User{}, &Course{}, &Enrollment{}, &Group{}, &Module{}, &notification.Notification{})
 	logger := zap.NewNop().Sugar()
 	memStorage := storage.NewMemoryStorageService()
-	notifSvc := notification.NewNotificationService(db, notification.NewHub(), logger)
-	svc := &CourseService{db: db, storage: memStorage, notifications: notifSvc, logger: logger}
+	notifier := notification.NewNotifier(db, notification.NewHub(), logger)
+	svc := &CourseService{db: db, storage: memStorage, notifications: notifier, logger: logger}
 
 	teacher := &user.User{
 		Uuid:         uuid.New(),

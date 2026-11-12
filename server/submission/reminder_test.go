@@ -35,8 +35,8 @@ func TestSubmissionService_CheckDeadlineReminders(t *testing.T) {
 
 	logger := zap.NewNop().Sugar()
 	hub := notification.NewHub()
-	notifSvc := notification.NewNotificationService(db, hub, logger)
-	svc := submission.NewSubmissionService(db, notifSvc, logger)
+	notifier := notification.NewNotifier(db, hub, logger)
+	svc := submission.NewSubmissionService(db, notifier, logger)
 
 	c := &course.Course{Title: "Operating Systems", Term: course.TermAutumn, Year: 2026}
 	require.NoError(t, db.Create(c).Error)

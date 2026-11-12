@@ -79,7 +79,7 @@ func setupContentTest(t *testing.T) (*course.Course, *course.Module, content.ICo
 
 	memStorage := storage.NewMemoryStorageService()
 	logger := zap.NewNop().Sugar()
-	notifSvc := notification.NewNotificationService(db, notification.NewHub(), logger)
+	notifSvc := notification.NewNotifier(db, notification.NewHub(), logger)
 	svc := content.NewContentService(db, memStorage, notifSvc, logger)
 
 	return c, m, svc, memStorage, db
@@ -179,7 +179,7 @@ func TestContentService_UploadFile_Failures(t *testing.T) {
 	failingDb := testutil.NewSqliteTestDb(t, &user.User{}, &course.Course{}, &course.Enrollment{}, &course.Module{}, &content.Content{}, &content.File{}, &content.StudentInteraction{}, &notification.Notification{})
 	require.NoError(t, failingDb.Create(c).Error)
 	require.NoError(t, failingDb.Create(m).Error)
-	failingSvc := content.NewContentService(failingDb, failingStorage, notification.NewNotificationService(failingDb, notification.NewHub(), zap.NewNop().Sugar()), zap.NewNop().Sugar())
+	failingSvc := content.NewContentService(failingDb, failingStorage, notification.NewNotifier(failingDb, notification.NewHub(), zap.NewNop().Sugar()), zap.NewNop().Sugar())
 
 	_, err = failingSvc.UploadFile(
 		c.Uuid, m.Uuid,
@@ -276,7 +276,7 @@ func TestContentService_GetFileStream(t *testing.T) {
 	db := testutil.NewSqliteTestDb(t, &user.User{}, &course.Course{}, &course.Enrollment{}, &course.Module{}, &content.Content{}, &content.File{}, &content.StudentInteraction{}, &notification.Notification{})
 	require.NoError(t, db.Create(c).Error)
 	require.NoError(t, db.Create(m).Error)
-	failingSvc := content.NewContentService(db, failingStorage, notification.NewNotificationService(db, notification.NewHub(), zap.NewNop().Sugar()), zap.NewNop().Sugar())
+	failingSvc := content.NewContentService(db, failingStorage, notification.NewNotifier(db, notification.NewHub(), zap.NewNop().Sugar()), zap.NewNop().Sugar())
 	spFail, err := failingSvc.UploadFile(c.Uuid, m.Uuid, "Will Fail", "fail.txt", 4, "text/plain", strings.NewReader("test"), "", "")
 	require.NoError(t, err)
 
@@ -335,7 +335,7 @@ func TestContentService_DeleteFile(t *testing.T) {
 	db := testutil.NewSqliteTestDb(t, &user.User{}, &course.Course{}, &course.Enrollment{}, &course.Module{}, &content.Content{}, &content.File{}, &content.StudentInteraction{}, &notification.Notification{})
 	require.NoError(t, db.Create(c).Error)
 	require.NoError(t, db.Create(m).Error)
-	failingSvc := content.NewContentService(db, failingStorage, notification.NewNotificationService(db, notification.NewHub(), zap.NewNop().Sugar()), zap.NewNop().Sugar())
+	failingSvc := content.NewContentService(db, failingStorage, notification.NewNotifier(db, notification.NewHub(), zap.NewNop().Sugar()), zap.NewNop().Sugar())
 
 	sp2, err := failingSvc.UploadFile(c.Uuid, m.Uuid, "Delete Warn", "del.txt", 3, "text/plain", strings.NewReader("abc"), "", "")
 	require.NoError(t, err)
@@ -451,7 +451,7 @@ func TestContentService_CreateAssignmentAndGet(t *testing.T) {
 		&notification.Notification{},
 	)
 
-	svc := content.NewContentService(db, storage.NewMemoryStorageService(), notification.NewNotificationService(db, notification.NewHub(), zap.NewNop().Sugar()), zap.NewNop().Sugar())
+	svc := content.NewContentService(db, storage.NewMemoryStorageService(), notification.NewNotifier(db, notification.NewHub(), zap.NewNop().Sugar()), zap.NewNop().Sugar())
 
 	c := &course.Course{Title: "DAT250", Term: course.TermAutumn, Year: 2026}
 	assert.NoError(t, db.Create(c).Error)
@@ -562,7 +562,7 @@ func TestContentService_Notifications(t *testing.T) {
 	)
 	memStorage := storage.NewMemoryStorageService()
 	logger := zap.NewNop().Sugar()
-	notifSvc := notification.NewNotificationService(db, notification.NewHub(), logger)
+	notifSvc := notification.NewNotifier(db, notification.NewHub(), logger)
 	svc := content.NewContentService(db, memStorage, notifSvc, logger)
 
 	c := &course.Course{Title: "Cloud Computing", Term: course.TermAutumn, Year: 2026}
