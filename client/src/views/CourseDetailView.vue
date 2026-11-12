@@ -697,16 +697,26 @@
                   <v-btn
                     v-else
                     block
-                    color="primary"
+                    :color="
+                      !myGroup && group.members.length < group.maxMembers ? 'primary' : undefined
+                    "
                     :disabled="
                       !!myGroup ||
                       group.members.length >= group.maxMembers ||
                       !!actionLoading[group.uuid]
                     "
                     :loading="!!actionLoading[group.uuid]"
-                    prepend-icon="mdi-account-plus"
+                    :prepend-icon="
+                      group.members.length >= group.maxMembers
+                        ? 'mdi-account-cancel'
+                        : myGroup
+                          ? 'mdi-account-check'
+                          : 'mdi-account-plus'
+                    "
                     size="small"
-                    variant="elevated"
+                    :variant="
+                      !myGroup && group.members.length < group.maxMembers ? 'elevated' : 'tonal'
+                    "
                     @click="handleJoinGroup(group)"
                   >
                     {{
