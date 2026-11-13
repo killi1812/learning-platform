@@ -26,6 +26,8 @@ var (
 	ErrGroupModeLocked     = errors.New("cannot change group submission setting after submissions have been made")
 )
 
+const maxCleanFilenameLen = 200
+
 type IContentService interface {
 	UploadFile(courseUuid, moduleUuid uuid.UUID, title, fileName string, fileSize int64, contentType string, fileReader io.Reader, description string, sourceUrl string) (*File, error)
 	GetFile(courseUuid, moduleUuid, contentUuid, userUuid uuid.UUID, isPrivileged bool) (*File, error)
@@ -206,8 +208,8 @@ func (s *ContentService) UploadFile(
 			}
 			return r
 		}, cleanName)
-		if len(cleanName) > 200 {
-			cleanName = cleanName[:200]
+		if len(cleanName) > maxCleanFilenameLen {
+			cleanName = cleanName[:maxCleanFilenameLen]
 		}
 		fileName = cleanName
 	}

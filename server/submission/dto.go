@@ -12,11 +12,18 @@ type CreateSubmissionDto struct {
 	PayloadURL  string      `json:"payloadUrl" binding:"required,http_url,max=2048" example:"https://git.app.uib.no/student/exercise1.git"`
 }
 
+// SubmissionStatus represents the queuing or processing state of an accepted submission.
+type SubmissionStatus string
+
+const (
+	SubmissionStatusQueued SubmissionStatus = "QUEUED"
+)
+
 // SubmissionAcceptedDto is the immediate 202 response confirming the submission has been queued.
 type SubmissionAcceptedDto struct {
-	Uuid        uuid.UUID `json:"uuid" example:"a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"`
-	SubmittedAt time.Time `json:"submittedAt"`
-	Status      string    `json:"status" example:"QUEUED"`
+	Uuid        uuid.UUID        `json:"uuid" example:"a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"`
+	SubmittedAt time.Time        `json:"submittedAt"`
+	Status      SubmissionStatus `json:"status" example:"QUEUED"`
 }
 
 // UploadTicketDto is returned when initiating a two-phase file submission.

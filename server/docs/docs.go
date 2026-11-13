@@ -5840,7 +5840,11 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "status": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/submission.SubmissionStatus"
+                        }
+                    ],
                     "example": "QUEUED"
                 },
                 "submittedAt": {
@@ -5898,6 +5902,15 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
+        },
+        "submission.SubmissionStatus": {
+            "type": "string",
+            "enum": [
+                "QUEUED"
+            ],
+            "x-enum-varnames": [
+                "SubmissionStatusQueued"
+            ]
         },
         "submission.UploadTicketDto": {
             "type": "object",

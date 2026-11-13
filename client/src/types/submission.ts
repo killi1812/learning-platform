@@ -1,4 +1,5 @@
 export type PayloadType = 'URL' | 'FILE'
+export type SubmissionStatus = 'QUEUED'
 
 export interface UploadTicket {
   ticketUuid: string
@@ -9,7 +10,7 @@ export interface UploadTicket {
 export interface SubmissionAccepted {
   uuid: string
   submittedAt: string
-  status: string
+  status: SubmissionStatus
 }
 
 export interface Submission {

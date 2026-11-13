@@ -31,6 +31,11 @@ var (
 	ErrGroupChanged              = errors.New("group membership has changed since upload was initiated")
 )
 
+const (
+	initialTicketExpiry  = 30 * time.Minute
+	extendTicketDuration = 15 * time.Minute
+)
+
 // SubmissionTarget contains database primary IDs for publishing the submission message.
 type SubmissionTarget struct {
 	CourseID     uint
@@ -225,7 +230,7 @@ func (s *SubmissionService) InitFileSubmission(courseUuid, contentUuid, userUuid
 		UserEmail:    target.UserEmail,
 		GroupID:      target.GroupID,
 		SubmittedAt:  submittedAt,
-		ExpiresAt:    submittedAt.Add(30 * time.Minute),
+		ExpiresAt:    submittedAt.Add(initialTicketExpiry),
 		Consumed:     false,
 	}
 
@@ -272,8 +277,8 @@ func (s *SubmissionService) ValidateAndExtendTicket(ticketUuid, courseUuid, cont
 	}
 
 	// Extend ticket expiration by 15 minutes during active transfer so ongoing slow uploads stay valid
-	if ticket.ExpiresAt.Sub(now) < 15*time.Minute {
-		ticket.ExpiresAt = now.Add(15 * time.Minute)
+	if ticket.ExpiresAt.Sub(now) < extendTicketDuration {
+		ticket.ExpiresAt = now.Add(extendTicketDuration)
 		_ = s.db.Model(&ticket).Update("expires_at", ticket.ExpiresAt).Error
 	}
 

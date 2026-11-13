@@ -281,7 +281,7 @@ func TestSubmissionCtn_Submit(t *testing.T) {
 		var resp submission.SubmissionAcceptedDto
 		assert.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 		assert.NotEqual(t, uuid.Nil, resp.Uuid)
-		assert.Equal(t, "QUEUED", resp.Status)
+		assert.Equal(t, submission.SubmissionStatusQueued, resp.Status)
 		assert.False(t, resp.SubmittedAt.IsZero())
 
 		assert.NotNil(t, mockPub.lastMsg)

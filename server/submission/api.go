@@ -20,6 +20,29 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	maxUploadSize          int64         = 200 * 1024 * 1024 // 200MB limit for student submissions
+	streamDeadlineDuration time.Duration = 30 * time.Second
+	maxCleanFilenameLength int           = 200
+)
+
+var allowedSubmissionExtensions = map[string]string{
+	".pdf":    "application/pdf",
+	".docx":   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+	".pptx":   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+	".txt":    "text/plain",
+	".md":     "text/plain",
+	".png":    "image/png",
+	".jpg":    "image/jpeg",
+	".jpeg":   "image/jpeg",
+	".gif":    "image/gif",
+	".webp":   "image/webp",
+	".json":   "application/json",
+	".zip":    "application/zip",
+	".tar.gz": "application/gzip",
+	".tgz":    "application/gzip",
+}
+
 // SubmissionCtn provides HTTP endpoints for assignment submissions.
 type SubmissionCtn struct {
 	Service        ISubmissionService
@@ -178,7 +201,7 @@ func (ctn *SubmissionCtn) submit(c *gin.Context) {
 	c.JSON(http.StatusAccepted, SubmissionAcceptedDto{
 		Uuid:        subUuid,
 		SubmittedAt: submittedAt,
-		Status:      "QUEUED",
+		Status:      SubmissionStatusQueued,
 	})
 }
 
@@ -247,8 +270,8 @@ func (a *activityReader) Read(p []byte) (int, error) {
 			return n, errors.New("file size limit exceeded")
 		}
 		if a.rc != nil {
-			_ = a.rc.SetReadDeadline(time.Now().Add(30 * time.Second))
-			_ = a.rc.SetWriteDeadline(time.Now().Add(30 * time.Second))
+			_ = a.rc.SetReadDeadline(time.Now().Add(streamDeadlineDuration))
+			_ = a.rc.SetWriteDeadline(time.Now().Add(streamDeadlineDuration))
 		}
 	}
 	return n, err
@@ -308,11 +331,9 @@ func (ctn *SubmissionCtn) uploadFileSubmission(c *gin.Context) {
 		return
 	}
 
-	// 200MB limit
-	const maxUploadSize = 200 * 1024 * 1024
 	rc := http.NewResponseController(c.Writer)
-	_ = rc.SetReadDeadline(time.Now().Add(30 * time.Second))
-	_ = rc.SetWriteDeadline(time.Now().Add(30 * time.Second))
+	_ = rc.SetReadDeadline(time.Now().Add(streamDeadlineDuration))
+	_ = rc.SetWriteDeadline(time.Now().Add(streamDeadlineDuration))
 
 	mr, err := c.Request.MultipartReader()
 	if err != nil {
@@ -325,24 +346,6 @@ func (ctn *SubmissionCtn) uploadFileSubmission(c *gin.Context) {
 	var contentType string
 	var storageKey string
 	var bytesRead int64
-
-	// TODO: extract to const
-	allowedExts := map[string]string{
-		".pdf":    "application/pdf",
-		".docx":   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-		".pptx":   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-		".txt":    "text/plain",
-		".md":     "text/plain",
-		".png":    "image/png",
-		".jpg":    "image/jpeg",
-		".jpeg":   "image/jpeg",
-		".gif":    "image/gif",
-		".webp":   "image/webp",
-		".json":   "application/json",
-		".zip":    "application/zip",
-		".tar.gz": "application/gzip",
-		".tgz":    "application/gzip",
-	}
 
 	fileFound := false
 	for {
@@ -372,7 +375,7 @@ func (ctn *SubmissionCtn) uploadFileSubmission(c *gin.Context) {
 				ext = ".tar.gz"
 			}
 
-			expectedType, allowed := allowedExts[ext]
+			expectedType, allowed := allowedSubmissionExtensions[ext]
 			if !allowed {
 				part.Close()
 				ctn.logger.Errorf("Upload rejected: unsupported file extension %s", ext)
@@ -387,8 +390,8 @@ func (ctn *SubmissionCtn) uploadFileSubmission(c *gin.Context) {
 				}
 				return r
 			}, cleanName)
-			if len(cleanName) > 200 {
-				cleanName = cleanName[:200]
+			if len(cleanName) > maxCleanFilenameLength {
+				cleanName = cleanName[:maxCleanFilenameLength]
 			}
 
 			fileName = cleanName
@@ -489,7 +492,7 @@ func (ctn *SubmissionCtn) uploadFileSubmission(c *gin.Context) {
 	c.JSON(http.StatusAccepted, SubmissionAcceptedDto{
 		Uuid:        ticket.Uuid,
 		SubmittedAt: ticket.SubmittedAt,
-		Status:      "QUEUED", // TODO: extract to type and  consts
+		Status:      SubmissionStatusQueued,
 	})
 }
 

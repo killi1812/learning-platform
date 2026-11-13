@@ -18,6 +18,26 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	maxContentUploadSize int64 = 50 * 1024 * 1024 // 50MB
+	maxTitleLength       int   = 255
+	minTitleLength       int   = 2
+)
+
+var allowedContentExtensions = map[string]string{
+	".pdf":  "application/pdf",
+	".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+	".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+	".txt":  "text/plain",
+	".md":   "text/plain",
+	".png":  "image/png",
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".gif":  "image/gif",
+	".webp": "image/webp",
+	".json": "application/json",
+}
+
 type ContentCtn struct {
 	contentService IContentService
 	courseService  course.ICourseService
@@ -118,20 +138,18 @@ func (ctn *ContentCtn) upload(c *gin.Context) {
 		return
 	}
 
-	// TODO: extract to const
-	const maxUploadSize = 50 * 1024 * 1024 // 50MB
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxUploadSize)
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxContentUploadSize)
 
 	title := c.PostForm("title")
 	description := c.PostForm("description")
 	sourceUrl := c.PostForm("sourceUrl")
 
-	if len(title) > 255 {
+	if len(title) > maxTitleLength {
 		ctn.logger.Errorf("Title exceeds maximum length of 255 characters (length=%d)", len(title))
 		ginutil.RespondWithError(c, http.StatusBadRequest, "Title exceeds maximum length of 255 characters")
 		return
 	}
-	if title != "" && len(title) < 2 {
+	if title != "" && len(title) < minTitleLength {
 		ctn.logger.Errorf("Title must be at least 2 characters (length=%d)", len(title))
 		ginutil.RespondWithError(c, http.StatusBadRequest, "Title must be at least 2 characters")
 		return
@@ -153,7 +171,7 @@ func (ctn *ContentCtn) upload(c *gin.Context) {
 
 	fileHeader, err := c.FormFile("file")
 	if err == nil && fileHeader != nil {
-		if fileHeader.Size > maxUploadSize {
+		if fileHeader.Size > maxContentUploadSize {
 			ctn.logger.Errorf("File size exceeds 50MB limit: %d bytes", fileHeader.Size)
 			ginutil.RespondWithError(c, http.StatusBadRequest, "File size exceeds 50MB limit")
 			return
@@ -167,21 +185,7 @@ func (ctn *ContentCtn) upload(c *gin.Context) {
 			return
 		}
 
-		allowedExts := map[string]string{
-			".pdf":  "application/pdf",
-			".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-			".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-			".txt":  "text/plain",
-			".md":   "text/plain",
-			".png":  "image/png",
-			".jpg":  "image/jpeg",
-			".jpeg": "image/jpeg",
-			".gif":  "image/gif",
-			".webp": "image/webp",
-			".json": "application/json",
-		}
-
-		expectedType, allowed := allowedExts[ext]
+		expectedType, allowed := allowedContentExtensions[ext]
 		if !allowed {
 			ctn.logger.Errorf("Unsupported file extension: %s", ext)
 			ginutil.RespondWithError(c, http.StatusBadRequest, "Unsupported file extension")
