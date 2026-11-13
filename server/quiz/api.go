@@ -55,15 +55,19 @@ func (ctn *QuizCtn) handleError(c *gin.Context, err error) bool {
 		errors.Is(err, ErrNoActiveAttempt),
 		errors.Is(err, ErrUserNotFound),
 		errors.Is(err, course.ErrCourseNotFound):
+		ctn.logger.Errorf("Quiz not found: %v", err)
 		ginutil.RespondWithError(c, http.StatusNotFound, err.Error())
 	case errors.Is(err, ErrQuizClosed):
+		ctn.logger.Errorf("Quiz forbidden: %v", err)
 		ginutil.RespondWithError(c, http.StatusForbidden, err.Error())
 	case errors.Is(err, ErrNoAttemptsLeft):
+		ctn.logger.Errorf("Quiz conflict: %v", err)
 		ginutil.RespondWithError(c, http.StatusConflict, err.Error())
 	case errors.Is(err, ErrInvalidQuestion),
 		errors.Is(err, ErrInvalidAnswer),
 		errors.Is(err, ErrInvalidQuiz),
 		errors.Is(err, ErrNoQuestions):
+		ctn.logger.Errorf("Quiz bad request: %v", err)
 		ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
 	default:
 		ctn.logger.Errorf("Unexpected quiz error: %v", err)
@@ -101,6 +105,7 @@ func (ctn *QuizCtn) studentParams(c *gin.Context) (courseUuid, contentUuid, user
 	}
 	userUuid, err := authutils.GetUserUUID(c)
 	if err != nil {
+		ctn.logger.Errorf("Failed to retrieve user UUID from context: %v", err)
 		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
 		return courseUuid, contentUuid, userUuid, false
 	}
@@ -139,6 +144,7 @@ func (ctn *QuizCtn) create(c *gin.Context) {
 	}
 	var req CreateQuizRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		ctn.logger.Errorf("Failed to bind CreateQuiz payload: %v", err)
 		ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid request body")
 		return
 	}
@@ -201,6 +207,7 @@ func (ctn *QuizCtn) update(c *gin.Context) {
 	}
 	var req UpdateQuizRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		ctn.logger.Errorf("Failed to bind UpdateQuiz payload: %v", err)
 		ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid request body")
 		return
 	}
@@ -261,6 +268,7 @@ func (ctn *QuizCtn) replaceQuestions(c *gin.Context) {
 	}
 	var req ReplaceQuestionsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		ctn.logger.Errorf("Failed to bind ReplaceQuestions payload: %v", err)
 		ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid request body")
 		return
 	}
@@ -350,6 +358,7 @@ func (ctn *QuizCtn) listAssignments(c *gin.Context) {
 	}
 	userUuid, err := authutils.GetUserUUID(c)
 	if err != nil {
+		ctn.logger.Errorf("Failed to retrieve user UUID from context: %v", err)
 		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
@@ -448,6 +457,7 @@ func (ctn *QuizCtn) saveAnswer(c *gin.Context) {
 	}
 	var req SaveAnswerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		ctn.logger.Errorf("Failed to bind SaveAnswer payload: %v", err)
 		ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid request body")
 		return
 	}

@@ -61,8 +61,11 @@ func (u *UserCtn) get(c *gin.Context) {
 	}
 
 	user, err := u.UserCrud.Read(userUuid)
-	if ginutil.HandleServiceError(c, err, ErrRecordNotFound) {
-		return
+	if err != nil {
+		u.logger.Errorf("Failed to read user %s: %v", userUuid, err)
+		if ginutil.HandleServiceError(c, err, ErrRecordNotFound) {
+			return
+		}
 	}
 
 	uDto := UserDto{}
@@ -90,12 +93,14 @@ func (u *UserCtn) create(c *gin.Context) {
 
 	newUser, err := inputDto.ToModel()
 	if err != nil {
+		u.logger.Errorf("Failed to convert NewUserDto to model: %v", err)
 		ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	user, err := u.UserCrud.Create(newUser, inputDto.Password)
 	if err != nil {
+		u.logger.Errorf("Failed to create user: %v", err)
 		ginutil.RespondWithError(c, http.StatusInternalServerError, "Failed to create user")
 		return
 	}
@@ -136,13 +141,17 @@ func (u *UserCtn) update(c *gin.Context) {
 
 	newUser, err := inputDto.ToModel()
 	if err != nil {
+		u.logger.Errorf("Failed to convert UserDto to model: %v", err)
 		ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	user, err := u.UserCrud.Update(userUuid, newUser)
-	if ginutil.HandleServiceError(c, err, ErrRecordNotFound) {
-		return
+	if err != nil {
+		u.logger.Errorf("Failed to update user %s: %v", userUuid, err)
+		if ginutil.HandleServiceError(c, err, ErrRecordNotFound) {
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, inputDto.FromModel(user))
@@ -169,8 +178,11 @@ func (u *UserCtn) delete(c *gin.Context) {
 	}
 
 	err := u.UserCrud.Delete(userUuid)
-	if ginutil.HandleServiceError(c, err, ErrRecordNotFound) {
-		return
+	if err != nil {
+		u.logger.Errorf("Failed to delete user %s: %v", userUuid, err)
+		if ginutil.HandleServiceError(c, err, ErrRecordNotFound) {
+			return
+		}
 	}
 
 	c.Status(http.StatusNoContent)
@@ -197,8 +209,11 @@ func (u *UserCtn) getLoggedInUser(c *gin.Context) {
 	}
 
 	user, err := u.UserCrud.Read(userUuid)
-	if ginutil.HandleServiceError(c, err, ErrRecordNotFound) {
-		return
+	if err != nil {
+		u.logger.Errorf("Failed to read user %s: %v", userUuid, err)
+		if ginutil.HandleServiceError(c, err, ErrRecordNotFound) {
+			return
+		}
 	}
 
 	userDto := UserDto{}

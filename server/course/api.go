@@ -85,12 +85,14 @@ func (ctn *CourseCtn) handleError(c *gin.Context, err error, fallbackMsg string)
 		errors.Is(err, ErrEnrollmentNotFound),
 		errors.Is(err, ErrUserNotFound),
 		errors.Is(err, ErrGroupNotFound):
+		ctn.logger.Errorf("%s (not found): %v", fallbackMsg, err)
 		ginutil.RespondWithError(c, http.StatusNotFound, err.Error())
 	case errors.Is(err, ErrAlreadyEnrolled),
 		errors.Is(err, ErrUserAlreadyInGroup),
 		errors.Is(err, ErrGroupFull),
 		errors.Is(err, ErrCourseGroupLimitExceeded),
 		errors.Is(err, cerror.ErrGroupNameAlreadyTaken):
+		ctn.logger.Errorf("%s (conflict): %v", fallbackMsg, err)
 		ginutil.RespondWithError(c, http.StatusConflict, err.Error())
 	case errors.Is(err, ErrCannotRemoveTeacher),
 		errors.Is(err, ErrSelfPrerequisite),
@@ -99,6 +101,7 @@ func (ctn *CourseCtn) handleError(c *gin.Context, err error, fallbackMsg string)
 		errors.Is(err, ErrInvalidReorderList),
 		errors.Is(err, ErrUserNotInGroup),
 		errors.Is(err, ErrGroupMaxMembersTooSmall):
+		ctn.logger.Errorf("%s (bad request): %v", fallbackMsg, err)
 		ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
 	default:
 		ctn.logger.Errorf("%s: %v", fallbackMsg, err)
@@ -172,6 +175,7 @@ func (ctn *CourseCtn) GetGroup(c *gin.Context) {
 	}
 
 	if group.Course == nil {
+		ctn.logger.Errorf("Failed to fetch group %s: group course association missing", groupUuid)
 		ginutil.RespondWithError(c, http.StatusInternalServerError, "Group course association missing")
 		return
 	}
@@ -203,12 +207,14 @@ func (ctn *CourseCtn) GetGroup(c *gin.Context) {
 func (ctn *CourseCtn) CreateGroup(c *gin.Context) {
 	var input CreateGroupDto
 	if err := c.ShouldBindJSON(&input); err != nil {
+		ctn.logger.Errorf("Failed to bind CreateGroup payload: %v", err)
 		ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid request payload: "+err.Error())
 		return
 	}
 
 	courseUuid, err := uuid.Parse(input.CourseUuid)
 	if err != nil {
+		ctn.logger.Errorf("Failed to parse course UUID %q: %v", input.CourseUuid, err)
 		ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid course UUID")
 		return
 	}
@@ -244,12 +250,14 @@ func (ctn *CourseCtn) CreateGroup(c *gin.Context) {
 func (ctn *CourseCtn) BulkCreateGroups(c *gin.Context) {
 	var input BulkCreateGroupsDto
 	if err := c.ShouldBindJSON(&input); err != nil {
+		ctn.logger.Errorf("Failed to bind BulkCreateGroups payload: %v", err)
 		ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid request payload: "+err.Error())
 		return
 	}
 
 	courseUuid, err := uuid.Parse(input.CourseUuid)
 	if err != nil {
+		ctn.logger.Errorf("Failed to parse course UUID %q: %v", input.CourseUuid, err)
 		ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid course UUID")
 		return
 	}
@@ -301,6 +309,7 @@ func (ctn *CourseCtn) PatchGroup(c *gin.Context) {
 	}
 
 	if group.Course == nil {
+		ctn.logger.Errorf("Failed to patch group %s: group course association missing", groupUuid)
 		ginutil.RespondWithError(c, http.StatusInternalServerError, "Group course association missing")
 		return
 	}
@@ -311,6 +320,7 @@ func (ctn *CourseCtn) PatchGroup(c *gin.Context) {
 
 	var input UpdateGroupDto
 	if err := c.ShouldBindJSON(&input); err != nil {
+		ctn.logger.Errorf("Failed to bind PatchGroup payload: %v", err)
 		ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid request payload: "+err.Error())
 		return
 	}
@@ -350,6 +360,7 @@ func (ctn *CourseCtn) DeleteGroup(c *gin.Context) {
 	}
 
 	if group.Course == nil {
+		ctn.logger.Errorf("Failed to delete group %s: group course association missing", groupUuid)
 		ginutil.RespondWithError(c, http.StatusInternalServerError, "Group course association missing")
 		return
 	}
@@ -390,6 +401,7 @@ func (ctn *CourseCtn) AddStudentToGroup(c *gin.Context) {
 
 	userUuid, err := authutils.GetUserUUID(c)
 	if err != nil {
+		ctn.logger.Errorf("Failed to retrieve user UUID from context: %v", err)
 		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
@@ -400,6 +412,7 @@ func (ctn *CourseCtn) AddStudentToGroup(c *gin.Context) {
 	}
 
 	if group.Course == nil {
+		ctn.logger.Errorf("Failed to join group %s: group course association missing", groupUuid)
 		ginutil.RespondWithError(c, http.StatusInternalServerError, "Group course association missing")
 		return
 	}
@@ -439,6 +452,7 @@ func (ctn *CourseCtn) StudentLeavesGroup(c *gin.Context) {
 
 	userUuid, err := authutils.GetUserUUID(c)
 	if err != nil {
+		ctn.logger.Errorf("Failed to retrieve user UUID from context: %v", err)
 		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
@@ -449,6 +463,7 @@ func (ctn *CourseCtn) StudentLeavesGroup(c *gin.Context) {
 	}
 
 	if group.Course == nil {
+		ctn.logger.Errorf("Failed to leave group %s: group course association missing", groupUuid)
 		ginutil.RespondWithError(c, http.StatusInternalServerError, "Group course association missing")
 		return
 	}
@@ -553,18 +568,21 @@ func (ctn *CourseCtn) get(c *gin.Context) {
 func (ctn *CourseCtn) create(c *gin.Context) {
 	userUuid, err := authutils.GetUserUUID(c)
 	if err != nil {
+		ctn.logger.Errorf("Failed to retrieve user UUID from context: %v", err)
 		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
 	var input CreateCourseDto
 	if err := c.ShouldBindJSON(&input); err != nil {
+		ctn.logger.Errorf("Failed to bind CreateCourse payload: %v", err)
 		ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid request payload: "+err.Error())
 		return
 	}
 
 	model, err := input.ToModel()
 	if err != nil {
+		ctn.logger.Errorf("Failed to convert CreateCourse DTO to model: %v", err)
 		ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -572,6 +590,7 @@ func (ctn *CourseCtn) create(c *gin.Context) {
 	created, err := ctn.CourseService.CreateCourse(model, userUuid)
 	if err != nil {
 		if errors.Is(err, ErrUserNotFound) {
+			ctn.logger.Errorf("User %s not found when creating course: %v", userUuid, err)
 			ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
 			return
 		}
@@ -612,19 +631,24 @@ func (ctn *CourseCtn) update(c *gin.Context) {
 
 	var input UpdateCourseDto
 	if err := c.ShouldBindJSON(&input); err != nil {
+		ctn.logger.Errorf("Failed to bind UpdateCourse payload: %v", err)
 		ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid request payload: "+err.Error())
 		return
 	}
 
 	model, err := input.ToModel()
 	if err != nil {
+		ctn.logger.Errorf("Failed to convert UpdateCourse DTO to model: %v", err)
 		ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	updated, err := ctn.CourseService.UpdateCourse(courseUuid, model)
-	if ginutil.HandleServiceError(c, err, ErrCourseNotFound) {
-		return
+	if err != nil {
+		ctn.logger.Errorf("Failed to update course %s: %v", courseUuid, err)
+		if ginutil.HandleServiceError(c, err, ErrCourseNotFound) {
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, CourseDto{}.FromModel(updated))
@@ -686,6 +710,7 @@ func (ctn *CourseCtn) selfEnroll(c *gin.Context) {
 
 	userUuid, err := authutils.GetUserUUID(c)
 	if err != nil {
+		ctn.logger.Errorf("Failed to retrieve user UUID from context: %v", err)
 		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
@@ -720,6 +745,7 @@ func (ctn *CourseCtn) withdraw(c *gin.Context) {
 
 	userUuid, err := authutils.GetUserUUID(c)
 	if err != nil {
+		ctn.logger.Errorf("Failed to retrieve user UUID from context: %v", err)
 		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
@@ -745,6 +771,7 @@ func (ctn *CourseCtn) withdraw(c *gin.Context) {
 func (ctn *CourseCtn) getMyCourses(c *gin.Context) {
 	userUuid, err := authutils.GetUserUUID(c)
 	if err != nil {
+		ctn.logger.Errorf("Failed to retrieve user UUID from context: %v", err)
 		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
@@ -796,8 +823,11 @@ func (ctn *CourseCtn) getEnrollments(c *gin.Context) {
 	}
 
 	enrollments, err := ctn.CourseService.GetCourseEnrollments(courseUuid)
-	if ginutil.HandleServiceError(c, err, ErrCourseNotFound) {
-		return
+	if err != nil {
+		ctn.logger.Errorf("Failed to get course enrollments for %s: %v", courseUuid, err)
+		if ginutil.HandleServiceError(c, err, ErrCourseNotFound) {
+			return
+		}
 	}
 
 	dtos := make([]EnrollmentDto, 0, len(enrollments))
@@ -838,6 +868,7 @@ func (ctn *CourseCtn) addEnrollment(c *gin.Context) {
 
 	var input AddEnrollmentDto
 	if err := c.ShouldBindJSON(&input); err != nil {
+		ctn.logger.Errorf("Failed to bind AddEnrollment payload: %v", err)
 		ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid request payload: "+err.Error())
 		return
 	}
@@ -912,8 +943,11 @@ func (ctn *CourseCtn) listModules(c *gin.Context) {
 	}
 
 	modules, err := ctn.CourseService.ListModules(courseUuid)
-	if ginutil.HandleServiceError(c, err, ErrCourseNotFound) {
-		return
+	if err != nil {
+		ctn.logger.Errorf("Failed to list modules for course %s: %v", courseUuid, err)
+		if ginutil.HandleServiceError(c, err, ErrCourseNotFound) {
+			return
+		}
 	}
 
 	dtos := make([]ModuleDto, 0, len(modules))
@@ -991,12 +1025,14 @@ func (ctn *CourseCtn) createModule(c *gin.Context) {
 
 	var input CreateModuleDto
 	if err := c.ShouldBindJSON(&input); err != nil {
+		ctn.logger.Errorf("Failed to bind CreateModule payload: %v", err)
 		ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid request payload: "+err.Error())
 		return
 	}
 
 	inputModel, err := input.ToModel()
 	if err != nil {
+		ctn.logger.Errorf("Failed to convert CreateModule DTO to model: %v", err)
 		ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -1044,12 +1080,14 @@ func (ctn *CourseCtn) updateModule(c *gin.Context) {
 
 	var input UpdateModuleDto
 	if err := c.ShouldBindJSON(&input); err != nil {
+		ctn.logger.Errorf("Failed to bind UpdateModule payload: %v", err)
 		ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid request payload: "+err.Error())
 		return
 	}
 
 	inputModel, err := input.ToModel()
 	if err != nil {
+		ctn.logger.Errorf("Failed to convert UpdateModule DTO to model: %v", err)
 		ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -1129,6 +1167,7 @@ func (ctn *CourseCtn) reorderModules(c *gin.Context) {
 
 	var input ReorderModulesDto
 	if err := c.ShouldBindJSON(&input); err != nil {
+		ctn.logger.Errorf("Failed to bind ReorderModules payload: %v", err)
 		ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid request payload: "+err.Error())
 		return
 	}

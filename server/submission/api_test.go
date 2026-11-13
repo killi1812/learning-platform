@@ -332,6 +332,12 @@ func TestSubmissionCtn_Submit(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, recFile.Code)
 	})
 
+	t.Run("400 Bad Request on invalid JSON body", func(t *testing.T) {
+		r := setupTestRouter(&mockSubmissionService{}, &mockPublisher{})
+		rec := doReq(r, http.MethodPost, path, auth, "{malformed json")
+		assert.Equal(t, http.StatusBadRequest, rec.Code)
+	})
+
 	t.Run("400 Bad Request on unsupported FILE payloadType", func(t *testing.T) {
 		r := setupTestRouter(&mockSubmissionService{}, &mockPublisher{})
 		rec := doReq(r, http.MethodPost, path, auth, submission.CreateSubmissionDto{
@@ -680,6 +686,73 @@ func TestSubmissionCtn_UploadFileSubmission(t *testing.T) {
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, req)
 		assert.Equal(t, http.StatusBadRequest, rec.Code)
+
+		badContentUrl := fmt.Sprintf("/api/course/%s/content/bad-uuid/submission/file/upload?ticket=%s", courseUuid, ticketUuid)
+		req2, err := createMultipartFileRequest(badContentUrl, "file", "project.pdf", []byte("%PDF-content"), auth)
+		assert.NoError(t, err)
+
+		rec2 := httptest.NewRecorder()
+		r.ServeHTTP(rec2, req2)
+		assert.Equal(t, http.StatusBadRequest, rec2.Code)
+	})
+
+	t.Run("400 Bad Request on non-multipart request", func(t *testing.T) {
+		r := setupTestRouter(&mockSubmissionService{}, &mockPublisher{})
+		req, _ := http.NewRequest(http.MethodPost, url, strings.NewReader("not multipart"))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", auth)
+
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusBadRequest, rec.Code)
+		assert.Contains(t, rec.Body.String(), "Invalid multipart request")
+	})
+
+	t.Run("400 Bad Request on empty filename", func(t *testing.T) {
+		r := setupTestRouter(&mockSubmissionService{}, &mockPublisher{})
+		req, err := createMultipartFileRequest(url, "file", "", []byte("pdf content"), auth)
+		assert.NoError(t, err)
+
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusBadRequest, rec.Code)
+		assert.Contains(t, rec.Body.String(), "Filename cannot be empty")
+	})
+
+	t.Run("400 Bad Request on unsupported file extension", func(t *testing.T) {
+		r := setupTestRouter(&mockSubmissionService{}, &mockPublisher{})
+		req, err := createMultipartFileRequest(url, "file", "bad.exe", []byte("bad content"), auth)
+		assert.NoError(t, err)
+
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusBadRequest, rec.Code)
+		assert.Contains(t, rec.Body.String(), "Unsupported file extension")
+	})
+
+	t.Run("202 Accepted sanitizes special characters and truncates long filename", func(t *testing.T) {
+		memStorage := storage.NewMemoryStorageService()
+		pub := &mockPublisher{}
+		r := setupTestRouterWithStorage(&mockSubmissionService{}, pub, memStorage, &mockCourseServiceForSubmission{})
+
+		longName := strings.Repeat("a", 210) + "#?name/test.pdf"
+		req, err := createMultipartFileRequest(url, "file", longName, []byte("%PDF-content"), auth)
+		assert.NoError(t, err)
+
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusAccepted, rec.Code)
+	})
+
+	t.Run("400 Bad Request when form field name is not file", func(t *testing.T) {
+		r := setupTestRouter(&mockSubmissionService{}, &mockPublisher{})
+		req, err := createMultipartFileRequest(url, "wrong_field", "report.pdf", []byte("%PDF-content"), auth)
+		assert.NoError(t, err)
+
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusBadRequest, rec.Code)
+		assert.Contains(t, rec.Body.String(), "No file provided in form field 'file'")
 	})
 
 	t.Run("400 Bad Request when ticket is already consumed", func(t *testing.T) {
@@ -884,6 +957,10 @@ func TestSubmissionCtn_ListMySubmissions(t *testing.T) {
 		badPath := fmt.Sprintf("/api/course/bad-uuid/content/%s/submission/my", contentUuid)
 		rec := doReq(r, http.MethodGet, badPath, auth, nil)
 		assert.Equal(t, http.StatusBadRequest, rec.Code)
+
+		badContentPath := fmt.Sprintf("/api/course/%s/content/bad-uuid/submission/my", courseUuid)
+		rec2 := doReq(r, http.MethodGet, badContentPath, auth, nil)
+		assert.Equal(t, http.StatusBadRequest, rec2.Code)
 	})
 
 	t.Run("500 Internal Server Error when service fails", func(t *testing.T) {
@@ -910,6 +987,10 @@ func TestSubmissionCtn_ListCourseSubmissions(t *testing.T) {
 		badPath := fmt.Sprintf("/api/course/bad-uuid/content/%s/submission", contentUuid)
 		rec := doReq(r, http.MethodGet, badPath, auth, nil)
 		assert.Equal(t, http.StatusBadRequest, rec.Code)
+
+		badContentPath := fmt.Sprintf("/api/course/%s/content/bad-uuid/submission", courseUuid)
+		rec2 := doReq(r, http.MethodGet, badContentPath, auth, nil)
+		assert.Equal(t, http.StatusBadRequest, rec2.Code)
 	})
 
 	t.Run("403 Forbidden when not teacher or admin", func(t *testing.T) {
@@ -971,6 +1052,14 @@ func TestSubmissionCtn_DownloadSubmissionFile(t *testing.T) {
 		badPath := fmt.Sprintf("/api/course/bad-uuid/content/%s/submission/%s/file", contentUuid, subUuid)
 		rec := doReq(r, http.MethodGet, badPath, auth, nil)
 		assert.Equal(t, http.StatusBadRequest, rec.Code)
+
+		badContentPath := fmt.Sprintf("/api/course/%s/content/bad-uuid/submission/%s/file", courseUuid, subUuid)
+		rec2 := doReq(r, http.MethodGet, badContentPath, auth, nil)
+		assert.Equal(t, http.StatusBadRequest, rec2.Code)
+
+		badSubPath := fmt.Sprintf("/api/course/%s/content/%s/submission/bad-uuid/file", courseUuid, contentUuid)
+		rec3 := doReq(r, http.MethodGet, badSubPath, auth, nil)
+		assert.Equal(t, http.StatusBadRequest, rec3.Code)
 	})
 
 	t.Run("200 OK downloads file when authorized", func(t *testing.T) {

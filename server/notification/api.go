@@ -55,8 +55,10 @@ func (ctn *NotificationCtn) handleError(c *gin.Context, err error, fallbackMsg s
 	switch {
 	case errors.Is(err, ErrNotificationNotFound),
 		errors.Is(err, ErrRecipientNotFound):
+		ctn.logger.Errorf("%s (not found): %v", fallbackMsg, err)
 		ginutil.RespondWithError(c, http.StatusNotFound, err.Error())
 	case errors.Is(err, ErrUserNotFound):
+		ctn.logger.Errorf("%s (unauthorized): %v", fallbackMsg, err)
 		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
 	default:
 		ctn.logger.Errorf("%s: %v", fallbackMsg, err)
@@ -81,6 +83,7 @@ func (ctn *NotificationCtn) handleError(c *gin.Context, err error, fallbackMsg s
 func (ctn *NotificationCtn) list(c *gin.Context) {
 	userUuid, err := authutils.GetUserUUID(c)
 	if err != nil {
+		ctn.logger.Errorf("Failed to retrieve user UUID from context: %v", err)
 		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
@@ -89,6 +92,7 @@ func (ctn *NotificationCtn) list(c *gin.Context) {
 	if raw := c.Query("limit"); raw != "" {
 		parsed, err := strconv.Atoi(raw)
 		if err != nil || parsed < 1 {
+			ctn.logger.Errorf("Invalid limit parameter %q: %v", raw, err)
 			ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid limit")
 			return
 		}
@@ -99,6 +103,7 @@ func (ctn *NotificationCtn) list(c *gin.Context) {
 	if raw := c.Query("before"); raw != "" {
 		parsed, err := time.Parse(time.RFC3339Nano, raw)
 		if err != nil {
+			ctn.logger.Errorf("Invalid before timestamp parameter %q: %v", raw, err)
 			ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid before timestamp")
 			return
 		}
@@ -129,6 +134,7 @@ func (ctn *NotificationCtn) list(c *gin.Context) {
 func (ctn *NotificationCtn) unreadCount(c *gin.Context) {
 	userUuid, err := authutils.GetUserUUID(c)
 	if err != nil {
+		ctn.logger.Errorf("Failed to retrieve user UUID from context: %v", err)
 		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
@@ -153,12 +159,14 @@ func (ctn *NotificationCtn) unreadCount(c *gin.Context) {
 func (ctn *NotificationCtn) stream(c *gin.Context) {
 	userUuid, err := authutils.GetUserUUID(c)
 	if err != nil {
+		ctn.logger.Errorf("Failed to retrieve user UUID from context: %v", err)
 		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
 	claims, ok := authutils.GetClaims(c)
 	if !ok || claims.ExpiresAt == nil {
+		ctn.logger.Errorf("Failed to retrieve claims or expiration for SSE stream")
 		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
@@ -213,6 +221,7 @@ func (ctn *NotificationCtn) stream(c *gin.Context) {
 func (ctn *NotificationCtn) markSeen(c *gin.Context) {
 	userUuid, err := authutils.GetUserUUID(c)
 	if err != nil {
+		ctn.logger.Errorf("Failed to retrieve user UUID from context: %v", err)
 		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
@@ -241,6 +250,7 @@ func (ctn *NotificationCtn) markSeen(c *gin.Context) {
 func (ctn *NotificationCtn) markAllSeen(c *gin.Context) {
 	userUuid, err := authutils.GetUserUUID(c)
 	if err != nil {
+		ctn.logger.Errorf("Failed to retrieve user UUID from context: %v", err)
 		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
@@ -265,6 +275,7 @@ func (ctn *NotificationCtn) markAllSeen(c *gin.Context) {
 func (ctn *NotificationCtn) delete(c *gin.Context) {
 	userUuid, err := authutils.GetUserUUID(c)
 	if err != nil {
+		ctn.logger.Errorf("Failed to retrieve user UUID from context: %v", err)
 		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
@@ -298,12 +309,14 @@ func (ctn *NotificationCtn) delete(c *gin.Context) {
 func (ctn *NotificationCtn) send(c *gin.Context) {
 	senderUuid, err := authutils.GetUserUUID(c)
 	if err != nil {
+		ctn.logger.Errorf("Failed to retrieve user UUID from context: %v", err)
 		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
 	var input SendNotificationDto
 	if err := c.ShouldBindJSON(&input); err != nil {
+		ctn.logger.Errorf("Failed to bind SendNotification payload: %v", err)
 		ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid request payload: "+err.Error())
 		return
 	}

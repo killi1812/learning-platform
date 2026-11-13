@@ -64,13 +64,16 @@ func (ctn *ContentCtn) handleError(c *gin.Context, err error) bool {
 		errors.Is(err, course.ErrCourseNotFound),
 		errors.Is(err, course.ErrModuleNotFound),
 		errors.Is(err, storage.ErrObjectNotFound):
+		ctn.logger.Errorf("Content not found: %v", err)
 		ginutil.RespondWithError(c, http.StatusNotFound, err.Error())
 		return true
 	case errors.Is(err, ErrModuleLocked),
 		errors.Is(err, ErrContentNotAvailable):
+		ctn.logger.Errorf("Content forbidden: %v", err)
 		ginutil.RespondWithError(c, http.StatusForbidden, err.Error())
 		return true
 	case errors.Is(err, ErrGroupModeLocked):
+		ctn.logger.Errorf("Content conflict: %v", err)
 		ginutil.RespondWithError(c, http.StatusConflict, err.Error())
 		return true
 	default:
@@ -115,6 +118,7 @@ func (ctn *ContentCtn) upload(c *gin.Context) {
 		return
 	}
 
+	// TODO: extract to const
 	const maxUploadSize = 50 * 1024 * 1024 // 50MB
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxUploadSize)
 
@@ -123,10 +127,12 @@ func (ctn *ContentCtn) upload(c *gin.Context) {
 	sourceUrl := c.PostForm("sourceUrl")
 
 	if len(title) > 255 {
+		ctn.logger.Errorf("Title exceeds maximum length of 255 characters (length=%d)", len(title))
 		ginutil.RespondWithError(c, http.StatusBadRequest, "Title exceeds maximum length of 255 characters")
 		return
 	}
 	if title != "" && len(title) < 2 {
+		ctn.logger.Errorf("Title must be at least 2 characters (length=%d)", len(title))
 		ginutil.RespondWithError(c, http.StatusBadRequest, "Title must be at least 2 characters")
 		return
 	}
@@ -134,6 +140,7 @@ func (ctn *ContentCtn) upload(c *gin.Context) {
 	if sourceUrl != "" {
 		parsed, err := url.ParseRequestURI(sourceUrl)
 		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			ctn.logger.Errorf("Invalid source URL: %s", sourceUrl)
 			ginutil.RespondWithError(c, http.StatusBadRequest, "Source URL must use http or https scheme")
 			return
 		}
@@ -147,6 +154,7 @@ func (ctn *ContentCtn) upload(c *gin.Context) {
 	fileHeader, err := c.FormFile("file")
 	if err == nil && fileHeader != nil {
 		if fileHeader.Size > maxUploadSize {
+			ctn.logger.Errorf("File size exceeds 50MB limit: %d bytes", fileHeader.Size)
 			ginutil.RespondWithError(c, http.StatusBadRequest, "File size exceeds 50MB limit")
 			return
 		}
@@ -154,6 +162,7 @@ func (ctn *ContentCtn) upload(c *gin.Context) {
 		ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
 		switch ext {
 		case ".html", ".htm", ".svg", ".xhtml", ".xml", ".js", ".mjs", ".exe", ".sh", ".bat", ".php", ".py", ".rb", ".cgi":
+			ctn.logger.Errorf("File type not permitted for course materials: %s", ext)
 			ginutil.RespondWithError(c, http.StatusBadRequest, "File type not permitted for course materials")
 			return
 		}
@@ -174,12 +183,14 @@ func (ctn *ContentCtn) upload(c *gin.Context) {
 
 		expectedType, allowed := allowedExts[ext]
 		if !allowed {
+			ctn.logger.Errorf("Unsupported file extension: %s", ext)
 			ginutil.RespondWithError(c, http.StatusBadRequest, "Unsupported file extension")
 			return
 		}
 
 		file, openErr := fileHeader.Open()
 		if openErr != nil {
+			ctn.logger.Errorf("Failed to read uploaded file: %v", openErr)
 			ginutil.RespondWithError(c, http.StatusBadRequest, "Failed to read uploaded file: "+openErr.Error())
 			return
 		}
@@ -193,6 +204,7 @@ func (ctn *ContentCtn) upload(c *gin.Context) {
 		}
 
 		if ext == ".pdf" && !strings.HasPrefix(sniffedType, "application/pdf") {
+			ctn.logger.Errorf("File content does not match PDF format")
 			ginutil.RespondWithError(c, http.StatusBadRequest, "File content does not match PDF format")
 			return
 		}
@@ -202,6 +214,7 @@ func (ctn *ContentCtn) upload(c *gin.Context) {
 		contentType = expectedType
 		fileReader = file
 	} else if title == "" && sourceUrl == "" {
+		ctn.logger.Errorf("Upload rejected: file or title/sourceUrl is required")
 		ginutil.RespondWithError(c, http.StatusBadRequest, "File or title/sourceUrl is required")
 		return
 	}
@@ -412,6 +425,7 @@ func (ctn *ContentCtn) update(c *gin.Context) {
 
 	var dto UpdateFileDto
 	if err := c.ShouldBindJSON(&dto); err != nil {
+		ctn.logger.Errorf("Failed to bind update file payload: %v", err)
 		ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
@@ -501,6 +515,7 @@ func (ctn *ContentCtn) createHandin(c *gin.Context) {
 
 	var dto CreateHandinDto
 	if err := c.ShouldBindJSON(&dto); err != nil {
+		ctn.logger.Errorf("Failed to bind CreateHandin payload: %v", err)
 		ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -637,6 +652,7 @@ func (ctn *ContentCtn) updateHandin(c *gin.Context) {
 
 	var dto UpdateHandinDto
 	if err := c.ShouldBindJSON(&dto); err != nil {
+		ctn.logger.Errorf("Failed to bind UpdateHandin payload: %v", err)
 		ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
 		return
 	}

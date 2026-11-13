@@ -127,6 +127,7 @@ func (l *AuthCtn) refreshToken(c *gin.Context) {
 	}
 
 	if tokenStr == "" {
+		l.logger.Errorf("Missing refresh token in cookie and Authorization header")
 		ginutil.RespondWithError(c, http.StatusBadRequest, "Missing refresh token")
 		return
 	}
