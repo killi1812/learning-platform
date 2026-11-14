@@ -9,17 +9,100 @@ import (
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/content"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/course"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/notification"
-	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gorm.io/gorm/clause"
 )
 
+const (
+	reminderWindowOneDay     = 24 * time.Hour
+	reminderWindowFifteenMin = 15 * time.Minute
+)
+
+// ResolveReminderWindow determines if an assignment is within a reminder window and produces the notification copy.
+func ResolveReminderWindow(timeLeft time.Duration, contentTitle, courseTitle string) (ReminderType, string, string, bool) {
+	if timeLeft <= 0 {
+		return "", "", "", false
+	}
+
+	if timeLeft <= reminderWindowFifteenMin {
+		title := fmt.Sprintf("Assignment Due Soon: %s", contentTitle)
+		body := fmt.Sprintf("%q in %q is due in less than 15 minutes.", contentTitle, courseTitle)
+		return ReminderFifteenMin, title, body, true
+	}
+
+	if timeLeft <= reminderWindowOneDay {
+		title := fmt.Sprintf("Assignment Due Tomorrow: %s", contentTitle)
+		body := fmt.Sprintf("%q in %q is due in less than 24 hours.", contentTitle, courseTitle)
+		return ReminderOneDay, title, body, true
+	}
+
+	return "", "", "", false
+}
+
+type reminderCandidate struct {
+	UserID uint
+	Uuid   uuid.UUID
+}
+
+// processAssignmentReminders queries eligible enrolled students in a single set-based query and records reminders idempotently.
+func (s *SubmissionService) processAssignmentReminders(contentID, courseID uint, reminderType ReminderType, now time.Time) ([]uuid.UUID, error) {
+	var candidates []reminderCandidate
+	err := s.db.Table("enrollments").
+		Select("users.id as user_id, users.uuid as uuid").
+		Joins("JOIN users ON users.id = enrollments.user_id").
+		Where("enrollments.course_id = ? AND enrollments.role = ?", courseID, course.RoleStudent).
+		Where("enrollments.deleted_at IS NULL AND users.deleted_at IS NULL").
+		Where(`NOT EXISTS (
+			SELECT 1 FROM individual_submissions i
+			WHERE i.content_id = ? AND i.user_id = enrollments.user_id
+		)`, contentID).
+		Where(`NOT EXISTS (
+			SELECT 1 FROM group_submissions gs
+			WHERE gs.content_id = ? AND (
+				gs.user_id = enrollments.user_id OR
+				EXISTS (
+					SELECT 1 FROM group_submission_members gsm
+					WHERE gsm.group_submission_id = gs.id AND gsm.user_id = enrollments.user_id
+				)
+			)
+		)`, contentID).
+		Where(`NOT EXISTS (
+			SELECT 1 FROM deadline_reminders dr
+			WHERE dr.content_id = ? AND dr.user_id = enrollments.user_id AND dr.reminder_type = ?
+		)`, contentID, reminderType).
+		Find(&candidates).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to query reminder candidates: %w", err)
+	}
+
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+
+	var recipientUuids []uuid.UUID
+	for _, c := range candidates {
+		record := DeadlineReminder{
+			ContentID:    contentID,
+			UserID:       c.UserID,
+			ReminderType: reminderType,
+			SentAt:       now,
+		}
+		res := s.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&record)
+		if res.Error != nil || res.RowsAffected == 0 {
+			continue
+		}
+		recipientUuids = append(recipientUuids, c.Uuid)
+	}
+
+	return recipientUuids, nil
+}
+
 // CheckDeadlineReminders inspects active assignments due within 24 hours or 15 minutes,
 // records reminders idempotently, and notifies enrolled students who haven't submitted yet.
 func (s *SubmissionService) CheckDeadlineReminders(now time.Time) (int, error) {
 	s.logger.Info("Checking deadlines")
-	windowMax := now.Add(24 * time.Hour)
+	windowMax := now.Add(reminderWindowOneDay)
 
 	var assignments []content.Assignment
 	err := s.db.
@@ -43,14 +126,6 @@ func (s *SubmissionService) CheckDeadlineReminders(now time.Time) (int, error) {
 		}
 
 		timeLeft := asgn.Deadline.Sub(now)
-		if timeLeft <= 0 {
-			continue
-		}
-
-		var reminderType ReminderType
-		var notifTitle string
-		var notifBody string
-
 		courseTitle := "Course"
 		courseUuidStr := ""
 		if asgn.Content.Module.Course != nil {
@@ -58,101 +133,33 @@ func (s *SubmissionService) CheckDeadlineReminders(now time.Time) (int, error) {
 			courseUuidStr = asgn.Content.Module.Course.Uuid.String()
 		}
 
-		if timeLeft <= 15*time.Minute {
-			reminderType = ReminderFifteenMin
-			notifTitle = fmt.Sprintf("Assignment Due Soon: %s", asgn.Content.Title)
-			notifBody = fmt.Sprintf("%q in %q is due in less than 15 minutes.", asgn.Content.Title, courseTitle)
-		} else if timeLeft <= 24*time.Hour {
-			reminderType = ReminderOneDay
-			notifTitle = fmt.Sprintf("Assignment Due Tomorrow: %s", asgn.Content.Title)
-			notifBody = fmt.Sprintf("%q in %q is due in less than 24 hours.", asgn.Content.Title, courseTitle)
-		} else {
+		reminderType, notifTitle, notifBody, ok := ResolveReminderWindow(timeLeft, asgn.Content.Title, courseTitle)
+		if !ok {
 			continue
 		}
 
 		courseID := asgn.Content.Module.CourseID
 		contentID := asgn.ContentID
 
-		// Find enrolled students in this course
-		var enrollments []course.Enrollment
-		if err := s.db.Preload("User").
-			Where("course_id = ? AND role = ?", courseID, course.RoleStudent).
-			Find(&enrollments).Error; err != nil {
-			s.logger.Errorf("Failed to query enrollments for course %d: %v", courseID, err)
+		recipients, err := s.processAssignmentReminders(contentID, courseID, reminderType, now)
+		if err != nil {
+			s.logger.Errorf("Failed to process reminders for content %d: %v", contentID, err)
 			continue
 		}
 
-		var recipientUuids []uuid.UUID
-
-		for _, enr := range enrollments {
-			if enr.User == nil {
-				var u user.User
-				if err := s.db.First(&u, enr.UserID).Error; err != nil {
+		if len(recipients) > 0 {
+			if s.notifications != nil {
+				_, err := s.notifications.NotifySystemMany(recipients, notification.NotificationContent{
+					Title: notifTitle,
+					Body:  notifBody,
+					URL:   fmt.Sprintf("/courses/%s", courseUuidStr),
+				})
+				if err != nil {
+					s.logger.Errorf("Failed to send deadline reminders for content %d: %v", contentID, err)
 					continue
 				}
-				enr.User = &u
 			}
-
-			// Check if already submitted via IndividualSubmission
-			var indCount int64
-			if err := s.db.Model(&IndividualSubmission{}).
-				Where("content_id = ? AND user_id = ?", contentID, enr.UserID).
-				Count(&indCount).Error; err != nil {
-				continue
-			}
-			if indCount > 0 {
-				continue
-			}
-
-			// Check if already submitted via GroupSubmission (if group submission exists for user in snapshot or user submitted)
-			var grpCount int64
-			if err := s.db.Table("group_submissions").
-				Where("content_id = ? AND (user_id = ? OR id IN (SELECT group_submission_id FROM group_submission_members WHERE user_id = ?))",
-					contentID, enr.UserID, enr.UserID).
-				Count(&grpCount).Error; err != nil {
-				continue
-			}
-			if grpCount > 0 {
-				continue
-			}
-
-			// Check if reminder was already recorded
-			var remCount int64
-			if err := s.db.Model(&DeadlineReminder{}).
-				Where("content_id = ? AND user_id = ? AND reminder_type = ?", contentID, enr.UserID, reminderType).
-				Count(&remCount).Error; err != nil {
-				continue
-			}
-			if remCount > 0 {
-				continue
-			}
-
-			// Insert reminder record with on conflict do nothing
-			reminderRecord := DeadlineReminder{
-				ContentID:    contentID,
-				UserID:       enr.UserID,
-				ReminderType: reminderType,
-				SentAt:       now,
-			}
-			res := s.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&reminderRecord)
-			if res.Error != nil || res.RowsAffected == 0 {
-				continue
-			}
-
-			recipientUuids = append(recipientUuids, enr.User.Uuid)
-		}
-
-		if len(recipientUuids) > 0 {
-			_, err := s.notifications.NotifySystemMany(recipientUuids, notification.NotificationContent{
-				Title: notifTitle,
-				Body:  notifBody,
-				URL:   fmt.Sprintf("/courses/%s", courseUuidStr),
-			})
-			if err != nil {
-				s.logger.Errorf("Failed to send deadline reminders for content %d: %v", contentID, err)
-			} else {
-				totalReminders += len(recipientUuids)
-			}
+			totalReminders += len(recipients)
 		}
 	}
 

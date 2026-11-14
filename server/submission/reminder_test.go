@@ -220,3 +220,77 @@ func TestSubmissionService_CheckDeadlineReminders_DBError(t *testing.T) {
 	_, err = svc.CheckDeadlineReminders(time.Now())
 	assert.Error(t, err)
 }
+
+func TestResolveReminderWindow(t *testing.T) {
+	tests := []struct {
+		name         string
+		timeLeft     time.Duration
+		expectedType submission.ReminderType
+		expectedOk   bool
+		containsBody string
+	}{
+		{
+			name:       "Negative time left (past deadline)",
+			timeLeft:   -5 * time.Minute,
+			expectedOk: false,
+		},
+		{
+			name:       "Zero time left (exact deadline)",
+			timeLeft:   0,
+			expectedOk: false,
+		},
+		{
+			name:         "5 minutes left (15M window)",
+			timeLeft:     5 * time.Minute,
+			expectedType: submission.ReminderFifteenMin,
+			expectedOk:   true,
+			containsBody: "less than 15 minutes",
+		},
+		{
+			name:         "Exactly 15 minutes left (15M window)",
+			timeLeft:     15 * time.Minute,
+			expectedType: submission.ReminderFifteenMin,
+			expectedOk:   true,
+			containsBody: "less than 15 minutes",
+		},
+		{
+			name:         "16 minutes left (24H window)",
+			timeLeft:     16 * time.Minute,
+			expectedType: submission.ReminderOneDay,
+			expectedOk:   true,
+			containsBody: "less than 24 hours",
+		},
+		{
+			name:         "12 hours left (24H window)",
+			timeLeft:     12 * time.Hour,
+			expectedType: submission.ReminderOneDay,
+			expectedOk:   true,
+			containsBody: "less than 24 hours",
+		},
+		{
+			name:         "Exactly 24 hours left (24H window)",
+			timeLeft:     24 * time.Hour,
+			expectedType: submission.ReminderOneDay,
+			expectedOk:   true,
+			containsBody: "less than 24 hours",
+		},
+		{
+			name:       "25 hours left (beyond reminder window)",
+			timeLeft:   25 * time.Hour,
+			expectedOk: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			remType, title, body, ok := submission.ResolveReminderWindow(tt.timeLeft, "Lab 1", "OS")
+			assert.Equal(t, tt.expectedOk, ok)
+			if tt.expectedOk {
+				assert.Equal(t, tt.expectedType, remType)
+				assert.Contains(t, title, "Lab 1")
+				assert.Contains(t, body, tt.containsBody)
+				assert.Contains(t, body, "OS")
+			}
+		})
+	}
+}
