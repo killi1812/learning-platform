@@ -24,6 +24,16 @@
     </div>
 
     <div class="d-flex align-center ga-1 ml-2">
+      <v-chip
+        v-if="assignment.allowsGroupSubmission"
+        color="info"
+        size="small"
+        variant="tonal"
+        prepend-icon="mdi-account-group"
+      >
+        Group
+      </v-chip>
+
       <v-chip v-if="statusChip" :color="statusChip.color" size="small" variant="tonal">
         {{ statusChip.text }}
       </v-chip>

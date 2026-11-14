@@ -61,6 +61,7 @@ func seedAssignments(modules []*course.Module) ([]*content.Content, error) {
 				Type:                   content.AssignmentHandIn,
 				Deadline:               &pastDeadline,
 				AcceptsLateSubmissions: true,
+				AllowsGroupSubmission:  true,
 			}
 			created, err := contentService.CreateAssignment(mod.Uuid, cnt, asgn)
 			if err != nil {

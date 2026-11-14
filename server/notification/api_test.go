@@ -133,6 +133,8 @@ func TestNotificationApi_ListPagingAndLimits(t *testing.T) {
 	// Invalid limit and before
 	w = doRequest(r, http.MethodGet, "/api/notification?limit=abc", alice, nil)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+	w = doRequest(r, http.MethodGet, "/api/notification?limit=0", alice, nil)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
 	w = doRequest(r, http.MethodGet, "/api/notification?before=invalid", alice, nil)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 
@@ -183,10 +185,26 @@ func TestNotificationApi_HandleError(t *testing.T) {
 
 type mockNotificationServiceForApi struct {
 	INotificationService
+	listErr        error
 	countUnseenErr error
 	markSeenErr    error
 	markAllSeenErr error
 	deleteErr      error
+	sendToUsersErr error
+}
+
+func (m *mockNotificationServiceForApi) List(userUuid uuid.UUID, limit int, before *time.Time) ([]Notification, error) {
+	if m.listErr != nil {
+		return nil, m.listErr
+	}
+	return m.INotificationService.List(userUuid, limit, before)
+}
+
+func (m *mockNotificationServiceForApi) SendToUsers(senderUuid uuid.UUID, recipientUuids []uuid.UUID, content NotificationContent) ([]Notification, error) {
+	if m.sendToUsersErr != nil {
+		return nil, m.sendToUsersErr
+	}
+	return m.INotificationService.SendToUsers(senderUuid, recipientUuids, content)
 }
 
 func (m *mockNotificationServiceForApi) CountUnseen(userUuid uuid.UUID) (int64, error) {
@@ -221,10 +239,12 @@ func TestNotificationApi_ServiceErrorResponses(t *testing.T) {
 	f := newNotificationFixture(t)
 	mock := &mockNotificationServiceForApi{
 		INotificationService: f.svc,
+		listErr:              assert.AnError,
 		countUnseenErr:       assert.AnError,
 		markSeenErr:          ErrNotificationNotFound,
 		markAllSeenErr:       assert.AnError,
 		deleteErr:            ErrNotificationNotFound,
+		sendToUsersErr:       assert.AnError,
 	}
 	ctn := &NotificationCtn{service: mock, hub: f.hub, logger: zap.NewNop().Sugar()}
 	r := gin.New()
@@ -232,7 +252,10 @@ func TestNotificationApi_ServiceErrorResponses(t *testing.T) {
 
 	userToken := bearer(t, f.alice, authutils.ROLE_USER)
 
-	w := doRequest(r, http.MethodGet, "/api/notification/unread-count", userToken, nil)
+	w := doRequest(r, http.MethodGet, "/api/notification", userToken, nil)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	w = doRequest(r, http.MethodGet, "/api/notification/unread-count", userToken, nil)
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 
 	w = doRequest(r, http.MethodPost, "/api/notification/"+uuid.New().String()+"/seen", userToken, nil)
@@ -243,6 +266,53 @@ func TestNotificationApi_ServiceErrorResponses(t *testing.T) {
 
 	w = doRequest(r, http.MethodDelete, "/api/notification/"+uuid.New().String(), userToken, nil)
 	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	w = doRequest(r, http.MethodPost, "/api/notification/send", userToken, map[string]any{
+		"userUuids": []uuid.UUID{f.alice},
+		"title":     "fail",
+		"body":      "fail",
+	})
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestNotificationApi_MissingAuthContext(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctn := &NotificationCtn{logger: zap.NewNop().Sugar()}
+
+	handlers := []struct {
+		name string
+		fn   func(*gin.Context)
+	}{
+		{"list", ctn.list},
+		{"unreadCount", ctn.unreadCount},
+		{"stream", ctn.stream},
+		{"markSeen", ctn.markSeen},
+		{"markAllSeen", ctn.markAllSeen},
+		{"delete", ctn.delete},
+		{"send", ctn.send},
+	}
+
+	for _, tc := range handlers {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+			tc.fn(c)
+			assert.Equal(t, http.StatusUnauthorized, w.Code)
+		})
+	}
+
+	t.Run("stream without expiration claims", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+		c.Set(authutils.ContextUserUuidKey, uuid.New())
+		c.Set(authutils.ContextClaimsKey, &authutils.Claims{
+			TokenUuid: uuid.New(),
+		})
+		ctn.stream(c)
+		assert.Equal(t, http.StatusUnauthorized, w.Code)
+	})
 }
 
 func TestNotificationApi_DeleteForeignIsNotFound(t *testing.T) {

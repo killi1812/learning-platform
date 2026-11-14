@@ -1,4 +1,5 @@
 export type PayloadType = 'URL' | 'FILE'
+export type SubmissionStatus = 'QUEUED'
 
 export interface UploadTicket {
   ticketUuid: string
@@ -9,7 +10,7 @@ export interface UploadTicket {
 export interface SubmissionAccepted {
   uuid: string
   submittedAt: string
-  status: string
+  status: SubmissionStatus
 }
 
 export interface Submission {
@@ -23,18 +24,23 @@ export interface Submission {
   contentType?: string
   submittedAt: string
   userEmail?: string
+  isGroup?: boolean
+  groupName?: string
+  memberEmails?: string[]
 }
 
 export interface CreateHandinPayload {
   title: string
   deadline?: string
   acceptsLateSubmissions: boolean
+  allowsGroupSubmission?: boolean
 }
 
 export interface UpdateHandinPayload {
   title: string
   deadline?: string
   acceptsLateSubmissions: boolean
+  allowsGroupSubmission?: boolean
 }
 
 export interface HandinAssignment {
@@ -44,6 +50,7 @@ export interface HandinAssignment {
   position: number
   deadline?: string
   acceptsLateSubmissions: boolean
+  allowsGroupSubmission?: boolean
   createdAt: string
   updatedAt: string
 }

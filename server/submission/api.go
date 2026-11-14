@@ -20,6 +20,29 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	maxUploadSize          int64         = 200 * 1024 * 1024 // 200MB limit for student submissions
+	streamDeadlineDuration time.Duration = 30 * time.Second
+	maxCleanFilenameLength int           = 200
+)
+
+var allowedSubmissionExtensions = map[string]string{
+	".pdf":    "application/pdf",
+	".docx":   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+	".pptx":   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+	".txt":    "text/plain",
+	".md":     "text/plain",
+	".png":    "image/png",
+	".jpg":    "image/jpeg",
+	".jpeg":   "image/jpeg",
+	".gif":    "image/gif",
+	".webp":   "image/webp",
+	".json":   "application/json",
+	".zip":    "application/zip",
+	".tar.gz": "application/gzip",
+	".tgz":    "application/gzip",
+}
+
 // SubmissionCtn provides HTTP endpoints for assignment submissions.
 type SubmissionCtn struct {
 	Service        ISubmissionService
@@ -68,16 +91,21 @@ func (ctn *SubmissionCtn) handleError(c *gin.Context, err error, fallbackMsg str
 		errors.Is(err, ErrSubmissionNotFound),
 		errors.Is(err, ErrTicketNotFound),
 		errors.Is(err, storage.ErrObjectNotFound):
+		ctn.logger.Errorf("%s (not found): %v", fallbackMsg, err)
 		ginutil.RespondWithError(c, http.StatusNotFound, err.Error())
 	case errors.Is(err, ErrNotAssignment),
 		errors.Is(err, ErrAssignmentTypeUnsupported),
 		errors.Is(err, ErrDeadlinePassed),
 		errors.Is(err, ErrTicketExpired),
 		errors.Is(err, ErrTicketConsumed):
+		ctn.logger.Errorf("%s (bad request): %v", fallbackMsg, err)
 		ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
 	case errors.Is(err, ErrNotEnrolled),
 		errors.Is(err, ErrModuleLocked),
-		errors.Is(err, ErrUnauthorizedSubmission):
+		errors.Is(err, ErrUnauthorizedSubmission),
+		errors.Is(err, ErrNoGroup),
+		errors.Is(err, ErrGroupChanged):
+		ctn.logger.Errorf("%s (forbidden): %v", fallbackMsg, err)
 		ginutil.RespondWithError(c, http.StatusForbidden, err.Error())
 	default:
 		ctn.logger.Errorf("%s: %v", fallbackMsg, err)
@@ -121,17 +149,20 @@ func (ctn *SubmissionCtn) submit(c *gin.Context) {
 
 	userUuid, err := authutils.GetUserUUID(c)
 	if err != nil {
+		ctn.logger.Errorf("Failed to retrieve user UUID from context: %v", err)
 		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
 	var dto CreateSubmissionDto
 	if err := c.ShouldBindJSON(&dto); err != nil {
+		ctn.logger.Errorf("Failed to bind CreateSubmission payload: %v", err)
 		ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	if dto.PayloadType == PayloadTypeFile {
+		ctn.logger.Errorf("Direct file payload unsupported on /submission, use /submission/file/init")
 		ginutil.RespondWithError(c, http.StatusBadRequest, "payload type FILE is not supported yet on this endpoint, use /submission/file/init")
 		return
 	}
@@ -150,6 +181,9 @@ func (ctn *SubmissionCtn) submit(c *gin.Context) {
 		UserID:       target.UserID,
 		UserUuid:     target.UserUuid,
 		UserEmail:    target.UserEmail,
+		GroupID:      target.GroupID,
+		GroupName:    target.GroupName,
+		Members:      target.Members,
 		PayloadType:  dto.PayloadType,
 		PayloadURL:   dto.PayloadURL,
 		SubmittedAt:  submittedAt,
@@ -167,7 +201,7 @@ func (ctn *SubmissionCtn) submit(c *gin.Context) {
 	c.JSON(http.StatusAccepted, SubmissionAcceptedDto{
 		Uuid:        subUuid,
 		SubmittedAt: submittedAt,
-		Status:      "QUEUED",
+		Status:      SubmissionStatusQueued,
 	})
 }
 
@@ -202,6 +236,7 @@ func (ctn *SubmissionCtn) initFileSubmission(c *gin.Context) {
 
 	userUuid, err := authutils.GetUserUUID(c)
 	if err != nil {
+		ctn.logger.Errorf("Failed to retrieve user UUID from context: %v", err)
 		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
@@ -235,8 +270,8 @@ func (a *activityReader) Read(p []byte) (int, error) {
 			return n, errors.New("file size limit exceeded")
 		}
 		if a.rc != nil {
-			_ = a.rc.SetReadDeadline(time.Now().Add(30 * time.Second))
-			_ = a.rc.SetWriteDeadline(time.Now().Add(30 * time.Second))
+			_ = a.rc.SetReadDeadline(time.Now().Add(streamDeadlineDuration))
+			_ = a.rc.SetWriteDeadline(time.Now().Add(streamDeadlineDuration))
 		}
 	}
 	return n, err
@@ -275,6 +310,7 @@ func (ctn *SubmissionCtn) uploadFileSubmission(c *gin.Context) {
 
 	userUuid, err := authutils.GetUserUUID(c)
 	if err != nil {
+		ctn.logger.Errorf("Failed to retrieve user UUID from context: %v", err)
 		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
@@ -285,6 +321,7 @@ func (ctn *SubmissionCtn) uploadFileSubmission(c *gin.Context) {
 	}
 	ticketUuid, err := uuid.Parse(ticketStr)
 	if err != nil {
+		ctn.logger.Errorf("Failed to parse upload ticket UUID %q: %v", ticketStr, err)
 		ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid upload ticket")
 		return
 	}
@@ -294,14 +331,13 @@ func (ctn *SubmissionCtn) uploadFileSubmission(c *gin.Context) {
 		return
 	}
 
-	// 200MB limit
-	const maxUploadSize = 200 * 1024 * 1024
 	rc := http.NewResponseController(c.Writer)
-	_ = rc.SetReadDeadline(time.Now().Add(30 * time.Second))
-	_ = rc.SetWriteDeadline(time.Now().Add(30 * time.Second))
+	_ = rc.SetReadDeadline(time.Now().Add(streamDeadlineDuration))
+	_ = rc.SetWriteDeadline(time.Now().Add(streamDeadlineDuration))
 
 	mr, err := c.Request.MultipartReader()
 	if err != nil {
+		ctn.logger.Errorf("Failed to open multipart reader for upload: %v", err)
 		ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid multipart request")
 		return
 	}
@@ -311,23 +347,6 @@ func (ctn *SubmissionCtn) uploadFileSubmission(c *gin.Context) {
 	var storageKey string
 	var bytesRead int64
 
-	allowedExts := map[string]string{
-		".pdf":    "application/pdf",
-		".docx":   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-		".pptx":   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-		".txt":    "text/plain",
-		".md":     "text/plain",
-		".png":    "image/png",
-		".jpg":    "image/jpeg",
-		".jpeg":   "image/jpeg",
-		".gif":    "image/gif",
-		".webp":   "image/webp",
-		".json":   "application/json",
-		".zip":    "application/zip",
-		".tar.gz": "application/gzip",
-		".tgz":    "application/gzip",
-	}
-
 	fileFound := false
 	for {
 		part, err := mr.NextPart()
@@ -335,6 +354,7 @@ func (ctn *SubmissionCtn) uploadFileSubmission(c *gin.Context) {
 			break
 		}
 		if err != nil {
+			ctn.logger.Errorf("Failed to read multipart stream: %v", err)
 			ginutil.RespondWithError(c, http.StatusBadRequest, "Failed to read multipart stream: "+err.Error())
 			return
 		}
@@ -344,6 +364,7 @@ func (ctn *SubmissionCtn) uploadFileSubmission(c *gin.Context) {
 			rawName := part.FileName()
 			if rawName == "" {
 				part.Close()
+				ctn.logger.Errorf("Upload rejected: filename is empty")
 				ginutil.RespondWithError(c, http.StatusBadRequest, "Filename cannot be empty")
 				return
 			}
@@ -354,9 +375,10 @@ func (ctn *SubmissionCtn) uploadFileSubmission(c *gin.Context) {
 				ext = ".tar.gz"
 			}
 
-			expectedType, allowed := allowedExts[ext]
+			expectedType, allowed := allowedSubmissionExtensions[ext]
 			if !allowed {
 				part.Close()
+				ctn.logger.Errorf("Upload rejected: unsupported file extension %s", ext)
 				ginutil.RespondWithError(c, http.StatusBadRequest, "Unsupported file extension")
 				return
 			}
@@ -368,8 +390,8 @@ func (ctn *SubmissionCtn) uploadFileSubmission(c *gin.Context) {
 				}
 				return r
 			}, cleanName)
-			if len(cleanName) > 200 {
-				cleanName = cleanName[:200]
+			if len(cleanName) > maxCleanFilenameLength {
+				cleanName = cleanName[:maxCleanFilenameLength]
 			}
 
 			fileName = cleanName
@@ -386,6 +408,7 @@ func (ctn *SubmissionCtn) uploadFileSubmission(c *gin.Context) {
 			part.Close()
 			if ar.overflow {
 				_ = ctn.storageService.Delete(storageKey)
+				ctn.logger.Errorf("Upload rejected: file size exceeds 200MB limit")
 				ginutil.RespondWithError(c, http.StatusBadRequest, "File size exceeds 200MB limit")
 				return
 			}
@@ -403,8 +426,21 @@ func (ctn *SubmissionCtn) uploadFileSubmission(c *gin.Context) {
 	}
 
 	if !fileFound {
+		ctn.logger.Errorf("Upload rejected: no file provided in form field 'file'")
 		ginutil.RespondWithError(c, http.StatusBadRequest, "No file provided in form field 'file'")
 		return
+	}
+
+	var groupName string
+	var groupMembers []GroupMember
+	if ticket.GroupID != nil {
+		var gErr error
+		groupName, groupMembers, gErr = ctn.Service.ResolveGroupMembers(*ticket.GroupID)
+		if gErr != nil {
+			_ = ctn.storageService.Delete(storageKey)
+			ctn.handleError(c, gErr, "Failed to resolve group members for upload")
+			return
+		}
 	}
 
 	msg := SubmissionMessage{
@@ -415,6 +451,9 @@ func (ctn *SubmissionCtn) uploadFileSubmission(c *gin.Context) {
 		UserID:       ticket.UserID,
 		UserUuid:     userUuid,
 		UserEmail:    ticket.UserEmail,
+		GroupID:      ticket.GroupID,
+		GroupName:    groupName,
+		Members:      groupMembers,
 		PayloadType:  PayloadTypeFile,
 		FileName:     fileName,
 		FileSize:     bytesRead,
@@ -445,12 +484,15 @@ func (ctn *SubmissionCtn) uploadFileSubmission(c *gin.Context) {
 		UserID:       ticket.UserID,
 		UserUuid:     userUuid,
 		UserEmail:    ticket.UserEmail,
+		GroupID:      ticket.GroupID,
+		GroupName:    groupName,
+		Members:      groupMembers,
 	})
 
 	c.JSON(http.StatusAccepted, SubmissionAcceptedDto{
 		Uuid:        ticket.Uuid,
 		SubmittedAt: ticket.SubmittedAt,
-		Status:      "QUEUED",
+		Status:      SubmissionStatusQueued,
 	})
 }
 
@@ -483,6 +525,7 @@ func (ctn *SubmissionCtn) listMySubmissions(c *gin.Context) {
 
 	userUuid, err := authutils.GetUserUUID(c)
 	if err != nil {
+		ctn.logger.Errorf("Failed to retrieve user UUID from context: %v", err)
 		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
@@ -568,6 +611,7 @@ func (ctn *SubmissionCtn) downloadSubmissionFile(c *gin.Context) {
 
 	userUuid, err := authutils.GetUserUUID(c)
 	if err != nil {
+		ctn.logger.Errorf("Failed to retrieve user UUID from context: %v", err)
 		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
@@ -579,6 +623,7 @@ func (ctn *SubmissionCtn) downloadSubmissionFile(c *gin.Context) {
 	}
 
 	if sub.PayloadType != PayloadTypeFile || sub.StorageKey == "" {
+		ctn.logger.Errorf("Download rejected: submission %s deliverable is not a stored file", submissionUuid)
 		ginutil.RespondWithError(c, http.StatusBadRequest, "Submission deliverable is not a stored file")
 		return
 	}

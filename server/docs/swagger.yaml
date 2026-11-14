@@ -52,6 +52,8 @@ definitions:
     properties:
       acceptsLateSubmissions:
         type: boolean
+      allowsGroupSubmission:
+        type: boolean
       deadline:
         type: string
       title:
@@ -89,6 +91,8 @@ definitions:
   content.HandinDto:
     properties:
       acceptsLateSubmissions:
+        type: boolean
+      allowsGroupSubmission:
         type: boolean
       createdAt:
         type: string
@@ -133,6 +137,8 @@ definitions:
   content.UpdateHandinDto:
     properties:
       acceptsLateSubmissions:
+        type: boolean
+      allowsGroupSubmission:
         type: boolean
       deadline:
         type: string
@@ -451,6 +457,8 @@ definitions:
     properties:
       acceptsLateSubmissions:
         type: boolean
+      allowsGroupSubmission:
+        type: boolean
       attemptsUsed:
         type: integer
       deadline:
@@ -674,8 +682,9 @@ definitions:
   submission.SubmissionAcceptedDto:
     properties:
       status:
+        allOf:
+        - $ref: '#/definitions/submission.SubmissionStatus'
         example: QUEUED
-        type: string
       submittedAt:
         type: string
       uuid:
@@ -692,8 +701,16 @@ definitions:
         type: string
       fileSize:
         type: integer
+      groupName:
+        type: string
+      isGroup:
+        type: boolean
       isLate:
         type: boolean
+      memberEmails:
+        items:
+          type: string
+        type: array
       payloadType:
         $ref: '#/definitions/submission.PayloadType'
       payloadUrl:
@@ -705,6 +722,12 @@ definitions:
       uuid:
         type: string
     type: object
+  submission.SubmissionStatus:
+    enum:
+    - QUEUED
+    type: string
+    x-enum-varnames:
+    - SubmissionStatusQueued
   submission.UploadTicketDto:
     properties:
       expiresAt:
@@ -2207,6 +2230,10 @@ paths:
             $ref: '#/definitions/ginutil.ErrorResponse'
         "404":
           description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "409":
+          description: Conflict
           schema:
             $ref: '#/definitions/ginutil.ErrorResponse'
         "500":

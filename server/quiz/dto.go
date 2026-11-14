@@ -106,6 +106,7 @@ type AssignmentDto struct {
 	VisibleUntil           *time.Time `json:"visibleUntil,omitempty"`
 	Deadline               *time.Time `json:"deadline,omitempty"`
 	AcceptsLateSubmissions bool       `json:"acceptsLateSubmissions"`
+	AllowsGroupSubmission  bool       `json:"allowsGroupSubmission"`
 	PassPercent            int        `json:"passPercent"`
 	MaxAttempts            int        `json:"maxAttempts"`
 	MyResult               *ResultDto `json:"myResult,omitempty"`

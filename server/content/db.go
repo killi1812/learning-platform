@@ -23,7 +23,10 @@ var (
 	ErrCourseNotFound      = errors.New("course not found")
 	ErrModuleLocked        = errors.New("prerequisite module is not completed")
 	ErrContentNotAvailable = errors.New("content is not currently visible")
+	ErrGroupModeLocked     = errors.New("cannot change group submission setting after submissions have been made")
 )
+
+const maxCleanFilenameLen = 200
 
 type IContentService interface {
 	UploadFile(courseUuid, moduleUuid uuid.UUID, title, fileName string, fileSize int64, contentType string, fileReader io.Reader, description string, sourceUrl string) (*File, error)
@@ -35,8 +38,8 @@ type IContentService interface {
 	CreateAssignment(moduleUuid uuid.UUID, cnt *Content, asgn *Assignment) (*Content, error)
 	GetContent(contentUuid uuid.UUID) (*Content, error)
 	GetAssignmentByModule(moduleUuid uuid.UUID) (*Content, error)
-	CreateHandin(courseUuid, moduleUuid uuid.UUID, title string, deadline *time.Time, lateAllowed bool) (*Content, error)
-	UpdateHandin(courseUuid, moduleUuid, assignmentUuid uuid.UUID, title string, deadline *time.Time, lateAllowed bool) (*Content, error)
+	CreateHandin(courseUuid, moduleUuid uuid.UUID, title string, deadline *time.Time, lateAllowed, groupAllowed bool) (*Content, error)
+	UpdateHandin(courseUuid, moduleUuid, assignmentUuid uuid.UUID, title string, deadline *time.Time, lateAllowed, groupAllowed bool) (*Content, error)
 	GetHandin(courseUuid, moduleUuid, assignmentUuid uuid.UUID) (*Content, error)
 	DeleteHandin(courseUuid, moduleUuid, assignmentUuid uuid.UUID) error
 	ListHandins(courseUuid, moduleUuid uuid.UUID) ([]Content, error)
@@ -205,8 +208,8 @@ func (s *ContentService) UploadFile(
 			}
 			return r
 		}, cleanName)
-		if len(cleanName) > 200 {
-			cleanName = cleanName[:200]
+		if len(cleanName) > maxCleanFilenameLen {
+			cleanName = cleanName[:maxCleanFilenameLen]
 		}
 		fileName = cleanName
 	}
@@ -487,7 +490,7 @@ func (s *ContentService) GetAssignmentByModule(moduleUuid uuid.UUID) (*Content, 
 }
 
 // CreateHandin creates a new hand-in assignment in the specified module.
-func (s *ContentService) CreateHandin(courseUuid, moduleUuid uuid.UUID, title string, deadline *time.Time, lateAllowed bool) (*Content, error) {
+func (s *ContentService) CreateHandin(courseUuid, moduleUuid uuid.UUID, title string, deadline *time.Time, lateAllowed, groupAllowed bool) (*Content, error) {
 	_, module, err := s.findCourseAndModule(courseUuid, moduleUuid)
 	if err != nil {
 		return nil, err
@@ -503,6 +506,7 @@ func (s *ContentService) CreateHandin(courseUuid, moduleUuid uuid.UUID, title st
 		Type:                   AssignmentHandIn,
 		Deadline:               deadline,
 		AcceptsLateSubmissions: lateAllowed,
+		AllowsGroupSubmission:  groupAllowed,
 	}
 
 	err = s.db.Transaction(func(tx *gorm.DB) error {
@@ -541,17 +545,31 @@ func (s *ContentService) CreateHandin(courseUuid, moduleUuid uuid.UUID, title st
 	return cnt, nil
 }
 
-// UpdateHandin updates title, deadline, and acceptsLateSubmissions for a hand-in assignment.
-func (s *ContentService) UpdateHandin(courseUuid, moduleUuid, assignmentUuid uuid.UUID, title string, deadline *time.Time, lateAllowed bool) (*Content, error) {
+// UpdateHandin updates title, deadline, acceptsLateSubmissions, and allowsGroupSubmission for a hand-in assignment.
+func (s *ContentService) UpdateHandin(courseUuid, moduleUuid, assignmentUuid uuid.UUID, title string, deadline *time.Time, lateAllowed, groupAllowed bool) (*Content, error) {
 	cnt, err := s.GetHandin(courseUuid, moduleUuid, assignmentUuid)
 	if err != nil {
 		return nil, err
+	}
+
+	if cnt.Assignment != nil && cnt.Assignment.AllowsGroupSubmission != groupAllowed {
+		var indCount, grpCount int64
+		if err := s.db.Table("individual_submissions").Where("content_id = ?", cnt.ID).Count(&indCount).Error; err != nil {
+			return nil, err
+		}
+		if err := s.db.Table("group_submissions").Where("content_id = ?", cnt.ID).Count(&grpCount).Error; err != nil {
+			return nil, err
+		}
+		if indCount > 0 || grpCount > 0 {
+			return nil, ErrGroupModeLocked
+		}
 	}
 
 	cnt.Title = title
 	if cnt.Assignment != nil {
 		cnt.Assignment.Deadline = deadline
 		cnt.Assignment.AcceptsLateSubmissions = lateAllowed
+		cnt.Assignment.AllowsGroupSubmission = groupAllowed
 	}
 
 	err = s.db.Transaction(func(tx *gorm.DB) error {

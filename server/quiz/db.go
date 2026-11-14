@@ -508,10 +508,20 @@ func (s *QuizService) ListAssignments(courseUuid, userUuid uuid.UUID, isTeacher 
 			Where("content_id IN ? AND user_id = ?", handinIDs, u.ID).
 			Group("content_id").
 			Scan(&handinCounts).Error
+
+		var grpHandinCounts []handinAttemptCount
+		_ = s.db.Table("group_submissions").
+			Select("group_submissions.content_id, count(*) as count").
+			Joins("JOIN group_submission_members ON group_submission_members.group_submission_id = group_submissions.id").
+			Where("group_submissions.content_id IN ? AND group_submission_members.user_id = ?", handinIDs, u.ID).
+			Group("group_submissions.content_id").
+			Scan(&grpHandinCounts).Error
+
+		handinCounts = append(handinCounts, grpHandinCounts...)
 	}
 	handinAttemptMap := make(map[uint]int, len(handinCounts))
 	for _, hc := range handinCounts {
-		handinAttemptMap[hc.ContentID] = hc.Count
+		handinAttemptMap[hc.ContentID] += hc.Count
 	}
 
 	list := make([]AssignmentDto, 0, len(cnts))
@@ -530,6 +540,7 @@ func (s *QuizService) ListAssignments(courseUuid, userUuid uuid.UUID, isTeacher 
 				VisibleUntil:           cnt.VisibleUntil,
 				Deadline:               cnt.Assignment.Deadline,
 				AcceptsLateSubmissions: cnt.Assignment.AcceptsLateSubmissions,
+				AllowsGroupSubmission:  cnt.Assignment.AllowsGroupSubmission,
 				AttemptsUsed:           handinAttemptMap[cnt.ID],
 			}
 			if cnt.Module != nil {

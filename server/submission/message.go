@@ -9,20 +9,30 @@ import (
 // SubmissionQueue is queue name
 const SubmissionQueue = "submission.created"
 
-// SubmissionMessage is the RabbitMQ message payload for an individual submission.
+// GroupMember captures a snapshot of a group member at submission time.
+type GroupMember struct {
+	UserID uint      `json:"userId"`
+	Uuid   uuid.UUID `json:"uuid"`
+	Email  string    `json:"email"`
+}
+
+// SubmissionMessage is the RabbitMQ message payload for an individual or group submission.
 type SubmissionMessage struct {
-	Uuid         uuid.UUID   `json:"uuid"`
-	ContentID    uint        `json:"contentId"`
-	ContentTitle string      `json:"contentTitle,omitempty"`
-	CourseUuid   uuid.UUID   `json:"courseUuid,omitempty"`
-	UserID       uint        `json:"userId"`
-	UserUuid     uuid.UUID   `json:"userUuid,omitempty"`
-	UserEmail    string      `json:"userEmail"`
-	PayloadType  PayloadType `json:"payloadType"`
-	PayloadURL   string      `json:"payloadUrl,omitempty"`
-	FileName     string      `json:"fileName,omitempty"`
-	FileSize     int64       `json:"fileSize,omitempty"`
-	ContentType  string      `json:"contentType,omitempty"`
-	StorageKey   string      `json:"storageKey,omitempty"`
-	SubmittedAt  time.Time   `json:"submittedAt"`
+	Uuid         uuid.UUID     `json:"uuid"`
+	ContentID    uint          `json:"contentId"`
+	ContentTitle string        `json:"contentTitle,omitempty"`
+	CourseUuid   uuid.UUID     `json:"courseUuid,omitempty"`
+	UserID       uint          `json:"userId"`
+	UserUuid     uuid.UUID     `json:"userUuid,omitempty"`
+	UserEmail    string        `json:"userEmail"`
+	GroupID      *uint         `json:"groupId,omitempty"`
+	GroupName    string        `json:"groupName,omitempty"`
+	Members      []GroupMember `json:"members,omitempty"`
+	PayloadType  PayloadType   `json:"payloadType"`
+	PayloadURL   string        `json:"payloadUrl,omitempty"`
+	FileName     string        `json:"fileName,omitempty"`
+	FileSize     int64         `json:"fileSize,omitempty"`
+	ContentType  string        `json:"contentType,omitempty"`
+	StorageKey   string        `json:"storageKey,omitempty"`
+	SubmittedAt  time.Time     `json:"submittedAt"`
 }

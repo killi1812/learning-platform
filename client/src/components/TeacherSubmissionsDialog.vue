@@ -33,7 +33,11 @@
           class="mb-3"
           clearable
           density="compact"
-          label="Search by student email"
+          :label="
+            isGroupAssignment
+              ? 'Search by student, group name, or member email'
+              : 'Search by student email'
+          "
           prepend-inner-icon="mdi-magnify"
           variant="outlined"
         />
@@ -55,7 +59,9 @@
           <v-table density="comfortable">
             <thead>
               <tr>
-                <th class="text-left font-weight-bold">Student Email</th>
+                <th class="text-left font-weight-bold">
+                  {{ isGroupAssignment ? 'Group / Submitter' : 'Student Email' }}
+                </th>
                 <th class="text-center font-weight-bold">Attempt</th>
                 <th class="text-left font-weight-bold">Submitted At</th>
                 <th class="text-center font-weight-bold">Timing</th>
@@ -64,7 +70,28 @@
             </thead>
             <tbody>
               <tr v-for="sub in filteredSubmissions" :key="sub.uuid">
-                <td class="font-weight-medium">{{ sub.userEmail }}</td>
+                <td class="font-weight-medium py-2">
+                  <template v-if="sub.isGroup">
+                    <div class="d-flex align-center ga-1">
+                      <v-chip size="x-small" color="info" variant="tonal">
+                        <v-icon start icon="mdi-account-group" size="x-small" />
+                        {{ sub.groupName || 'Group' }}
+                      </v-chip>
+                      <span class="text-caption text-medium-emphasis">
+                        by {{ sub.userEmail }}
+                      </span>
+                    </div>
+                    <div
+                      v-if="sub.memberEmails?.length"
+                      class="text-caption text-medium-emphasis mt-1"
+                    >
+                      Members: {{ sub.memberEmails.join(', ') }}
+                    </div>
+                  </template>
+                  <template v-else>
+                    {{ sub.userEmail }}
+                  </template>
+                </td>
                 <td class="text-center">
                   <v-chip size="x-small" color="primary" variant="flat">
                     #{{ sub.attempt }}
@@ -124,6 +151,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useToast } from '@/composables/useToast'
+import { getApiErrorMessage } from '@/api/client'
 import { listAssignmentSubmissions, downloadSubmissionFile } from '@/api/submission'
 import type { Assignment } from '@/types/quiz'
 import type { Submission } from '@/types/submission'
@@ -143,6 +171,10 @@ const submissions = ref<Submission[]>([])
 const loading = ref(false)
 const searchQuery = ref('')
 
+const isGroupAssignment = computed(() => {
+  return Boolean(props.assignment?.allowsGroupSubmission || submissions.value.some(s => s.isGroup))
+})
+
 function close() {
   emit('update:modelValue', false)
 }
@@ -154,7 +186,12 @@ function formatDateTime(iso: string): string {
 const filteredSubmissions = computed(() => {
   if (!searchQuery.value.trim()) return submissions.value
   const query = searchQuery.value.toLowerCase()
-  return submissions.value.filter(s => s.userEmail?.toLowerCase().includes(query))
+  return submissions.value.filter(s => {
+    if (s.userEmail?.toLowerCase().includes(query)) return true
+    if (s.groupName?.toLowerCase().includes(query)) return true
+    if (s.memberEmails?.some(m => m.toLowerCase().includes(query))) return true
+    return false
+  })
 })
 
 async function loadSubmissions() {
@@ -163,7 +200,7 @@ async function loadSubmissions() {
   try {
     submissions.value = await listAssignmentSubmissions(props.courseUuid, props.assignment.uuid)
   } catch (err: unknown) {
-    toast.error(err instanceof Error ? err.message : 'Failed to load student submissions.')
+    toast.error(getApiErrorMessage(err, 'Failed to load student submissions.'))
   } finally {
     loading.value = false
   }
@@ -184,7 +221,7 @@ async function handleDownload(sub: Submission) {
   try {
     await downloadSubmissionFile(props.courseUuid, props.assignment.uuid, sub.uuid, sub.fileName)
   } catch (err: unknown) {
-    toast.error(err instanceof Error ? err.message : 'Failed to download file.')
+    toast.error(getApiErrorMessage(err, 'Failed to download file.'))
   }
 }
 </script>
