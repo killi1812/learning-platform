@@ -1,5 +1,5 @@
 <template>
-  <v-dialog :model-value="state.isOpen" max-width="460" @update:model-value="onModelUpdate">
+  <v-dialog max-width="460" :model-value="state.isOpen" @update:model-value="onModelUpdate">
     <v-card class="bg-surface pa-2" rounded="lg">
       <v-card-title class="text-h6 font-weight-bold pt-4 px-4 text-high-emphasis">
         {{ state.title || 'Are you sure?' }}

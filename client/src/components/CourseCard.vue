@@ -8,10 +8,7 @@
     @click="emit('click')"
   >
     <div class="pa-4 pb-2">
-      <h3
-        class="text-h6 font-weight-bold text-high-emphasis my-0 mb-2"
-        style="white-space: normal; line-height: 1.35"
-      >
+      <h3 class="course-card__title text-h6 font-weight-bold text-high-emphasis my-0 mb-2">
         {{ course.title }}
       </h3>
 
@@ -35,15 +32,15 @@
       <slot name="actions">
         <span class="text-caption text-medium-emphasis"> {{ course.term }} {{ course.year }} </span>
 
-        <v-btn color="primary" size="small" variant="text">Open Course</v-btn>
+        <span class="text-button text-primary font-weight-medium">Open Course</span>
       </slot>
     </v-card-actions>
   </v-card>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
 import type { Course, CourseRole } from '@/types/course'
+import { computed } from 'vue'
 
 const props = defineProps<{
   course: Course
@@ -52,7 +49,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'click'): void
+  click: []
 }>()
 
 const formattedTeachers = computed(() => {
@@ -62,3 +59,10 @@ const formattedTeachers = computed(() => {
   return props.course.teachers.join(', ')
 })
 </script>
+
+<style scoped>
+.course-card__title {
+  white-space: normal;
+  line-height: 1.35;
+}
+</style>
