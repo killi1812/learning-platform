@@ -1,4 +1,6 @@
-import { ref } from 'vue'
+import type { AppNotification } from '@/types/notification'
+import { readonly, ref } from 'vue'
+import { executeRefreshToken } from '@/api/client'
 import {
   deleteNotification,
   getUnreadCount,
@@ -7,17 +9,20 @@ import {
   markNotificationSeen,
   NotificationStreamError,
   openNotificationStream,
-  refreshAccessToken,
 } from '@/api/notification'
-import type { AppNotification } from '@/types/notification'
 
 const RECONNECT_MIN_MS = 1000
-const RECONNECT_MAX_MS = 30000
+const RECONNECT_MAX_MS = 30_000
 
 // Module-level state: one inbox per app, shared by every consumer.
 const items = ref<AppNotification[]>([])
 const unreadCount = ref(0)
-let activeController: AbortController | null = null
+const isLoading = ref(false)
+const syncError = ref<string | undefined>(undefined)
+
+let activeController: AbortController | undefined
+let activeConsumers = 0
+let reloadSeq = 0
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise(resolve => {
@@ -31,10 +36,28 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
   })
 }
 
-async function reload(): Promise<void> {
-  const [list, count] = await Promise.all([listNotifications(), getUnreadCount()])
-  items.value = list
-  unreadCount.value = count
+async function reload(signal?: AbortSignal): Promise<void> {
+  const seq = ++reloadSeq
+  isLoading.value = true
+  try {
+    const [list, count] = await Promise.all([listNotifications(signal), getUnreadCount(signal)])
+    if (signal?.aborted || seq !== reloadSeq) {
+      return
+    }
+    items.value = list
+    unreadCount.value = count
+    syncError.value = undefined
+  } catch (error: unknown) {
+    if (signal?.aborted) {
+      return
+    }
+    syncError.value = error instanceof Error ? error.message : 'Failed to load notifications.'
+    throw error
+  } finally {
+    if (seq === reloadSeq) {
+      isLoading.value = false
+    }
+  }
 }
 
 async function syncUnreadCount(): Promise<void> {
@@ -54,52 +77,84 @@ function applyIncoming(notification: AppNotification): void {
 async function streamLoop(signal: AbortSignal): Promise<void> {
   let delay = RECONNECT_MIN_MS
 
-  while (!signal.aborted) {
-    try {
-      await openNotificationStream(signal, applyIncoming)
-      // Clean close: server ends the stream when the access token expires. Reconnect soon.
-      delay = RECONNECT_MIN_MS
-    } catch (err: unknown) {
-      if (signal.aborted) return
-      if (err instanceof NotificationStreamError && err.status === 401) {
-        // Token expired while disconnected. Refresh once; stop if the session is gone.
-        if (!(await refreshAccessToken())) return
-        delay = 0
-      } else {
-        delay = Math.min(delay * 2, RECONNECT_MAX_MS)
+  try {
+    while (!signal.aborted) {
+      try {
+        await openNotificationStream(signal, applyIncoming)
+        // Clean close: server ends the stream when the access token expires. Reconnect soon.
+        delay = RECONNECT_MIN_MS
+      } catch (error: unknown) {
+        if (signal.aborted) {
+          return
+        }
+        if (error instanceof NotificationStreamError && error.status === 401) {
+          try {
+            await executeRefreshToken()
+            delay = 0
+          } catch {
+            return
+          }
+        } else {
+          delay = Math.min(delay * 2, RECONNECT_MAX_MS)
+        }
       }
+
+      await sleep(delay, signal)
+      if (signal.aborted) {
+        return
+      }
+
+      // Events sent while disconnected are not replayed. Refetch the inbox to recover them.
+      await reload(signal).catch(() => undefined)
     }
-
-    await sleep(delay, signal)
-    if (signal.aborted) return
-
-    // Events sent while disconnected are not replayed. Refetch the inbox to recover them.
-    await reload().catch(() => undefined)
+  } finally {
+    if (activeController?.signal === signal) {
+      activeController = undefined
+    }
   }
 }
 
-/** Starts the inbox load and the live stream. Safe to call more than once. */
+/** Starts the inbox load and the live stream. Ref-counted across mounted consumers. */
 export function startNotificationSync(): void {
-  if (activeController) return
+  activeConsumers += 1
+  if (activeController) {
+    return
+  }
 
   activeController = new AbortController()
   const { signal } = activeController
 
-  reload().catch(() => undefined)
-  streamLoop(signal).catch(() => undefined)
+  void reload(signal).catch(() => undefined)
+  void streamLoop(signal).catch(() => undefined)
 }
 
-/** Stops the live stream and clears local state. Call on unmount and logout. */
+/** Stops live sync when the last consumer unmounts, clearing local inbox state. */
 export function stopNotificationSync(): void {
+  activeConsumers = Math.max(0, activeConsumers - 1)
+  if (activeConsumers > 0) {
+    return
+  }
+
+  resetNotificationSync()
+}
+
+/** Immediately aborts the notification stream and clears local state (used on logout). */
+export function resetNotificationSync(): void {
+  activeConsumers = 0
   activeController?.abort()
-  activeController = null
+  activeController = undefined
+  reloadSeq += 1
   items.value = []
   unreadCount.value = 0
+  isLoading.value = false
+  syncError.value = undefined
 }
 
 export function useNotifications() {
   async function markSeen(notification: AppNotification): Promise<void> {
-    if (notification.seenAt) return
+    if (notification.seenAt) {
+      return
+    }
 
     const updated = await markNotificationSeen(notification.uuid)
     items.value = items.value.map(item => (item.uuid === updated.uuid ? updated : item))
@@ -108,7 +163,7 @@ export function useNotifications() {
 
   async function markAllSeen(): Promise<void> {
     await markAllNotificationsSeen()
-    await reload()
+    await reload(activeController?.signal)
   }
 
   async function remove(notification: AppNotification): Promise<void> {
@@ -118,8 +173,10 @@ export function useNotifications() {
   }
 
   return {
-    items,
-    unreadCount,
+    items: readonly(items),
+    unreadCount: readonly(unreadCount),
+    isLoading: readonly(isLoading),
+    syncError: readonly(syncError),
     markSeen,
     markAllSeen,
     remove,
