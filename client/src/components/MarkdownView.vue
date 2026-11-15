@@ -1,12 +1,6 @@
 <template>
   <div class="markdown-view">
-    <div
-      v-if="htmlContent"
-      class="markdown-view__content"
-      tabindex="0"
-      aria-label="Markdown content"
-      v-html="htmlContent"
-    />
+    <div v-if="htmlContent" class="markdown-view__content" v-html="htmlContent" />
     <div v-else class="markdown-view__empty text-medium-emphasis text-caption font-italic">
       {{ emptyText }}
     </div>

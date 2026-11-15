@@ -5,7 +5,7 @@
     rounded="md"
   >
     <div class="d-flex align-center ga-3 overflow-hidden flex-grow-1">
-      <v-avatar size="32" color="secondary" variant="tonal">
+      <v-avatar color="secondary" size="32" variant="tonal">
         <v-icon icon="mdi-file-upload-outline" size="small" />
       </v-avatar>
       <div class="d-flex flex-column overflow-hidden">
@@ -27,9 +27,9 @@
       <v-chip
         v-if="assignment.allowsGroupSubmission"
         color="info"
+        prepend-icon="mdi-account-group"
         size="small"
         variant="tonal"
-        prepend-icon="mdi-account-group"
       >
         Group
       </v-chip>
@@ -40,6 +40,7 @@
 
       <template v-if="isTeacher">
         <v-btn
+          aria-label="Submissions"
           color="primary"
           icon="mdi-account-group-outline"
           size="small"
@@ -48,6 +49,7 @@
           @click="emit('submissions')"
         />
         <v-btn
+          aria-label="Edit assignment"
           color="primary"
           icon="mdi-pencil-outline"
           size="small"
@@ -56,6 +58,7 @@
           @click="emit('edit')"
         />
         <v-btn
+          aria-label="Delete assignment"
           color="error"
           icon="mdi-delete-outline"
           size="small"
@@ -67,8 +70,8 @@
 
       <template v-else>
         <v-btn
-          :disabled="isClosed"
           color="primary"
+          :disabled="isClosed"
           size="small"
           variant="tonal"
           @click="emit('submit')"
@@ -81,8 +84,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
 import type { Assignment } from '@/types/quiz'
+import { computed } from 'vue'
+import { formatDateTime, parseValidDate } from '@/util/dateTime'
 
 const props = defineProps<{
   assignment: Assignment
@@ -91,24 +95,15 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'edit'): void
-  (e: 'submissions'): void
-  (e: 'delete'): void
-  (e: 'submit'): void
+  edit: []
+  submissions: []
+  delete: []
+  submit: []
 }>()
 
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
 const isPastDeadline = computed(() => {
-  if (!props.assignment.deadline) return false
-  return Date.now() > new Date(props.assignment.deadline).getTime()
+  const deadline = parseValidDate(props.assignment.deadline)
+  return deadline ? Date.now() > deadline.getTime() : false
 })
 
 const isClosed = computed(() => {
@@ -117,7 +112,8 @@ const isClosed = computed(() => {
 
 const deadlineText = computed(() => {
   if (!props.assignment.deadline) return 'No deadline'
-  return `Due ${formatDateTime(props.assignment.deadline)}`
+  const formatted = formatDateTime(props.assignment.deadline)
+  return formatted ? `Due ${formatted}` : 'No deadline'
 })
 
 const statusChip = computed(() => {
