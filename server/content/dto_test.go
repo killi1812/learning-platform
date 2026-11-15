@@ -83,6 +83,7 @@ func TestHandinDto_FromModel(t *testing.T) {
 				Deadline:               &deadline,
 				AcceptsLateSubmissions: true,
 				AllowsGroupSubmission:  true,
+				MaxPoints:              75.0,
 			},
 		}
 
@@ -94,5 +95,6 @@ func TestHandinDto_FromModel(t *testing.T) {
 		assert.Equal(t, &deadline, dto.Deadline)
 		assert.True(t, dto.AcceptsLateSubmissions)
 		assert.True(t, dto.AllowsGroupSubmission)
+		assert.Equal(t, 75.0, dto.MaxPoints)
 	})
 }

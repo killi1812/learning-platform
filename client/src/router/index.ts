@@ -165,11 +165,7 @@ export const routes: RouteRecordRaw[] = [
   {
     path: '/grades',
     name: 'Grades',
-    component: GenericView,
-    props: {
-      title: 'Grades',
-      icon: 'mdi-chart-bar',
-    },
+    component: () => import('@/views/GradesView.vue'),
     meta: {
       requiresAuth: true,
       title: 'Grades',

@@ -13,6 +13,14 @@ export interface SubmissionAccepted {
   status: SubmissionStatus
 }
 
+export interface SubmissionGrade {
+  score: number
+  feedback?: string
+  isVisibleToStudent: boolean
+  gradedAt: string
+  releasedAt?: string
+}
+
 export interface Submission {
   uuid: string
   attempt: number
@@ -27,6 +35,7 @@ export interface Submission {
   isGroup?: boolean
   groupName?: string
   memberEmails?: string[]
+  grade?: SubmissionGrade
 }
 
 export interface CreateHandinPayload {
@@ -34,6 +43,7 @@ export interface CreateHandinPayload {
   deadline?: string
   acceptsLateSubmissions: boolean
   allowsGroupSubmission?: boolean
+  maxPoints?: number
 }
 
 export interface UpdateHandinPayload {
@@ -41,6 +51,7 @@ export interface UpdateHandinPayload {
   deadline?: string
   acceptsLateSubmissions: boolean
   allowsGroupSubmission?: boolean
+  maxPoints?: number
 }
 
 export interface HandinAssignment {
@@ -51,6 +62,7 @@ export interface HandinAssignment {
   deadline?: string
   acceptsLateSubmissions: boolean
   allowsGroupSubmission?: boolean
+  maxPoints?: number
   createdAt: string
   updatedAt: string
 }

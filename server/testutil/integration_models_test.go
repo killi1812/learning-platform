@@ -226,11 +226,11 @@ func TestAllLmsModels_EndToEndAutoMigrateAndWorkflow(t *testing.T) {
 
 	// 10. Grade & Feedback
 	grd := &submission.Grade{
-		SubmissionID:       sub.ID,
-		Score:              100.0,
-		Feedback:           "Flawless election logic under partitions.",
-		IsVisibleToStudent: true,
-		GradedByID:         &teacher.ID,
+		IndividualSubmissionID: &indivSub.ID,
+		Score:                  100.0,
+		Feedback:               "Flawless election logic under partitions.",
+		IsVisibleToStudent:     true,
+		GradedByID:             &teacher.ID,
 	}
 	assert.NoError(t, db.Create(grd).Error)
 
@@ -283,7 +283,7 @@ func TestAllLmsModels_EndToEndAutoMigrateAndWorkflow(t *testing.T) {
 
 	var loadedGrade submission.Grade
 	err = db.
-		Preload("Submission.Content.Module.Course").
+		Preload("IndividualSubmission.Content.Module.Course").
 		Preload("GradedBy").
 		First(&loadedGrade, grd.ID).Error
 
@@ -291,6 +291,6 @@ func TestAllLmsModels_EndToEndAutoMigrateAndWorkflow(t *testing.T) {
 	assert.Equal(t, 100.0, loadedGrade.Score)
 	assert.True(t, loadedGrade.IsVisibleToStudent)
 	assert.Equal(t, "prof@hvl.no", loadedGrade.GradedBy.Email)
-	assert.NotNil(t, loadedGrade.Submission)
-	assert.Equal(t, "Exercise 1: Raft Implementation", loadedGrade.Submission.Content.Title)
+	assert.NotNil(t, loadedGrade.IndividualSubmission)
+	assert.Equal(t, "Readiness Quiz", loadedGrade.IndividualSubmission.Content.Title)
 }

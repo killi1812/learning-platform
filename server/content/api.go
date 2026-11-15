@@ -92,7 +92,8 @@ func (ctn *ContentCtn) handleError(c *gin.Context, err error) bool {
 		ctn.logger.Errorf("Content forbidden: %v", err)
 		ginutil.RespondWithError(c, http.StatusForbidden, err.Error())
 		return true
-	case errors.Is(err, ErrGroupModeLocked):
+	case errors.Is(err, ErrGroupModeLocked),
+		errors.Is(err, ErrMaxPointsBelowExistingGrade):
 		ctn.logger.Errorf("Content conflict: %v", err)
 		ginutil.RespondWithError(c, http.StatusConflict, err.Error())
 		return true
@@ -524,7 +525,7 @@ func (ctn *ContentCtn) createHandin(c *gin.Context) {
 		return
 	}
 
-	cnt, err := ctn.contentService.CreateHandin(courseUuid, moduleUuid, dto.Title, dto.Deadline, dto.AcceptsLateSubmissions, dto.AllowsGroupSubmission)
+	cnt, err := ctn.contentService.CreateHandin(courseUuid, moduleUuid, dto.Title, dto.Deadline, dto.AcceptsLateSubmissions, dto.AllowsGroupSubmission, dto.MaxPoints)
 	if ctn.handleError(c, err) {
 		return
 	}
@@ -661,7 +662,7 @@ func (ctn *ContentCtn) updateHandin(c *gin.Context) {
 		return
 	}
 
-	cnt, err := ctn.contentService.UpdateHandin(courseUuid, moduleUuid, assignmentUuid, dto.Title, dto.Deadline, dto.AcceptsLateSubmissions, dto.AllowsGroupSubmission)
+	cnt, err := ctn.contentService.UpdateHandin(courseUuid, moduleUuid, assignmentUuid, dto.Title, dto.Deadline, dto.AcceptsLateSubmissions, dto.AllowsGroupSubmission, dto.MaxPoints)
 	if ctn.handleError(c, err) {
 		return
 	}

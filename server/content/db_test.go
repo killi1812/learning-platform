@@ -656,7 +656,7 @@ func TestContentService_HandinAssignment(t *testing.T) {
 	deadline := time.Now().Add(48 * time.Hour)
 
 	// 1. CreateHandin
-	created, err := svc.CreateHandin(c.Uuid, m.Uuid, "Assignment 1", &deadline, true, false)
+	created, err := svc.CreateHandin(c.Uuid, m.Uuid, "Assignment 1", &deadline, true, false, nil)
 	assert.NoError(t, err)
 	assert.NotNil(t, created)
 	assert.Equal(t, "Assignment 1", created.Title)
@@ -665,6 +665,7 @@ func TestContentService_HandinAssignment(t *testing.T) {
 	assert.Equal(t, content.AssignmentHandIn, created.Assignment.Type)
 	assert.True(t, created.Assignment.AcceptsLateSubmissions)
 	assert.False(t, created.Assignment.AllowsGroupSubmission)
+	assert.Equal(t, 100.0, created.Assignment.MaxPoints)
 
 	var notifs []notification.Notification
 	assert.NoError(t, db.Where("user_id = ?", student.ID).Find(&notifs).Error)
@@ -672,11 +673,13 @@ func TestContentService_HandinAssignment(t *testing.T) {
 	assert.Equal(t, "New Assignment: Assignment 1", notifs[0].Title)
 	assert.Equal(t, "/courses/"+c.Uuid.String(), notifs[0].URL)
 
-	// Create second handin to test auto-position and groupAllowed = true
-	created2, err := svc.CreateHandin(c.Uuid, m.Uuid, "Assignment 2", nil, false, true)
+	// Create second handin to test auto-position and groupAllowed = true and custom MaxPoints
+	customMax := 50.0
+	created2, err := svc.CreateHandin(c.Uuid, m.Uuid, "Assignment 2", nil, false, true, &customMax)
 	assert.NoError(t, err)
 	assert.Equal(t, 2, created2.Position)
 	assert.True(t, created2.Assignment.AllowsGroupSubmission)
+	assert.Equal(t, 50.0, created2.Assignment.MaxPoints)
 
 	// 2. GetHandin
 	fetched, err := svc.GetHandin(c.Uuid, m.Uuid, created.Uuid)
@@ -688,20 +691,28 @@ func TestContentService_HandinAssignment(t *testing.T) {
 	_, err = svc.GetHandin(c.Uuid, m.Uuid, uuid.New())
 	assert.ErrorIs(t, err, content.ErrContentNotFound)
 
-	// Ensure submission tables exist for lock check
-	assert.NoError(t, db.Exec("CREATE TABLE IF NOT EXISTS individual_submissions (content_id INTEGER); CREATE TABLE IF NOT EXISTS group_submissions (content_id INTEGER);").Error)
+	// Ensure submission and grade tables exist for lock check
+	assert.NoError(t, db.Exec("CREATE TABLE IF NOT EXISTS individual_submissions (id INTEGER PRIMARY KEY, content_id INTEGER); CREATE TABLE IF NOT EXISTS group_submissions (id INTEGER PRIMARY KEY, content_id INTEGER); CREATE TABLE IF NOT EXISTS grades (id INTEGER PRIMARY KEY, individual_submission_id INTEGER, score DECIMAL(5,2));").Error)
 
 	// 3. UpdateHandin
 	newDeadline := time.Now().Add(72 * time.Hour)
-	updated, err := svc.UpdateHandin(c.Uuid, m.Uuid, created.Uuid, "Assignment 1 Updated", &newDeadline, false, true)
+	newMax := 80.0
+	updated, err := svc.UpdateHandin(c.Uuid, m.Uuid, created.Uuid, "Assignment 1 Updated", &newDeadline, false, true, &newMax)
 	assert.NoError(t, err)
 	assert.Equal(t, "Assignment 1 Updated", updated.Title)
 	assert.False(t, updated.Assignment.AcceptsLateSubmissions)
 	assert.True(t, updated.Assignment.AllowsGroupSubmission)
+	assert.Equal(t, 80.0, updated.Assignment.MaxPoints)
+
+	// Test ErrMaxPointsBelowExistingGrade
+	assert.NoError(t, db.Exec("INSERT INTO individual_submissions (id, content_id) VALUES (999, ?)", created.ID).Error)
+	assert.NoError(t, db.Exec("INSERT INTO grades (individual_submission_id, score) VALUES (999, 75.0)").Error)
+	tooLowMax := 70.0
+	_, err = svc.UpdateHandin(c.Uuid, m.Uuid, created.Uuid, "Assignment 1 Updated", &newDeadline, false, true, &tooLowMax)
+	assert.ErrorIs(t, err, content.ErrMaxPointsBelowExistingGrade)
 
 	// Test ErrGroupModeLocked: simulate existing submission
-	assert.NoError(t, db.Exec("INSERT INTO individual_submissions (content_id) VALUES (?)", created.ID).Error)
-	_, err = svc.UpdateHandin(c.Uuid, m.Uuid, created.Uuid, "Assignment 1 Updated Again", &newDeadline, false, false)
+	_, err = svc.UpdateHandin(c.Uuid, m.Uuid, created.Uuid, "Assignment 1 Updated Again", &newDeadline, false, false, nil)
 	assert.ErrorIs(t, err, content.ErrGroupModeLocked)
 
 	// 4. ListHandins

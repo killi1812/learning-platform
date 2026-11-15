@@ -58,8 +58,13 @@ func Insert() {
 		zap.S().DPanicf("Failed to seed modules: %+v", err)
 	}
 
-	if _, err := seedAssignments(modules); err != nil {
+	assignments, err := seedAssignments(modules)
+	if err != nil {
 		zap.S().DPanicf("Failed to seed assignments: %+v", err)
+	}
+
+	if err := seedGrades(assignments, teachers, students); err != nil {
+		zap.S().DPanicf("Failed to seed grades: %+v", err)
 	}
 
 	if _, err := seedFiles(courses, modules); err != nil {

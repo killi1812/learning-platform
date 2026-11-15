@@ -702,6 +702,89 @@ const docTemplate = `{
                 }
             }
         },
+        "/course/{uuid}/content/{contentUuid}/grade/release": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Teacher or Admin only. Transitions all unreleased individual grades to visible and notifies students.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "grade"
+                ],
+                "summary": "Release all unreleased grades for an assignment",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Course UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Content UUID",
+                        "name": "contentUuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/grade.ReleaseResultDto"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/course/{uuid}/content/{contentUuid}/submission": {
             "get": {
                 "security": [
@@ -1174,6 +1257,108 @@ const docTemplate = `{
                 }
             }
         },
+        "/course/{uuid}/content/{contentUuid}/submission/{submissionUuid}/grade": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Teacher or Admin only. Sets evaluation score, Markdown feedback, and student visibility.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "grade"
+                ],
+                "summary": "Grade or update an individual submission",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Course UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Content UUID",
+                        "name": "contentUuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Submission UUID",
+                        "name": "submissionUuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Grade and feedback payload",
+                        "name": "grade",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/grade.UpsertGradeDto"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/grade.GradeDto"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/course/{uuid}/enroll": {
             "post": {
                 "security": [
@@ -1472,6 +1657,67 @@ const docTemplate = `{
                 "responses": {
                     "204": {
                         "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/course/{uuid}/grade/export": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Teacher or Admin only. Streams CSV containing all student grades across all assignments in course.",
+                "produces": [
+                    "text/csv"
+                ],
+                "tags": [
+                    "grade"
+                ],
+                "summary": "Export course gradebook as CSV",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Course UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
                     },
                     "400": {
                         "description": "Bad Request",
@@ -3654,6 +3900,114 @@ const docTemplate = `{
                 }
             }
         },
+        "/grade/my": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Student view. Returns released hand-in grades and quiz best-attempt scores for authenticated student.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "grade"
+                ],
+                "summary": "List student's own grades",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by course UUID",
+                        "name": "courseUuid",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/grade.StudentGradeDto"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/grade/pending": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Teacher or Admin only. Returns latest ungraded individual submissions across courses taught by caller.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "grade"
+                ],
+                "summary": "List pending ungraded submissions",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by course UUID",
+                        "name": "courseUuid",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/grade.PendingSubmissionDto"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/group": {
             "post": {
                 "security": [
@@ -4925,6 +5279,10 @@ const docTemplate = `{
                 "deadline": {
                     "type": "string"
                 },
+                "maxPoints": {
+                    "type": "number",
+                    "maximum": 999
+                },
                 "title": {
                     "type": "string",
                     "maxLength": 255,
@@ -4984,6 +5342,9 @@ const docTemplate = `{
                 },
                 "deadline": {
                     "type": "string"
+                },
+                "maxPoints": {
+                    "type": "number"
                 },
                 "moduleUuid": {
                     "type": "string"
@@ -5049,6 +5410,10 @@ const docTemplate = `{
                 },
                 "deadline": {
                     "type": "string"
+                },
+                "maxPoints": {
+                    "type": "number",
+                    "maximum": 999
                 },
                 "title": {
                     "type": "string",
@@ -5407,6 +5772,161 @@ const docTemplate = `{
                 "error": {
                     "type": "string",
                     "example": "Example error, something went wrong"
+                }
+            }
+        },
+        "grade.GradeDto": {
+            "type": "object",
+            "properties": {
+                "feedback": {
+                    "type": "string"
+                },
+                "gradedAt": {
+                    "type": "string"
+                },
+                "gradedByEmail": {
+                    "type": "string"
+                },
+                "isVisibleToStudent": {
+                    "type": "boolean"
+                },
+                "maxPoints": {
+                    "type": "number"
+                },
+                "releasedAt": {
+                    "type": "string"
+                },
+                "score": {
+                    "type": "number"
+                }
+            }
+        },
+        "grade.PendingSubmissionDto": {
+            "type": "object",
+            "properties": {
+                "assignmentTitle": {
+                    "type": "string"
+                },
+                "attempt": {
+                    "type": "integer"
+                },
+                "contentUuid": {
+                    "type": "string"
+                },
+                "courseCode": {
+                    "type": "string"
+                },
+                "courseName": {
+                    "type": "string"
+                },
+                "courseUuid": {
+                    "type": "string"
+                },
+                "deadline": {
+                    "type": "string"
+                },
+                "isLate": {
+                    "type": "boolean"
+                },
+                "maxPoints": {
+                    "type": "number"
+                },
+                "submissionUuid": {
+                    "type": "string"
+                },
+                "submittedAt": {
+                    "type": "string"
+                },
+                "userEmail": {
+                    "type": "string"
+                },
+                "userName": {
+                    "type": "string"
+                }
+            }
+        },
+        "grade.ReleaseResultDto": {
+            "type": "object",
+            "properties": {
+                "released": {
+                    "type": "integer"
+                }
+            }
+        },
+        "grade.StudentGradeDto": {
+            "type": "object",
+            "properties": {
+                "assignmentTitle": {
+                    "type": "string"
+                },
+                "attempt": {
+                    "type": "integer"
+                },
+                "contentUuid": {
+                    "type": "string"
+                },
+                "courseCode": {
+                    "type": "string"
+                },
+                "courseName": {
+                    "type": "string"
+                },
+                "courseUuid": {
+                    "type": "string"
+                },
+                "feedback": {
+                    "type": "string"
+                },
+                "gradedAt": {
+                    "type": "string"
+                },
+                "maxPoints": {
+                    "type": "number"
+                },
+                "moduleTitle": {
+                    "type": "string"
+                },
+                "percent": {
+                    "type": "number"
+                },
+                "score": {
+                    "type": "number"
+                },
+                "type": {
+                    "$ref": "#/definitions/grade.StudentGradeType"
+                }
+            }
+        },
+        "grade.StudentGradeType": {
+            "type": "string",
+            "enum": [
+                "HANDIN",
+                "QUIZ"
+            ],
+            "x-enum-varnames": [
+                "GradeTypeHandin",
+                "GradeTypeQuiz"
+            ]
+        },
+        "grade.UpsertGradeDto": {
+            "type": "object",
+            "required": [
+                "score"
+            ],
+            "properties": {
+                "feedback": {
+                    "type": "string",
+                    "maxLength": 10000,
+                    "example": "Good overall structure, minor edge-case bug."
+                },
+                "isVisibleToStudent": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "score": {
+                    "type": "number",
+                    "minimum": 0,
+                    "example": 85.5
                 }
             }
         },
@@ -5871,6 +6391,9 @@ const docTemplate = `{
                 "fileSize": {
                     "type": "integer"
                 },
+                "grade": {
+                    "$ref": "#/definitions/submission.SubmissionGradeDto"
+                },
                 "groupName": {
                     "type": "string"
                 },
@@ -5900,6 +6423,26 @@ const docTemplate = `{
                 },
                 "uuid": {
                     "type": "string"
+                }
+            }
+        },
+        "submission.SubmissionGradeDto": {
+            "type": "object",
+            "properties": {
+                "feedback": {
+                    "type": "string"
+                },
+                "gradedAt": {
+                    "type": "string"
+                },
+                "isVisibleToStudent": {
+                    "type": "boolean"
+                },
+                "releasedAt": {
+                    "type": "string"
+                },
+                "score": {
+                    "type": "number"
                 }
             }
         },

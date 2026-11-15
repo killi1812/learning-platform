@@ -673,6 +673,7 @@ func (s *SubmissionService) ListMySubmissions(courseUuid, contentUuid, userUuid 
 
 	var subs []IndividualSubmission
 	err = s.db.
+		Preload("Grade", "is_visible_to_student = ?", true).
 		Where("content_id = ? AND user_id = ?", cnt.ID, u.ID).
 		Order("attempt DESC").
 		Find(&subs).Error
@@ -682,6 +683,16 @@ func (s *SubmissionService) ListMySubmissions(courseUuid, contentUuid, userUuid 
 
 	dtos := make([]SubmissionDto, 0, len(subs))
 	for _, sub := range subs {
+		var gradeDto *SubmissionGradeDto
+		if sub.Grade != nil {
+			gradeDto = &SubmissionGradeDto{
+				Score:              sub.Grade.Score,
+				Feedback:           sub.Grade.Feedback,
+				IsVisibleToStudent: sub.Grade.IsVisibleToStudent,
+				GradedAt:           sub.Grade.UpdatedAt,
+				ReleasedAt:         sub.Grade.ReleasedAt,
+			}
+		}
 		dtos = append(dtos, SubmissionDto{
 			Uuid:        sub.Uuid,
 			Attempt:     sub.Attempt,
@@ -693,6 +704,7 @@ func (s *SubmissionService) ListMySubmissions(courseUuid, contentUuid, userUuid 
 			ContentType: sub.ContentType,
 			SubmittedAt: sub.SubmittedAt,
 			UserEmail:   sub.UserEmail,
+			Grade:       gradeDto,
 		})
 	}
 	return dtos, nil
@@ -757,6 +769,7 @@ func (s *SubmissionService) ListCourseAssignmentSubmissions(courseUuid, contentU
 
 	var subs []IndividualSubmission
 	err = s.db.
+		Preload("Grade").
 		Where("content_id = ?", cnt.ID).
 		Order("submitted_at DESC").
 		Find(&subs).Error
@@ -766,6 +779,16 @@ func (s *SubmissionService) ListCourseAssignmentSubmissions(courseUuid, contentU
 
 	dtos := make([]SubmissionDto, 0, len(subs))
 	for _, sub := range subs {
+		var gradeDto *SubmissionGradeDto
+		if sub.Grade != nil {
+			gradeDto = &SubmissionGradeDto{
+				Score:              sub.Grade.Score,
+				Feedback:           sub.Grade.Feedback,
+				IsVisibleToStudent: sub.Grade.IsVisibleToStudent,
+				GradedAt:           sub.Grade.UpdatedAt,
+				ReleasedAt:         sub.Grade.ReleasedAt,
+			}
+		}
 		dtos = append(dtos, SubmissionDto{
 			Uuid:        sub.Uuid,
 			Attempt:     sub.Attempt,
@@ -777,6 +800,7 @@ func (s *SubmissionService) ListCourseAssignmentSubmissions(courseUuid, contentU
 			ContentType: sub.ContentType,
 			SubmittedAt: sub.SubmittedAt,
 			UserEmail:   sub.UserEmail,
+			Grade:       gradeDto,
 		})
 	}
 	return dtos, nil

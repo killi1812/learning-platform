@@ -238,6 +238,25 @@
                   submitted by {{ sub.userEmail }}
                 </span>
               </div>
+              <!-- Evaluated Grade & Feedback -->
+              <div v-if="sub.grade" class="mt-2 pa-2 rounded bg-surface border">
+                <div class="d-flex align-center justify-space-between mb-1">
+                  <span class="text-caption font-weight-bold text-high-emphasis">
+                    Grade & Feedback
+                  </span>
+                  <v-chip size="x-small" color="primary" variant="flat">
+                    {{ sub.grade.score }} / {{ assignment?.maxPoints || 100 }} pts
+                  </v-chip>
+                </div>
+                <MarkdownView
+                  v-if="sub.grade.feedback"
+                  :source="sub.grade.feedback"
+                  class="text-caption mt-1"
+                />
+                <div v-else class="text-caption text-medium-emphasis font-italic">
+                  No written feedback provided.
+                </div>
+              </div>
             </v-list-item-subtitle>
 
             <template #append>
@@ -277,6 +296,7 @@ import {
   listMySubmissions,
   downloadSubmissionFile,
 } from '@/api/submission'
+import MarkdownView from '@/components/MarkdownView.vue'
 import type { Assignment } from '@/types/quiz'
 import type { Submission } from '@/types/submission'
 import type { Group } from '@/types/course'

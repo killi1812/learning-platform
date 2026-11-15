@@ -1058,6 +1058,18 @@
             variant="outlined"
           />
 
+          <v-text-field
+            v-model.number="handinMaxPoints"
+            class="mb-3"
+            label="Max Points"
+            placeholder="100"
+            type="number"
+            min="1"
+            max="999"
+            variant="outlined"
+            messages="Total points possible for this assignment (1 - 999, default 100)"
+          />
+
           <v-switch v-model="handinLateAllowed" color="primary" label="Accept late submissions" />
 
           <v-switch
@@ -1433,6 +1445,7 @@ const targetHandinModUuid = ref('')
 const targetHandinUuid = ref('')
 const handinTitle = ref('')
 const handinDeadline = ref('')
+const handinMaxPoints = ref<number | undefined>(100)
 const handinLateAllowed = ref(false)
 const handinGroupAllowed = ref(false)
 const savingHandin = ref(false)
@@ -1529,6 +1542,7 @@ function openCreateHandinDialog(moduleUuid: string) {
   targetHandinUuid.value = ''
   handinTitle.value = ''
   handinDeadline.value = ''
+  handinMaxPoints.value = 100
   handinLateAllowed.value = false
   handinGroupAllowed.value = false
   handinDialogOpen.value = true
@@ -1540,6 +1554,7 @@ function openEditHandinDialog(asgn: Assignment) {
   targetHandinUuid.value = asgn.uuid
   handinTitle.value = asgn.title
   handinDeadline.value = asgn.deadline ? asgn.deadline.slice(0, 16) : ''
+  handinMaxPoints.value = asgn.maxPoints || 100
   handinLateAllowed.value = asgn.acceptsLateSubmissions || false
   handinGroupAllowed.value = asgn.allowsGroupSubmission || false
   handinDialogOpen.value = true
@@ -1552,6 +1567,7 @@ async function handleSaveHandin() {
     const deadlineIso = handinDeadline.value
       ? new Date(handinDeadline.value).toISOString()
       : undefined
+    const maxPts = handinMaxPoints.value && handinMaxPoints.value > 0 ? handinMaxPoints.value : 100
     if (isEditingHandin.value && targetHandinUuid.value) {
       await updateHandin(
         resolvedCourseUuid.value,
@@ -1562,6 +1578,7 @@ async function handleSaveHandin() {
           deadline: deadlineIso,
           acceptsLateSubmissions: handinLateAllowed.value,
           allowsGroupSubmission: handinGroupAllowed.value,
+          maxPoints: maxPts,
         },
       )
       toast.success('Assignment updated successfully.')
@@ -1571,6 +1588,7 @@ async function handleSaveHandin() {
         deadline: deadlineIso,
         acceptsLateSubmissions: handinLateAllowed.value,
         allowsGroupSubmission: handinGroupAllowed.value,
+        maxPoints: maxPts,
       })
       toast.success('Assignment created successfully.')
     }

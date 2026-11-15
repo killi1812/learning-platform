@@ -1,7 +1,7 @@
 <template>
   <v-dialog
     :model-value="modelValue"
-    max-width="850"
+    max-width="950"
     persistent
     @update:model-value="emit('update:modelValue', $event)"
   >
@@ -15,15 +15,29 @@
 
       <v-card-subtitle class="px-4 text-medium-emphasis d-flex align-center justify-space-between">
         <span>{{ submissions.length }} total submissions recorded</span>
-        <v-btn
-          density="compact"
-          prepend-icon="mdi-refresh"
-          variant="text"
-          size="small"
-          @click="loadSubmissions"
-        >
-          Refresh
-        </v-btn>
+        <div class="d-flex align-center ga-2">
+          <v-btn
+            v-if="!isGroupAssignment && submissions.length > 0"
+            density="compact"
+            prepend-icon="mdi-bullhorn-outline"
+            color="primary"
+            variant="tonal"
+            size="small"
+            :loading="releasing"
+            @click="handleReleaseGrades"
+          >
+            Release All Grades
+          </v-btn>
+          <v-btn
+            density="compact"
+            prepend-icon="mdi-refresh"
+            variant="text"
+            size="small"
+            @click="loadSubmissions"
+          >
+            Refresh
+          </v-btn>
+        </div>
       </v-card-subtitle>
 
       <v-card-text class="px-4 pt-3">
@@ -65,6 +79,7 @@
                 <th class="text-center font-weight-bold">Attempt</th>
                 <th class="text-left font-weight-bold">Submitted At</th>
                 <th class="text-center font-weight-bold">Timing</th>
+                <th class="text-center font-weight-bold">Grade</th>
                 <th class="text-right font-weight-bold">Deliverable</th>
               </tr>
             </thead>
@@ -109,6 +124,59 @@
                     {{ sub.isLate ? 'Late' : 'On Time' }}
                   </v-chip>
                 </td>
+                <td class="text-center py-2">
+                  <template v-if="sub.isGroup">
+                    <v-chip
+                      size="x-small"
+                      color="secondary"
+                      variant="outlined"
+                      title="Group grading coming in a future update"
+                    >
+                      Group (Ungraded)
+                    </v-chip>
+                  </template>
+                  <template v-else-if="sub.grade">
+                    <div class="d-flex flex-column align-center ga-1">
+                      <div class="d-flex align-center ga-1">
+                        <v-chip size="x-small" color="primary" variant="flat">
+                          {{ sub.grade.score }} / {{ assignment?.maxPoints || 100 }}
+                        </v-chip>
+                        <v-chip
+                          size="x-small"
+                          :color="sub.grade.isVisibleToStudent ? 'success' : 'warning'"
+                          variant="tonal"
+                        >
+                          {{ sub.grade.isVisibleToStudent ? 'Released' : 'Hidden' }}
+                        </v-chip>
+                      </div>
+                      <v-btn
+                        density="compact"
+                        size="x-small"
+                        variant="text"
+                        color="primary"
+                        prepend-icon="mdi-pencil"
+                        @click="openGradeDialog(sub)"
+                      >
+                        Edit Grade
+                      </v-btn>
+                    </div>
+                  </template>
+                  <template v-else>
+                    <div class="d-flex flex-column align-center ga-1">
+                      <v-chip size="x-small" color="default" variant="tonal"> Ungraded </v-chip>
+                      <v-btn
+                        density="compact"
+                        size="x-small"
+                        variant="tonal"
+                        color="primary"
+                        prepend-icon="mdi-check-decagram"
+                        @click="openGradeDialog(sub)"
+                      >
+                        Grade
+                      </v-btn>
+                    </div>
+                  </template>
+                </td>
                 <td class="text-right">
                   <v-btn
                     v-if="sub.payloadType === 'FILE'"
@@ -145,16 +213,35 @@
         <v-btn color="medium-emphasis" variant="text" @click="close"> Close </v-btn>
       </v-card-actions>
     </v-card>
+
+    <GradeDialog
+      v-model="gradeDialogOpen"
+      :course-uuid="courseUuid"
+      :content-uuid="assignment?.uuid || ''"
+      :submission-uuid="selectedSubForGrading?.uuid || ''"
+      :assignment-title="assignment?.title"
+      :student-email="selectedSubForGrading?.userEmail"
+      :attempt="selectedSubForGrading?.attempt"
+      :max-points="assignment?.maxPoints || 100"
+      :initial-score="selectedSubForGrading?.grade?.score"
+      :initial-feedback="selectedSubForGrading?.grade?.feedback"
+      :initial-visible="selectedSubForGrading?.grade?.isVisibleToStudent ?? true"
+      @saved="onGradeSaved"
+    />
   </v-dialog>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useToast } from '@/composables/useToast'
+import { useConfirm } from '@/composables/useConfirm'
 import { getApiErrorMessage } from '@/api/client'
 import { listAssignmentSubmissions, downloadSubmissionFile } from '@/api/submission'
+import { releaseAssignmentGrades } from '@/api/grade'
+import GradeDialog from '@/components/GradeDialog.vue'
 import type { Assignment } from '@/types/quiz'
 import type { Submission } from '@/types/submission'
+import type { GradeDto } from '@/types/grade'
 
 const props = defineProps<{
   modelValue: boolean
@@ -167,9 +254,15 @@ const emit = defineEmits<{
 }>()
 
 const toast = useToast()
+const { confirm } = useConfirm()
+
 const submissions = ref<Submission[]>([])
 const loading = ref(false)
+const releasing = ref(false)
 const searchQuery = ref('')
+
+const gradeDialogOpen = ref(false)
+const selectedSubForGrading = ref<Submission | null>(null)
 
 const isGroupAssignment = computed(() => {
   return Boolean(props.assignment?.allowsGroupSubmission || submissions.value.some(s => s.isGroup))
@@ -203,6 +296,45 @@ async function loadSubmissions() {
     toast.error(getApiErrorMessage(err, 'Failed to load student submissions.'))
   } finally {
     loading.value = false
+  }
+}
+
+function openGradeDialog(sub: Submission) {
+  selectedSubForGrading.value = sub
+  gradeDialogOpen.value = true
+}
+
+function onGradeSaved(savedGrade: GradeDto) {
+  if (!selectedSubForGrading.value) return
+  selectedSubForGrading.value.grade = {
+    score: savedGrade.score,
+    feedback: savedGrade.feedback,
+    isVisibleToStudent: savedGrade.isVisibleToStudent,
+    gradedAt: savedGrade.gradedAt,
+    releasedAt: savedGrade.releasedAt,
+  }
+}
+
+async function handleReleaseGrades() {
+  if (!props.courseUuid || !props.assignment?.uuid) return
+  const confirmed = await confirm({
+    title: 'Release Grades',
+    message:
+      'Are you sure you want to release all hidden grades for this assignment? Students will receive notifications and will be able to see their score and feedback.',
+    confirmText: 'Release Grades',
+    confirmColor: 'primary',
+  })
+  if (!confirmed) return
+
+  releasing.value = true
+  try {
+    const res = await releaseAssignmentGrades(props.courseUuid, props.assignment.uuid)
+    toast.success(`${res.released} grade(s) released successfully!`)
+    await loadSubmissions()
+  } catch (err: unknown) {
+    toast.error(getApiErrorMessage(err, 'Failed to release assignment grades.'))
+  } finally {
+    releasing.value = false
   }
 }
 

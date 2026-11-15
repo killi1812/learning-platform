@@ -70,6 +70,7 @@ export interface Assignment {
   deadline?: string
   acceptsLateSubmissions?: boolean
   allowsGroupSubmission?: boolean
+  maxPoints?: number
   passPercent: number
   maxAttempts: number
   attemptsUsed: number
