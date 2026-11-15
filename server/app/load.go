@@ -38,6 +38,7 @@ func LoadConfig() {
 	DatabaseConn = loadString("DATABASE_CONN")
 	SeaweedFSEndpoint = loadString("SEAWEEDFS_ENDPOINT")
 	RabbitMqConn = loadString("RABBITMQ_CONN")
+	LogQuery = loadBool("LOG_QUERY")
 
 	zap.S().Debugf("Finished loading env variables")
 }
@@ -101,5 +102,5 @@ func loadBool(name string) bool {
 	if rez == "" {
 		zap.S().Errorf("Env variable %s is empty", name)
 	}
-	return rez == "true"
+	return rez == "true" || rez == "True"
 }

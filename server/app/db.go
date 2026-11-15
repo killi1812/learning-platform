@@ -10,7 +10,7 @@ import (
 
 // NewGormDb initializes and returns the primary PostgreSQL connection via GORM.
 func NewGormDb() *gorm.DB {
-	return utilDb.NewPostgresDb(DatabaseConn, Build == BuildDev)
+	return utilDb.NewPostgresDb(DatabaseConn, Build == BuildDev, LogQuery)
 }
 
 // NewMongoDb initializes and returns the MongoDB connection used for ephemeral session storage.

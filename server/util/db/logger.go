@@ -19,6 +19,10 @@ type gormZapLogger struct {
 }
 
 func newGormZapLogger() logger.Interface {
+	return newGormZapLoggerWithLvl(logger.Info)
+}
+
+func newGormZapLoggerWithLvl(logLvl logger.LogLevel) logger.Interface {
 	var (
 		infoStr      = "%s\t%s"
 		warnStr      = "%s\t%s"
@@ -31,7 +35,7 @@ func newGormZapLogger() logger.Interface {
 	return &gormZapLogger{
 		Config: logger.Config{
 			SlowThreshold:             200 * time.Millisecond,
-			LogLevel:                  logger.Info,
+			LogLevel:                  logLvl,
 			IgnoreRecordNotFoundError: false,
 			Colorful:                  true,
 		},
