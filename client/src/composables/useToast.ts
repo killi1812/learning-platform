@@ -10,6 +10,7 @@ export interface ToastItem {
   closable?: boolean
 }
 
+const MAX_TOAST_QUEUE = 50
 const queue = ref<ToastItem[]>([])
 
 const ICON_MAP: Record<ToastType, string> = {
@@ -19,44 +20,45 @@ const ICON_MAP: Record<ToastType, string> = {
   info: 'mdi-information-outline',
 }
 
+function show(message: string, type: ToastType = 'info', timeout = 4000): void {
+  if (queue.value.length >= MAX_TOAST_QUEUE) {
+    queue.value.shift()
+  }
+  queue.value.push({
+    text: message,
+    color: type,
+    prependIcon: ICON_MAP[type],
+    timeout,
+    closable: true,
+  })
+}
+
+function success(message: string, timeout?: number): void {
+  show(message, 'success', timeout)
+}
+
+function error(message: string, timeout?: number): void {
+  show(message, 'error', timeout)
+}
+
+function warning(message: string, timeout?: number): void {
+  show(message, 'warning', timeout)
+}
+
+function info(message: string, timeout?: number): void {
+  show(message, 'info', timeout)
+}
+
+export function useToastQueue() {
+  return { queue }
+}
+
 export function useToast() {
-  function show(message: string, type: ToastType = 'info', timeout = 4000) {
-    queue.value.push({
-      text: message,
-      color: type,
-      prependIcon: ICON_MAP[type],
-      timeout,
-      closable: true,
-    })
-  }
-
-  function success(message: string, timeout?: number) {
-    show(message, 'success', timeout)
-  }
-
-  function error(message: string, timeout?: number) {
-    show(message, 'error', timeout)
-  }
-
-  function warning(message: string, timeout?: number) {
-    show(message, 'warning', timeout)
-  }
-
-  function info(message: string, timeout?: number) {
-    show(message, 'info', timeout)
-  }
-
-  function clear() {
-    queue.value = []
-  }
-
   return {
-    queue,
     show,
     success,
     error,
     warning,
     info,
-    clear,
   }
 }

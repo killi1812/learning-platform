@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { readonly, ref } from 'vue'
 
 export interface ConfirmOptions {
   title?: string
@@ -10,7 +10,6 @@ export interface ConfirmOptions {
 
 interface ConfirmState extends ConfirmOptions {
   isOpen: boolean
-  resolve?: (value: boolean) => void
 }
 
 const state = ref<ConfirmState>({
@@ -18,31 +17,45 @@ const state = ref<ConfirmState>({
   message: '',
 })
 
+let pendingResolve: ((value: boolean) => void) | undefined
+
+function settle(result: boolean): void {
+  const resolve = pendingResolve
+  pendingResolve = undefined
+  state.value = {
+    ...state.value,
+    isOpen: false,
+  }
+  resolve?.(result)
+}
+
 export function useConfirm() {
   function confirm(options: ConfirmOptions | string): Promise<boolean> {
     const opts: ConfirmOptions = typeof options === 'string' ? { message: options } : options
+    if (pendingResolve) {
+      pendingResolve(false)
+      pendingResolve = undefined
+    }
 
     return new Promise(resolve => {
+      pendingResolve = resolve
       state.value = {
         ...opts,
         isOpen: true,
-        resolve,
       }
     })
   }
 
-  function handleConfirm() {
-    state.value.isOpen = false
-    state.value.resolve?.(true)
+  function handleConfirm(): void {
+    settle(true)
   }
 
-  function handleCancel() {
-    state.value.isOpen = false
-    state.value.resolve?.(false)
+  function handleCancel(): void {
+    settle(false)
   }
 
   return {
-    state,
+    state: readonly(state),
     confirm,
     handleConfirm,
     handleCancel,
