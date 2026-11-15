@@ -1,16 +1,23 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import { getStoredAccessToken, registerAuthFailureHandler } from '@/api/client'
 import { useAuth } from '@/composables/useAuth'
 
-import DashboardView from '@/views/DashboardView.vue'
-import CourseCatalogView from '@/views/CourseCatalogView.vue'
-import CourseDetailView from '@/views/CourseDetailView.vue'
-import LoginView from '@/views/LoginView.vue'
-import RegisterView from '@/views/RegisterView.vue'
-import UnauthorizedView from '@/views/UnauthorizedView.vue'
-import CoursesView from '@/views/CoursesView.vue'
-import SettingsView from '@/views/SettingsView.vue'
-import GenericView from '@/views/GenericView.vue'
-import NotificationSendView from '@/views/NotificationSendView.vue'
+declare module 'vue-router' {
+  interface RouteMeta {
+    requiresAuth?: boolean
+    guestOnly?: boolean
+    hideNavigation?: boolean
+    title?: string
+    roles?: string[]
+  }
+}
+
+function paramAsString(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) {
+    return value[0] ?? ''
+  }
+  return value ?? ''
+}
 
 export const routes: RouteRecordRaw[] = [
   {
@@ -20,7 +27,7 @@ export const routes: RouteRecordRaw[] = [
   {
     path: '/login',
     name: 'Login',
-    component: LoginView,
+    component: () => import('@/views/LoginView.vue'),
     meta: {
       guestOnly: true,
       hideNavigation: true,
@@ -30,7 +37,7 @@ export const routes: RouteRecordRaw[] = [
   {
     path: '/register',
     name: 'Register',
-    component: RegisterView,
+    component: () => import('@/views/RegisterView.vue'),
     meta: {
       guestOnly: true,
       hideNavigation: true,
@@ -40,17 +47,16 @@ export const routes: RouteRecordRaw[] = [
   {
     path: '/unauthorized',
     name: 'Unauthorized',
-    component: UnauthorizedView,
+    component: () => import('@/views/UnauthorizedView.vue'),
     meta: {
       hideNavigation: true,
       title: 'Unauthorized Access',
     },
   },
-  // Protected Routes
   {
     path: '/dashboard',
     name: 'Dashboard',
-    component: DashboardView,
+    component: () => import('@/views/DashboardView.vue'),
     meta: {
       requiresAuth: true,
       title: 'Dashboard',
@@ -59,7 +65,7 @@ export const routes: RouteRecordRaw[] = [
   {
     path: '/courses',
     name: 'Courses',
-    component: CoursesView,
+    component: () => import('@/views/CoursesView.vue'),
     meta: {
       requiresAuth: true,
       title: 'My Courses',
@@ -68,7 +74,7 @@ export const routes: RouteRecordRaw[] = [
   {
     path: '/catalog',
     name: 'CourseCatalog',
-    component: CourseCatalogView,
+    component: () => import('@/views/CourseCatalogView.vue'),
     meta: {
       requiresAuth: true,
       title: 'Course Catalog',
@@ -77,8 +83,8 @@ export const routes: RouteRecordRaw[] = [
   {
     path: '/courses/:uuid',
     name: 'CourseDetail',
-    component: CourseDetailView,
-    props: route => ({ courseUuid: String(route.params.uuid) }),
+    component: () => import('@/views/CourseDetailView.vue'),
+    props: route => ({ courseUuid: paramAsString(route.params.uuid) }),
     meta: {
       requiresAuth: true,
       title: 'Course Details',
@@ -89,9 +95,9 @@ export const routes: RouteRecordRaw[] = [
     name: 'FileView',
     component: () => import('@/views/FileView.vue'),
     props: route => ({
-      courseUuid: String(route.params.uuid),
-      moduleUuid: String(route.params.moduleUuid),
-      fileUuid: String(route.params.fileUuid),
+      courseUuid: paramAsString(route.params.uuid),
+      moduleUuid: paramAsString(route.params.moduleUuid),
+      fileUuid: paramAsString(route.params.fileUuid),
     }),
     meta: {
       requiresAuth: true,
@@ -103,9 +109,9 @@ export const routes: RouteRecordRaw[] = [
     name: 'QuizEdit',
     component: () => import('@/views/QuizEditorView.vue'),
     props: route => ({
-      courseUuid: String(route.params.uuid),
-      moduleUuid: String(route.params.moduleUuid),
-      quizUuid: String(route.params.quizUuid),
+      courseUuid: paramAsString(route.params.uuid),
+      moduleUuid: paramAsString(route.params.moduleUuid),
+      quizUuid: paramAsString(route.params.quizUuid),
     }),
     meta: {
       requiresAuth: true,
@@ -117,9 +123,9 @@ export const routes: RouteRecordRaw[] = [
     name: 'QuizTake',
     component: () => import('@/views/QuizTakeView.vue'),
     props: route => ({
-      courseUuid: String(route.params.uuid),
-      moduleUuid: String(route.params.moduleUuid),
-      quizUuid: String(route.params.quizUuid),
+      courseUuid: paramAsString(route.params.uuid),
+      moduleUuid: paramAsString(route.params.moduleUuid),
+      quizUuid: paramAsString(route.params.quizUuid),
     }),
     meta: {
       requiresAuth: true,
@@ -131,9 +137,9 @@ export const routes: RouteRecordRaw[] = [
     name: 'QuizResults',
     component: () => import('@/views/QuizResultsView.vue'),
     props: route => ({
-      courseUuid: String(route.params.uuid),
-      moduleUuid: String(route.params.moduleUuid),
-      quizUuid: String(route.params.quizUuid),
+      courseUuid: paramAsString(route.params.uuid),
+      moduleUuid: paramAsString(route.params.moduleUuid),
+      quizUuid: paramAsString(route.params.quizUuid),
     }),
     meta: {
       requiresAuth: true,
@@ -159,10 +165,6 @@ export const routes: RouteRecordRaw[] = [
     },
   },
   {
-    path: '/messages',
-    redirect: '/assignments',
-  },
-  {
     path: '/grades',
     name: 'Grades',
     component: () => import('@/views/GradesView.vue'),
@@ -174,7 +176,7 @@ export const routes: RouteRecordRaw[] = [
   {
     path: '/settings',
     name: 'Settings',
-    component: SettingsView,
+    component: () => import('@/views/SettingsView.vue'),
     meta: {
       requiresAuth: true,
       title: 'Settings',
@@ -183,7 +185,7 @@ export const routes: RouteRecordRaw[] = [
   {
     path: '/admin',
     name: 'Admin',
-    component: GenericView,
+    component: () => import('@/views/GenericView.vue'),
     props: {
       title: 'Admin Control Panel',
       icon: 'mdi-shield-crown-outline',
@@ -197,13 +199,12 @@ export const routes: RouteRecordRaw[] = [
   {
     path: '/notification/send',
     name: 'NotificationSend',
-    component: NotificationSendView,
+    component: () => import('@/views/NotificationSendView.vue'),
     meta: {
       requiresAuth: true,
       title: 'Send notification',
     },
   },
-  // Fallback catch-all route
   {
     path: '/:pathMatch(.*)*',
     redirect: '/dashboard',
@@ -215,49 +216,55 @@ export const router = createRouter({
   routes,
 })
 
-// Navigation Guard
-router.beforeEach(async (to, _from, next) => {
-  const { isAuthenticated, currentUser, refresh } = useAuth()
+registerAuthFailureHandler(() => {
+  const currentRoute = router.currentRoute.value
+  if (currentRoute.path !== '/login' && currentRoute.path !== '/unauthorized') {
+    void router.replace({
+      path: '/login',
+      query: { redirect: currentRoute.fullPath },
+    })
+  }
+})
 
-  // 1. Check if route requires authentication
+router.beforeEach(async to => {
+  const { isAuthenticated, isTokenExpired, hasAnyRole, refresh } = useAuth()
+
   if (to.meta.requiresAuth) {
-    if (!isAuthenticated.value) {
-      // Attempt silent token refresh via HTTP-only cookie before redirecting
+    if (!isAuthenticated.value || isTokenExpired()) {
       const refreshed = await refresh()
-      if (!refreshed || !isAuthenticated.value) {
-        // Redirect to unauthorized page with destination preserved in query
-        return next({
-          path: '/unauthorized',
+      if (!refreshed || !isAuthenticated.value || isTokenExpired()) {
+        return {
+          path: '/login',
           query: { redirect: to.fullPath },
-        })
+        }
       }
     }
 
-    // 2. Check role authorization if specified
-    const allowedRoles = to.meta.roles as string[] | undefined
-    if (allowedRoles && allowedRoles.length > 0) {
-      const userRole = currentUser.value?.role?.toLowerCase()
-      const hasPermission = userRole && allowedRoles.map(r => r.toLowerCase()).includes(userRole)
-      if (!hasPermission) {
-        return next({
-          path: '/unauthorized',
-          query: { redirect: to.fullPath },
-        })
+    const allowedRoles = to.meta.roles
+    if (allowedRoles && allowedRoles.length > 0 && !hasAnyRole(allowedRoles)) {
+      return {
+        path: '/unauthorized',
+        query: { redirect: to.fullPath },
       }
     }
   }
 
-  // 3. Prevent authenticated users from visiting guest-only pages (e.g. login)
-  if (to.meta.guestOnly && isAuthenticated.value) {
-    return next({ path: '/dashboard' })
+  if (to.meta.guestOnly) {
+    if ((!isAuthenticated.value || isTokenExpired()) && getStoredAccessToken()) {
+      await refresh()
+    }
+    if (isAuthenticated.value && !isTokenExpired()) {
+      return { path: '/dashboard' }
+    }
   }
 
-  // 4. Update document title
-  if (to.meta.title) {
-    document.title = `${to.meta.title} — DAT250 Learning Platform`
-  }
+  return undefined
+})
 
-  return next()
+router.afterEach(to => {
+  document.title = to.meta.title
+    ? `${to.meta.title} — DAT250 Learning Platform`
+    : 'DAT250 Learning Platform'
 })
 
 export default router
