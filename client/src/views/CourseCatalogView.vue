@@ -66,6 +66,21 @@
       <v-progress-circular color="primary" indeterminate size="64" />
     </div>
 
+    <!-- Load Error State -->
+    <v-alert
+      v-else-if="loadError"
+      class="mb-4"
+      color="error"
+      icon="mdi-alert-circle"
+      rounded="lg"
+      variant="tonal"
+    >
+      <div class="d-flex flex-wrap align-center justify-space-between ga-3">
+        <span>{{ loadError }}</span>
+        <v-btn color="error" size="small" variant="outlined" @click="fetchCourses"> Retry </v-btn>
+      </div>
+    </v-alert>
+
     <!-- Empty State -->
     <v-card
       v-else-if="filteredCourses.length === 0"
@@ -86,11 +101,11 @@
 
     <!-- Course Grid -->
     <v-row v-else>
-      <v-col v-for="course in filteredCourses" :key="course.uuid" cols="12" md="6" lg="4">
+      <v-col v-for="course in filteredCourses" :key="course.uuid" cols="12" lg="4" md="6">
         <CourseCard
           :course="course"
           :role="enrolledMap[course.uuid]"
-          @click="selectCourse(course.uuid)"
+          :to="`/courses/${course.uuid}`"
         >
           <template #actions>
             <span class="text-caption text-medium-emphasis">
@@ -98,12 +113,7 @@
             </span>
 
             <div class="d-flex align-center ga-2">
-              <v-btn
-                color="primary"
-                size="small"
-                variant="text"
-                @click.stop="selectCourse(course.uuid)"
-              >
+              <v-btn color="primary" size="small" :to="`/courses/${course.uuid}`" variant="text">
                 View Modules
               </v-btn>
 
@@ -115,7 +125,7 @@
                 prepend-icon="mdi-account-plus"
                 size="small"
                 variant="elevated"
-                @click.stop="handleEnroll(course.uuid)"
+                @click.stop.prevent="handleEnroll(course.uuid)"
               >
                 {{ isAuthenticated ? 'Enroll' : 'Login to Enroll' }}
               </v-btn>
@@ -143,7 +153,7 @@
               label="Course Title"
               placeholder="e.g. DAT250 Advanced Software Technologies"
               required
-              :rules="[v => !!v || 'Course title is required']"
+              :rules="[v => !!v.trim() || 'Course title is required']"
               variant="outlined"
             />
 
@@ -177,90 +187,7 @@
               </v-col>
             </v-row>
 
-            <!-- Grading Scale (A-F Minimum %) -->
-            <div class="mt-4 mb-2">
-              <div class="d-flex align-center justify-space-between mb-2">
-                <div>
-                  <span class="text-subtitle-2 font-weight-bold text-high-emphasis">
-                    Grading Scale (Minimum % for A–E)
-                  </span>
-                  <div class="text-caption text-medium-emphasis">
-                    Thresholds for final subject grades. F is anything below E.
-                  </div>
-                </div>
-                <v-btn
-                  size="x-small"
-                  variant="text"
-                  prepend-icon="mdi-refresh"
-                  @click="resetNewCourseGradingScale"
-                >
-                  Reset
-                </v-btn>
-              </div>
-
-              <v-row dense>
-                <v-col cols="6" sm="4">
-                  <v-text-field
-                    v-model.number="newCourseGradingScale.scaleA"
-                    label="Grade A (≥ %)"
-                    type="number"
-                    min="1"
-                    max="100"
-                    density="compact"
-                    variant="outlined"
-                  />
-                </v-col>
-                <v-col cols="6" sm="4">
-                  <v-text-field
-                    v-model.number="newCourseGradingScale.scaleB"
-                    label="Grade B (≥ %)"
-                    type="number"
-                    min="1"
-                    max="100"
-                    density="compact"
-                    variant="outlined"
-                  />
-                </v-col>
-                <v-col cols="6" sm="4">
-                  <v-text-field
-                    v-model.number="newCourseGradingScale.scaleC"
-                    label="Grade C (≥ %)"
-                    type="number"
-                    min="1"
-                    max="100"
-                    density="compact"
-                    variant="outlined"
-                  />
-                </v-col>
-                <v-col cols="6" sm="4">
-                  <v-text-field
-                    v-model.number="newCourseGradingScale.scaleD"
-                    label="Grade D (≥ %)"
-                    type="number"
-                    min="1"
-                    max="100"
-                    density="compact"
-                    variant="outlined"
-                  />
-                </v-col>
-                <v-col cols="6" sm="4">
-                  <v-text-field
-                    v-model.number="newCourseGradingScale.scaleE"
-                    label="Grade E (≥ %)"
-                    type="number"
-                    min="1"
-                    max="100"
-                    density="compact"
-                    variant="outlined"
-                  />
-                </v-col>
-                <v-col cols="6" sm="4" class="d-flex align-center">
-                  <span class="text-caption text-medium-emphasis">
-                    Grade F: &lt; {{ newCourseGradingScale.scaleE }}%
-                  </span>
-                </v-col>
-              </v-row>
-            </div>
+            <GradingScaleFields v-model="newCourseGradingScale" class="mt-4 mb-2" />
           </v-form>
         </v-card-text>
 
@@ -279,32 +206,36 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import type {
+  Course,
+  CourseRole,
+  CourseTerm,
+  CreateCoursePayload,
+  GradingScale,
+} from '@/types/course'
+import { computed, onMounted, ref } from 'vue'
+import { getApiErrorMessage } from '@/api/client'
+import { createCourse, getMyCourses, listCourses, selfEnroll } from '@/api/course'
 import CourseCard from '@/components/CourseCard.vue'
+import GradingScaleFields from '@/components/GradingScaleFields.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useToast } from '@/composables/useToast'
-import { listCourses, getMyCourses, selfEnroll, createCourse } from '@/api/course'
-import { DEFAULT_GRADING_SCALE, isValidGradingScale } from '@/types/course'
-import type { Course, CourseRole, CreateCoursePayload, GradingScale } from '@/types/course'
+import { DEFAULT_GRADING_SCALE, isValidGradingScale } from '@/util/grading'
 
-const emit = defineEmits<{
-  (e: 'select-course', courseUuid: string): void
-}>()
-
-const router = useRouter()
 const { isAuthenticated } = useAuth()
 const toast = useToast()
 
 const courses = ref<Course[]>([])
 const enrolledMap = ref<Record<string, CourseRole>>({})
 const loading = ref(false)
+const loadError = ref<string | undefined>(undefined)
 const enrollingUuid = ref<string | undefined>(undefined)
 
 const searchQuery = ref('')
-const selectedTerm = ref<string>('')
+const selectedTerm = ref<CourseTerm | undefined>(undefined)
 const selectedYear = ref<number | undefined>(undefined)
 
+const createForm = ref<{ validate: () => Promise<{ valid: boolean }> } | undefined>(undefined)
 const createDialogOpen = ref(false)
 const creating = ref(false)
 const newCourse = ref<CreateCoursePayload>({
@@ -316,42 +247,43 @@ const newCourse = ref<CreateCoursePayload>({
 
 const newCourseGradingScale = ref<GradingScale>({ ...DEFAULT_GRADING_SCALE })
 
-function resetNewCourseGradingScale() {
-  newCourseGradingScale.value = { ...DEFAULT_GRADING_SCALE }
-}
+let fetchCounter = 0
 
 const filteredCourses = computed(() => {
-  return courses.value.filter(c => {
-    if (
-      searchQuery.value &&
-      !c.title.toLowerCase().includes(searchQuery.value.toLowerCase()) &&
-      !c.description?.toLowerCase().includes(searchQuery.value.toLowerCase())
-    ) {
-      return false
-    }
-    return true
-  })
+  const query = searchQuery.value.trim().toLowerCase()
+  if (!query) {
+    return courses.value
+  }
+  return courses.value.filter(
+    c =>
+      c.title.toLowerCase().includes(query) ||
+      (c.description?.toLowerCase().includes(query) ?? false),
+  )
 })
 
-function selectCourse(courseUuid: string) {
-  emit('select-course', courseUuid)
-  router.push(`/courses/${courseUuid}`)
-}
-
-async function fetchCourses() {
+async function fetchCourses(): Promise<void> {
+  const requestId = ++fetchCounter
   loading.value = true
+  loadError.value = undefined
   try {
     const list = await listCourses(selectedTerm.value || undefined, selectedYear.value || undefined)
+    if (requestId !== fetchCounter) {
+      return
+    }
     courses.value = list
     await fetchMyEnrollments()
-  } catch (err: unknown) {
-    toast.error(err instanceof Error ? err.message : 'Failed to load course catalog.')
+  } catch (error: unknown) {
+    if (requestId === fetchCounter) {
+      loadError.value = getApiErrorMessage(error, 'Failed to load course catalog.')
+    }
   } finally {
-    loading.value = false
+    if (requestId === fetchCounter) {
+      loading.value = false
+    }
   }
 }
 
-async function fetchMyEnrollments() {
+async function fetchMyEnrollments(): Promise<void> {
   if (!isAuthenticated.value) {
     enrolledMap.value = {}
     return
@@ -359,34 +291,37 @@ async function fetchMyEnrollments() {
   try {
     const myCourses = await getMyCourses()
     const map: Record<string, CourseRole> = {}
-    myCourses.forEach(mc => {
+    for (const mc of myCourses) {
       map[mc.course.uuid] = mc.role
-    })
+    }
     enrolledMap.value = map
-  } catch (err: unknown) {
-    toast.error(err instanceof Error ? err.message : 'Failed to load enrolled courses.')
+  } catch (error: unknown) {
+    toast.error(getApiErrorMessage(error, 'Failed to load enrolled courses.'))
   }
 }
 
-async function handleEnroll(courseUuid: string) {
+async function handleEnroll(courseUuid: string): Promise<void> {
   enrollingUuid.value = courseUuid
   try {
     const res = await selfEnroll(courseUuid)
     enrolledMap.value[courseUuid] = res.role
     toast.success('Successfully enrolled as STUDENT in the course!')
-  } catch (err: unknown) {
-    toast.error(err instanceof Error ? err.message : 'Enrollment failed.')
+  } catch (error: unknown) {
+    toast.error(getApiErrorMessage(error, 'Enrollment failed.'))
   } finally {
     enrollingUuid.value = undefined
   }
 }
 
-async function handleCreateCourse() {
-  if (!newCourse.value.title.trim()) return
+async function handleCreateCourse(): Promise<void> {
+  const result = await createForm.value?.validate()
+  if (result && !result.valid) {
+    return
+  }
 
   const s = newCourseGradingScale.value
   if (!isValidGradingScale(s)) {
-    toast.error('Invalid grading scale: Must satisfy 100 ≥ A > B > C > D > E > 0.')
+    toast.error('Invalid grading scale: Must satisfy 100 >= A > B > C > D > E > 0.')
     return
   }
 
@@ -394,6 +329,7 @@ async function handleCreateCourse() {
   try {
     const payload: CreateCoursePayload = {
       ...newCourse.value,
+      title: newCourse.value.title.trim(),
       gradingScale: { ...s },
     }
     const created = await createCourse(payload)
@@ -404,17 +340,17 @@ async function handleCreateCourse() {
       term: 'AUTUMN',
       year: 2026,
     }
-    resetNewCourseGradingScale()
+    newCourseGradingScale.value = { ...DEFAULT_GRADING_SCALE }
     toast.success(`Course "${created.title}" successfully created! You are enrolled as TEACHER.`)
     await fetchCourses()
-  } catch (err: unknown) {
-    toast.error(err instanceof Error ? err.message : 'Failed to create course.')
+  } catch (error: unknown) {
+    toast.error(getApiErrorMessage(error, 'Failed to create course.'))
   } finally {
     creating.value = false
   }
 }
 
 onMounted(() => {
-  fetchCourses()
+  void fetchCourses()
 })
 </script>
