@@ -619,3 +619,126 @@ func TestGradeService_ExportCourseCSV(t *testing.T) {
 		assert.ErrorIs(t, err, course.ErrCourseNotFound)
 	})
 }
+
+func TestGradeService_FinalGrades(t *testing.T) {
+	db, _, svc := setupGradeTestDb(t)
+
+	crs := course.Course{
+		Uuid:         uuid.New(),
+		Title:        "Advanced Databases",
+		Term:         course.TermAutumn,
+		Year:         2026,
+		GradingScale: course.DefaultGradingScale(),
+	}
+	assert.NoError(t, db.Create(&crs).Error)
+
+	mod := course.Module{CourseID: crs.ID, Title: "Module 1", Position: 1}
+	assert.NoError(t, db.Create(&mod).Error)
+
+	st1 := user.User{Uuid: uuid.New(), Username: "student_one", Email: "st1@example.com"}
+	st2 := user.User{Uuid: uuid.New(), Username: "student_two", Email: "st2@example.com"}
+	assert.NoError(t, db.Create(&st1).Error)
+	assert.NoError(t, db.Create(&st2).Error)
+
+	assert.NoError(t, db.Create(&course.Enrollment{CourseID: crs.ID, UserID: st1.ID, UserEmail: st1.Email, Role: course.RoleStudent}).Error)
+	assert.NoError(t, db.Create(&course.Enrollment{CourseID: crs.ID, UserID: st2.ID, UserEmail: st2.Email, Role: course.RoleStudent}).Error)
+
+	// 1. Handin assignment (MaxPoints: 100)
+	hCnt := content.Content{Uuid: uuid.New(), ModuleID: mod.ID, Title: "Homework 1", Position: 1, Type: content.TypeAssignment}
+	assert.NoError(t, db.Create(&hCnt).Error)
+	assert.NoError(t, db.Create(&content.Assignment{ContentID: hCnt.ID, Type: content.AssignmentHandIn, MaxPoints: 100}).Error)
+
+	// Submissions:
+	// Student 1: 95.0, visible
+	sub1 := submission.IndividualSubmission{
+		Submission: submission.Submission{Uuid: uuid.New(), ContentID: hCnt.ID, Attempt: 1, SubmittedAt: time.Now()},
+		UserID:     &st1.ID,
+		UserEmail:  st1.Email,
+	}
+	assert.NoError(t, db.Create(&sub1).Error)
+	assert.NoError(t, db.Create(&submission.Grade{IndividualSubmissionID: &sub1.ID, Score: 95.0, IsVisibleToStudent: true}).Error)
+
+	// Student 2: 75.0, hidden
+	sub2 := submission.IndividualSubmission{
+		Submission: submission.Submission{Uuid: uuid.New(), ContentID: hCnt.ID, Attempt: 1, SubmittedAt: time.Now()},
+		UserID:     &st2.ID,
+		UserEmail:  st2.Email,
+	}
+	assert.NoError(t, db.Create(&sub2).Error)
+	assert.NoError(t, db.Create(&submission.Grade{IndividualSubmissionID: &sub2.ID, Score: 75.0, IsVisibleToStudent: false}).Error)
+
+	// 2. Quiz assignment (100 pts)
+	qCnt := content.Content{Uuid: uuid.New(), ModuleID: mod.ID, Title: "Quiz 1", Position: 2, Type: content.TypeAssignment}
+	assert.NoError(t, db.Create(&qCnt).Error)
+	assert.NoError(t, db.Create(&content.Assignment{ContentID: qCnt.ID, Type: content.AssignmentQuiz}).Error)
+	assert.NoError(t, db.Create(&content.Quiz{ContentID: qCnt.ID, Published: true}).Error)
+
+	now := time.Now()
+	// Student 1 has a quiz attempt with 85%
+	assert.NoError(t, db.Create(&quiz.Attempt{
+		UserID:      st1.ID,
+		QuizID:      qCnt.ID,
+		StartedAt:   now.Add(-30 * time.Minute),
+		SubmittedAt: &now,
+		Percent:     85.0,
+		Passed:      true,
+	}).Error)
+
+	t.Run("GetStudentFinalGrades calculates cumulative points and final letter grade", func(t *testing.T) {
+		// Total max points = 200 (100 handin + 100 quiz)
+		// Student 1 earned = 95.0 + 85.0 = 180.0
+		// Percent = 180 / 200 = 90.0% -> Grade "A"
+		finals, err := svc.GetStudentFinalGrades(st1.Uuid, nil)
+		assert.NoError(t, err)
+		assert.Len(t, finals, 1)
+		assert.Equal(t, 180.0, finals[0].TotalScore)
+		assert.Equal(t, 200.0, finals[0].TotalMaxScore)
+		assert.Equal(t, 90.0, finals[0].Percent)
+		assert.Equal(t, "A", finals[0].FinalGrade)
+
+		// Filter by courseUuid
+		finalsFiltered, err := svc.GetStudentFinalGrades(st1.Uuid, &crs.Uuid)
+		assert.NoError(t, err)
+		assert.Len(t, finalsFiltered, 1)
+	})
+
+	t.Run("GetStudentFinalGrades hides unreleased grades for student view", func(t *testing.T) {
+		// Student 2 has hidden grade 75.0, quiz attempt 0
+		// Earned = 0.0, total max = 200.0, percent = 0.0% -> Grade "F"
+		finals, err := svc.GetStudentFinalGrades(st2.Uuid, nil)
+		assert.NoError(t, err)
+		assert.Len(t, finals, 1)
+		assert.Equal(t, 0.0, finals[0].TotalScore)
+		assert.Equal(t, 200.0, finals[0].TotalMaxScore)
+		assert.Equal(t, 0.0, finals[0].Percent)
+		assert.Equal(t, "F", finals[0].FinalGrade)
+	})
+
+	t.Run("GetCourseRosterFinalGrades returns class-wide standing for instructors", func(t *testing.T) {
+		roster, err := svc.GetCourseRosterFinalGrades(crs.Uuid)
+		assert.NoError(t, err)
+		assert.Len(t, roster, 2)
+
+		// Student 1
+		assert.Equal(t, "st1@example.com", roster[0].UserEmail)
+		assert.Equal(t, 180.0, roster[0].TotalScore)
+		assert.Equal(t, 90.0, roster[0].Percent)
+		assert.Equal(t, "A", roster[0].FinalGrade)
+
+		// Student 2 (instructor view includes unreleased score 75.0)
+		assert.Equal(t, "st2@example.com", roster[1].UserEmail)
+		assert.Equal(t, 75.0, roster[1].TotalScore)
+		assert.Equal(t, 37.5, roster[1].Percent) // 75 / 200 = 37.5% -> F (< 40%)
+		assert.Equal(t, "F", roster[1].FinalGrade)
+	})
+
+	t.Run("GetCourseRosterFinalGrades returns ErrCourseNotFound for invalid course", func(t *testing.T) {
+		_, err := svc.GetCourseRosterFinalGrades(uuid.New())
+		assert.ErrorIs(t, err, course.ErrCourseNotFound)
+	})
+
+	t.Run("GetStudentFinalGrades returns error for non-existent user", func(t *testing.T) {
+		_, err := svc.GetStudentFinalGrades(uuid.New(), nil)
+		assert.Error(t, err)
+	})
+}

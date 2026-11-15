@@ -196,6 +196,8 @@ definitions:
         type: string
       description:
         type: string
+      gradingScale:
+        $ref: '#/definitions/course.GradingScaleDto'
       teachers:
         items:
           type: string
@@ -223,6 +225,8 @@ definitions:
     properties:
       description:
         type: string
+      gradingScale:
+        $ref: '#/definitions/course.GradingScaleDto'
       term:
         enum:
         - SPRING
@@ -286,6 +290,35 @@ definitions:
       username:
         type: string
     type: object
+  course.GradingScaleDto:
+    properties:
+      scaleA:
+        example: 90
+        maximum: 100
+        type: number
+      scaleB:
+        example: 80
+        maximum: 100
+        type: number
+      scaleC:
+        example: 60
+        maximum: 100
+        type: number
+      scaleD:
+        example: 50
+        maximum: 100
+        type: number
+      scaleE:
+        example: 40
+        maximum: 100
+        type: number
+    required:
+    - scaleA
+    - scaleB
+    - scaleC
+    - scaleD
+    - scaleE
+    type: object
   course.GroupDto:
     properties:
       courseUuid:
@@ -348,6 +381,8 @@ definitions:
     properties:
       description:
         type: string
+      gradingScale:
+        $ref: '#/definitions/course.GradingScaleDto'
       term:
         enum:
         - SPRING
@@ -399,6 +434,26 @@ definitions:
         example: Example error, something went wrong
         type: string
     type: object
+  grade.CourseFinalGradeDto:
+    properties:
+      courseCode:
+        type: string
+      courseName:
+        type: string
+      courseUuid:
+        type: string
+      finalGrade:
+        description: '"A", "B", "C", "D", "E", "F"'
+        type: string
+      gradingScale:
+        $ref: '#/definitions/course.GradingScaleDto'
+      percent:
+        type: number
+      totalMaxScore:
+        type: number
+      totalScore:
+        type: number
+    type: object
   grade.GradeDto:
     properties:
       feedback:
@@ -449,6 +504,23 @@ definitions:
     properties:
       released:
         type: integer
+    type: object
+  grade.StudentFinalGradeRowDto:
+    properties:
+      finalGrade:
+        type: string
+      percent:
+        type: number
+      totalMaxScore:
+        type: number
+      totalScore:
+        type: number
+      userEmail:
+        type: string
+      userName:
+        type: string
+      userUuid:
+        type: string
     type: object
   grade.StudentGradeDto:
     properties:
@@ -2007,6 +2079,50 @@ paths:
       summary: Export course gradebook as CSV
       tags:
       - grade
+  /course/{uuid}/grade/roster:
+    get:
+      description: Teacher or Admin only. Returns all enrolled students with their
+        cumulative earned scores, percentages, and final letter grades (A-F).
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/grade.StudentFinalGradeRowDto'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get course grade roster with final letter grades
+      tags:
+      - grade
   /course/{uuid}/group:
     get:
       description: Returns all groups formed for the specified course. Requires student
@@ -3482,6 +3598,41 @@ paths:
       security:
       - BearerAuth: []
       summary: List student's own grades
+      tags:
+      - grade
+  /grade/my/final:
+    get:
+      description: Calculates and returns cumulative final subject letter grades (A-F),
+        earned points, and overall percentage across enrolled courses.
+      parameters:
+      - description: Filter by course UUID
+        in: query
+        name: courseUuid
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/grade.CourseFinalGradeDto'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get student's final course grades
       tags:
       - grade
   /grade/pending:

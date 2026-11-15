@@ -38,6 +38,10 @@ type GradebookRecord struct {
 	GradedByEmail      string
 	GradedAt           string
 	Feedback           string
+	FinalCourseScore   string
+	FinalCourseMax     string
+	FinalCoursePercent string
+	FinalCourseGrade   string
 }
 
 // WriteGradebookCSV writes a slice of gradebook records as a CSV into w.
@@ -61,6 +65,10 @@ func WriteGradebookCSV(w io.Writer, records []GradebookRecord) error {
 		"graded_by",
 		"graded_at",
 		"feedback",
+		"final_course_score",
+		"final_course_max",
+		"final_course_percent",
+		"final_course_grade",
 	}
 
 	if err := writer.Write(header); err != nil {
@@ -84,6 +92,10 @@ func WriteGradebookCSV(w io.Writer, records []GradebookRecord) error {
 			SanitizeCSVCell(rec.GradedByEmail),
 			SanitizeCSVCell(rec.GradedAt),
 			SanitizeCSVCell(strings.ReplaceAll(rec.Feedback, "\n", " ")),
+			SanitizeCSVCell(rec.FinalCourseScore),
+			SanitizeCSVCell(rec.FinalCourseMax),
+			SanitizeCSVCell(rec.FinalCoursePercent),
+			SanitizeCSVCell(rec.FinalCourseGrade),
 		}
 		if err := writer.Write(row); err != nil {
 			return fmt.Errorf("failed to write CSV row: %w", err)

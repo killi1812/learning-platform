@@ -47,9 +47,9 @@
       </div>
     </div>
 
-    <!-- Role-Based Tabs (if user is both student and teacher, or admin) -->
-    <v-tabs v-if="canGrade && isStudent" v-model="activeTab" class="mb-6" color="primary">
-      <v-tab value="my-grades">
+    <!-- Role-Based Tabs -->
+    <v-tabs v-if="canGrade" v-model="activeTab" class="mb-6" color="primary">
+      <v-tab v-if="isStudent" value="my-grades">
         <v-icon start icon="mdi-school-outline" />
         My Grades
         <v-chip
@@ -75,6 +75,10 @@
           {{ pendingSubmissions.length }}
         </v-chip>
       </v-tab>
+      <v-tab value="roster">
+        <v-icon start icon="mdi-account-group-outline" />
+        Course Gradebook & Final Grades
+      </v-tab>
     </v-tabs>
 
     <!-- Loading State -->
@@ -98,6 +102,61 @@
             variant="outlined"
             style="max-width: 280px"
           />
+        </div>
+
+        <!-- Final Subject Grade Summary Cards -->
+        <div v-if="filteredFinalGrades.length > 0" class="mb-6">
+          <v-row dense>
+            <v-col
+              v-for="fg in filteredFinalGrades"
+              :key="fg.courseUuid"
+              cols="12"
+              :md="filteredFinalGrades.length > 1 ? 6 : 12"
+            >
+              <v-card class="bg-surface-variant pa-4" rounded="lg" elevation="0" border>
+                <div class="d-flex align-center justify-space-between flex-wrap ga-2">
+                  <div>
+                    <div class="text-caption text-medium-emphasis text-uppercase font-weight-bold">
+                      Final Subject Evaluation · {{ fg.courseCode }}
+                    </div>
+                    <div class="text-h6 font-weight-bold text-high-emphasis">
+                      {{ fg.courseName }}
+                    </div>
+                  </div>
+
+                  <div class="d-flex align-center ga-3">
+                    <div class="text-right">
+                      <div class="text-h5 font-weight-bold text-high-emphasis">
+                        {{ fg.totalScore.toFixed(1) }} / {{ fg.totalMaxScore }} pts
+                      </div>
+                      <div class="text-caption text-medium-emphasis">
+                        {{ fg.percent.toFixed(1) }}% Cumulative
+                      </div>
+                    </div>
+
+                    <v-avatar
+                      :color="getGradeBadgeColor(fg.finalGrade)"
+                      size="48"
+                      class="text-h5 font-weight-bold text-white elevation-1"
+                    >
+                      {{ fg.finalGrade }}
+                    </v-avatar>
+                  </div>
+                </div>
+
+                <v-divider class="my-3" />
+
+                <div class="d-flex align-center text-caption text-medium-emphasis">
+                  <v-icon icon="mdi-scale-balance" size="16" class="mr-1" />
+                  <span>
+                    Scale: A ≥ {{ fg.gradingScale.scaleA }}%, B ≥ {{ fg.gradingScale.scaleB }}%, C ≥
+                    {{ fg.gradingScale.scaleC }}%, D ≥ {{ fg.gradingScale.scaleD }}%, E ≥
+                    {{ fg.gradingScale.scaleE }}% (F &lt; {{ fg.gradingScale.scaleE }}%)
+                  </span>
+                </div>
+              </v-card>
+            </v-col>
+          </v-row>
         </div>
 
         <div v-if="filteredMyGrades.length === 0" class="py-8 text-center text-medium-emphasis">
@@ -261,6 +320,106 @@
       </v-card>
     </div>
 
+    <!-- TEACHER VIEW: Course Gradebook & Final Grades Roster -->
+    <div v-else-if="activeTab === 'roster'">
+      <v-card class="bg-surface pa-4 mb-4" elevation="1" rounded="lg">
+        <div class="d-flex flex-wrap align-center justify-space-between ga-3 mb-4">
+          <div class="d-flex align-center ga-2">
+            <span class="text-h6 font-weight-bold text-high-emphasis"
+              >Course Final Grades Roster</span
+            >
+            <v-chip v-if="rosterStudents.length > 0" color="primary" size="small" variant="tonal">
+              {{ rosterStudents.length }} students
+            </v-chip>
+          </div>
+
+          <div class="d-flex align-center ga-3">
+            <v-select
+              v-model="selectedRosterCourse"
+              :items="teacherCourseFilterOptions"
+              density="compact"
+              label="Select Course"
+              hide-details
+              variant="outlined"
+              style="min-width: 240px"
+              @update:model-value="fetchRoster"
+            />
+
+            <v-btn
+              v-if="selectedRosterCourse"
+              color="primary"
+              variant="outlined"
+              prepend-icon="mdi-file-delimited-outline"
+              :loading="exporting"
+              @click="handleExportSelectedRosterCourse"
+            >
+              Export CSV
+            </v-btn>
+          </div>
+        </div>
+
+        <div v-if="loadingRoster" class="d-flex justify-center py-12">
+          <v-progress-circular color="primary" indeterminate size="48" />
+        </div>
+
+        <div v-else-if="!selectedRosterCourse" class="py-8 text-center text-medium-emphasis">
+          <v-icon icon="mdi-book-search-outline" size="48" class="mb-2 text-disabled" />
+          <p class="text-body-1 font-weight-medium mb-1">Select a course</p>
+          <p class="text-caption">
+            Select a course above to view students' cumulative standing and final grades.
+          </p>
+        </div>
+
+        <div v-else-if="rosterStudents.length === 0" class="py-8 text-center text-medium-emphasis">
+          <v-icon icon="mdi-account-off-outline" size="48" class="mb-2 text-disabled" />
+          <p class="text-body-1 font-weight-medium mb-1">No enrolled students</p>
+          <p class="text-caption">There are currently no students enrolled in this course.</p>
+        </div>
+
+        <v-table v-else hover density="comfortable">
+          <thead>
+            <tr>
+              <th class="text-left font-weight-bold">Student</th>
+              <th class="text-left font-weight-bold">Email</th>
+              <th class="text-center font-weight-bold">Total Points Earned</th>
+              <th class="text-center font-weight-bold">Max Possible Points</th>
+              <th class="text-center font-weight-bold">Cumulative %</th>
+              <th class="text-center font-weight-bold">Final Grade</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="st in rosterStudents" :key="st.userUuid">
+              <td class="font-weight-medium text-high-emphasis">
+                {{ st.userName || '—' }}
+              </td>
+              <td class="text-body-2 text-medium-emphasis">{{ st.userEmail }}</td>
+              <td class="text-center font-weight-bold">{{ st.totalScore.toFixed(1) }}</td>
+              <td class="text-center text-medium-emphasis">{{ st.totalMaxScore }}</td>
+              <td class="text-center">
+                <v-chip
+                  size="small"
+                  :color="st.percent >= 40 ? 'primary' : 'error'"
+                  variant="tonal"
+                >
+                  {{ st.percent.toFixed(1) }}%
+                </v-chip>
+              </td>
+              <td class="text-center">
+                <v-chip
+                  size="small"
+                  :color="getGradeBadgeColor(st.finalGrade)"
+                  variant="flat"
+                  class="font-weight-bold px-3"
+                >
+                  {{ st.finalGrade }}
+                </v-chip>
+              </td>
+            </tr>
+          </tbody>
+        </v-table>
+      </v-card>
+    </div>
+
     <!-- Student Feedback Dialog -->
     <v-dialog v-model="feedbackDialogOpen" max-width="600">
       <v-card class="bg-surface pa-2" rounded="lg">
@@ -311,11 +470,22 @@ import { useToast } from '@/composables/useToast'
 import { useAuth } from '@/composables/useAuth'
 import { getApiErrorMessage } from '@/api/client'
 import { getMyCourses } from '@/api/course'
-import { listMyGrades, listPendingGrades, exportCourseGrades } from '@/api/grade'
+import {
+  listMyGrades,
+  listPendingGrades,
+  exportCourseGrades,
+  getMyFinalGrades,
+  getCourseRosterFinalGrades,
+} from '@/api/grade'
 import MarkdownView from '@/components/MarkdownView.vue'
 import GradeDialog from '@/components/GradeDialog.vue'
 import type { MyCourse } from '@/types/course'
-import type { StudentGradeDto, PendingSubmissionDto } from '@/types/grade'
+import type {
+  StudentGradeDto,
+  PendingSubmissionDto,
+  CourseFinalGradeDto,
+  StudentFinalGradeRowDto,
+} from '@/types/grade'
 
 const toast = useToast()
 const { currentUser } = useAuth()
@@ -324,11 +494,15 @@ const loading = ref(true)
 const exporting = ref(false)
 const myCourses = ref<MyCourse[]>([])
 const myGrades = ref<StudentGradeDto[]>([])
+const myFinalGrades = ref<CourseFinalGradeDto[]>([])
 const pendingSubmissions = ref<PendingSubmissionDto[]>([])
+const rosterStudents = ref<StudentFinalGradeRowDto[]>([])
+const loadingRoster = ref(false)
 
-const activeTab = ref<'my-grades' | 'pending'>('my-grades')
+const activeTab = ref<'my-grades' | 'pending' | 'roster'>('my-grades')
 const selectedStudentCourse = ref<string | null>(null)
 const selectedTeacherCourse = ref<string | null>(null)
+const selectedRosterCourse = ref<string | null>(null)
 
 // Feedback modal
 const feedbackDialogOpen = ref(false)
@@ -368,10 +542,32 @@ const filteredMyGrades = computed(() => {
   return myGrades.value.filter(g => g.courseUuid === selectedStudentCourse.value)
 })
 
+const filteredFinalGrades = computed(() => {
+  if (!selectedStudentCourse.value) return myFinalGrades.value
+  return myFinalGrades.value.filter(g => g.courseUuid === selectedStudentCourse.value)
+})
+
 const filteredPending = computed(() => {
   if (!selectedTeacherCourse.value) return pendingSubmissions.value
   return pendingSubmissions.value.filter(p => p.courseUuid === selectedTeacherCourse.value)
 })
+
+function getGradeBadgeColor(grade: string): string {
+  switch (grade) {
+    case 'A':
+    case 'B':
+      return 'success'
+    case 'C':
+      return 'info'
+    case 'D':
+    case 'E':
+      return 'warning'
+    case 'F':
+      return 'error'
+    default:
+      return 'medium-emphasis'
+  }
+}
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString()
@@ -406,6 +602,28 @@ async function handleExportCourse(courseUuid: string, courseTitle: string) {
   }
 }
 
+async function fetchRoster() {
+  if (!selectedRosterCourse.value) {
+    rosterStudents.value = []
+    return
+  }
+  loadingRoster.value = true
+  try {
+    rosterStudents.value = await getCourseRosterFinalGrades(selectedRosterCourse.value)
+  } catch (err: unknown) {
+    toast.error(getApiErrorMessage(err, 'Failed to load course grade roster.'))
+  } finally {
+    loadingRoster.value = false
+  }
+}
+
+async function handleExportSelectedRosterCourse() {
+  if (!selectedRosterCourse.value) return
+  const crs = teacherCourses.value.find(c => c.course.uuid === selectedRosterCourse.value)
+  const title = crs ? crs.course.title : 'course'
+  await handleExportCourse(selectedRosterCourse.value, title)
+}
+
 async function loadAll() {
   loading.value = true
   try {
@@ -422,12 +640,19 @@ async function loadAll() {
       activeTab.value = 'my-grades'
     }
 
+    if (hasTeacherRole && teacherCourses.value.length > 0 && !selectedRosterCourse.value) {
+      selectedRosterCourse.value = teacherCourses.value[0].course.uuid
+    }
+
     const tasks: Promise<void>[] = []
 
     if (hasStudentRole) {
       tasks.push(
         listMyGrades().then(g => {
           myGrades.value = g
+        }),
+        getMyFinalGrades().then(fg => {
+          myFinalGrades.value = fg
         }),
       )
     }
@@ -438,6 +663,9 @@ async function loadAll() {
           pendingSubmissions.value = p
         }),
       )
+      if (selectedRosterCourse.value) {
+        tasks.push(fetchRoster())
+      }
     }
 
     await Promise.all(tasks)

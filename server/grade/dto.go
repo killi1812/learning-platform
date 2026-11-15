@@ -3,6 +3,7 @@ package grade
 import (
 	"time"
 
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/course"
 	"github.com/google/uuid"
 )
 
@@ -69,4 +70,27 @@ type StudentGradeDto struct {
 	Percent         float64          `json:"percent"`
 	Feedback        string           `json:"feedback,omitempty"`
 	GradedAt        time.Time        `json:"gradedAt"`
+}
+
+// CourseFinalGradeDto represents a student's cumulative evaluation for an entire subject/course.
+type CourseFinalGradeDto struct {
+	CourseUuid    uuid.UUID              `json:"courseUuid"`
+	CourseName    string                 `json:"courseName"`
+	CourseCode    string                 `json:"courseCode"`
+	TotalScore    float64                `json:"totalScore"`
+	TotalMaxScore float64                `json:"totalMaxScore"`
+	Percent       float64                `json:"percent"`
+	FinalGrade    string                 `json:"finalGrade"` // "A", "B", "C", "D", "E", "F"
+	GradingScale  course.GradingScaleDto `json:"gradingScale"`
+}
+
+// StudentFinalGradeRowDto represents a student's final grade in the teacher's course roster overview.
+type StudentFinalGradeRowDto struct {
+	UserUuid      uuid.UUID `json:"userUuid"`
+	UserEmail     string    `json:"userEmail"`
+	UserName      string    `json:"userName,omitempty"`
+	TotalScore    float64   `json:"totalScore"`
+	TotalMaxScore float64   `json:"totalMaxScore"`
+	Percent       float64   `json:"percent"`
+	FinalGrade    string    `json:"finalGrade"`
 }

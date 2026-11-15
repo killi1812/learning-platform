@@ -206,6 +206,12 @@ func (s *CourseService) resolvePrerequisite(courseID uint, selfUuid uuid.UUID, m
 
 // CreateCourse inserts a new course and automatically enrolls the creator as TEACHER.
 func (s *CourseService) CreateCourse(c *Course, creatorUuid uuid.UUID) (*Course, error) {
+	if c.GradingScale.ScaleA == 0 && c.GradingScale.ScaleB == 0 && c.GradingScale.ScaleC == 0 && c.GradingScale.ScaleD == 0 && c.GradingScale.ScaleE == 0 {
+		c.GradingScale = DefaultGradingScale()
+	}
+	if err := c.GradingScale.Validate(); err != nil {
+		return nil, err
+	}
 	creator, err := s.findUser(creatorUuid)
 	if err != nil {
 		return nil, err
@@ -270,8 +276,14 @@ func (s *CourseService) ListCourses(term *Term, year *int) ([]Course, error) {
 	return courses, nil
 }
 
-// UpdateCourse modifies title, description, term, or year of an existing course.
+// UpdateCourse modifies title, description, term, year, or grading scale of an existing course.
 func (s *CourseService) UpdateCourse(courseUuid uuid.UUID, updated *Course) (*Course, error) {
+	if updated.GradingScale.ScaleA == 0 && updated.GradingScale.ScaleB == 0 && updated.GradingScale.ScaleC == 0 && updated.GradingScale.ScaleD == 0 && updated.GradingScale.ScaleE == 0 {
+		updated.GradingScale = DefaultGradingScale()
+	}
+	if err := updated.GradingScale.Validate(); err != nil {
+		return nil, err
+	}
 	var existing Course
 	if err := s.db.Preload("Enrollments.User").Where("uuid = ?", courseUuid).First(&existing).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

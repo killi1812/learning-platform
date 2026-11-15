@@ -1,6 +1,14 @@
 export type CourseTerm = 'SPRING' | 'AUTUMN'
 export type CourseRole = 'STUDENT' | 'TEACHER'
 
+export interface GradingScale {
+  scaleA: number
+  scaleB: number
+  scaleC: number
+  scaleD: number
+  scaleE: number
+}
+
 export interface Course {
   uuid: string
   createdAt: string
@@ -9,6 +17,7 @@ export interface Course {
   description: string
   term: CourseTerm
   year: number
+  gradingScale?: GradingScale
   teachers?: string[]
 }
 
@@ -17,6 +26,7 @@ export interface CreateCoursePayload {
   description?: string
   term: CourseTerm
   year: number
+  gradingScale?: GradingScale
 }
 
 export interface UpdateCoursePayload {
@@ -24,6 +34,7 @@ export interface UpdateCoursePayload {
   description?: string
   term: CourseTerm
   year: number
+  gradingScale?: GradingScale
 }
 
 export interface Enrollment {

@@ -27,6 +27,8 @@ type mockGradeService struct {
 	releaseFn     func(courseUuid, contentUuid uuid.UUID) (int, error)
 	listPendingFn func(userUuid uuid.UUID, isAdmin bool, courseUuid *uuid.UUID) ([]grade.PendingSubmissionDto, error)
 	listMyFn      func(userUuid uuid.UUID, courseUuid *uuid.UUID) ([]grade.StudentGradeDto, error)
+	getMyFinalsFn func(userUuid uuid.UUID, courseUuid *uuid.UUID) ([]grade.CourseFinalGradeDto, error)
+	getRosterFn   func(courseUuid uuid.UUID) ([]grade.StudentFinalGradeRowDto, error)
 	exportCSVFn   func(courseUuid uuid.UUID, w io.Writer) error
 }
 
@@ -93,6 +95,41 @@ func (m *mockGradeService) ExportCourseCSV(courseUuid uuid.UUID, w io.Writer) er
 	}
 	_, err := fmt.Fprint(w, "student_email,score\nstudent@example.com,90\n")
 	return err
+}
+
+func (m *mockGradeService) GetStudentFinalGrades(userUuid uuid.UUID, courseUuid *uuid.UUID) ([]grade.CourseFinalGradeDto, error) {
+	if m.getMyFinalsFn != nil {
+		return m.getMyFinalsFn(userUuid, courseUuid)
+	}
+	return []grade.CourseFinalGradeDto{
+		{
+			CourseUuid:    uuid.New(),
+			CourseName:    "DAT250",
+			CourseCode:    "AUTUMN 2026",
+			TotalScore:    180.0,
+			TotalMaxScore: 200.0,
+			Percent:       90.0,
+			FinalGrade:    "A",
+			GradingScale:  course.GradingScaleDto{}.FromModel(course.DefaultGradingScale()),
+		},
+	}, nil
+}
+
+func (m *mockGradeService) GetCourseRosterFinalGrades(courseUuid uuid.UUID) ([]grade.StudentFinalGradeRowDto, error) {
+	if m.getRosterFn != nil {
+		return m.getRosterFn(courseUuid)
+	}
+	return []grade.StudentFinalGradeRowDto{
+		{
+			UserUuid:      uuid.New(),
+			UserEmail:     "student@example.com",
+			UserName:      "Alice",
+			TotalScore:    180.0,
+			TotalMaxScore: 200.0,
+			Percent:       90.0,
+			FinalGrade:    "A",
+		},
+	}, nil
 }
 
 type mockCourseServiceForGrade struct {
@@ -479,5 +516,68 @@ func TestGradeCtn_ExportCSV(t *testing.T) {
 		w := doJSONReq(r, http.MethodGet, path, auth, nil)
 
 		assert.Equal(t, http.StatusOK, w.Code) // Headers already committed
+	})
+}
+
+func TestGradeCtn_FinalGradesEndpoints(t *testing.T) {
+	studentUuid := uuid.New()
+	teacherUuid := uuid.New()
+	courseUuid := uuid.New()
+
+	studentAuth := generateAuthHeader(t, authutils.ROLE_USER, studentUuid)
+	teacherAuth := generateAuthHeader(t, authutils.ROLE_USER, teacherUuid)
+
+	t.Run("GET /grade/my/final returns 200 with final course grades", func(t *testing.T) {
+		r := setupGradeApiTest(&mockGradeService{}, &mockCourseServiceForGrade{})
+		w := doJSONReq(r, http.MethodGet, "/api/grade/my/final", studentAuth, nil)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		var res []grade.CourseFinalGradeDto
+		err := json.Unmarshal(w.Body.Bytes(), &res)
+		require.NoError(t, err)
+		assert.Len(t, res, 1)
+		assert.Equal(t, "A", res[0].FinalGrade)
+		assert.Equal(t, 90.0, res[0].Percent)
+	})
+
+	t.Run("GET /grade/my/final with invalid courseUuid returns 400", func(t *testing.T) {
+		r := setupGradeApiTest(&mockGradeService{}, &mockCourseServiceForGrade{})
+		w := doJSONReq(r, http.MethodGet, "/api/grade/my/final?courseUuid=bad-uuid", studentAuth, nil)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("GET /course/:uuid/grade/roster returns 200 for teacher", func(t *testing.T) {
+		r := setupGradeApiTest(&mockGradeService{}, &mockCourseServiceForGrade{})
+		path := fmt.Sprintf("/api/course/%s/grade/roster", courseUuid.String())
+		w := doJSONReq(r, http.MethodGet, path, teacherAuth, nil)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		var roster []grade.StudentFinalGradeRowDto
+		err := json.Unmarshal(w.Body.Bytes(), &roster)
+		require.NoError(t, err)
+		assert.Len(t, roster, 1)
+		assert.Equal(t, "Alice", roster[0].UserName)
+		assert.Equal(t, "A", roster[0].FinalGrade)
+	})
+
+	t.Run("GET /course/:uuid/grade/roster returns 403 for unauthorized user", func(t *testing.T) {
+		cs := &mockCourseServiceForGrade{
+			isTeacherOrAdminFunc: func(cUuid, uUuid uuid.UUID, isSystemAdmin bool) (bool, error) {
+				return false, nil
+			},
+		}
+		r := setupGradeApiTest(&mockGradeService{}, cs)
+		path := fmt.Sprintf("/api/course/%s/grade/roster", courseUuid.String())
+		w := doJSONReq(r, http.MethodGet, path, studentAuth, nil)
+
+		assert.Equal(t, http.StatusForbidden, w.Code)
+	})
+
+	t.Run("GET /course/:uuid/grade/roster with invalid UUID returns 400", func(t *testing.T) {
+		r := setupGradeApiTest(&mockGradeService{}, &mockCourseServiceForGrade{})
+		w := doJSONReq(r, http.MethodGet, "/api/course/not-a-uuid/grade/roster", teacherAuth, nil)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
 }

@@ -176,6 +176,91 @@
                 />
               </v-col>
             </v-row>
+
+            <!-- Grading Scale (A-F Minimum %) -->
+            <div class="mt-4 mb-2">
+              <div class="d-flex align-center justify-space-between mb-2">
+                <div>
+                  <span class="text-subtitle-2 font-weight-bold text-high-emphasis">
+                    Grading Scale (Minimum % for A–E)
+                  </span>
+                  <div class="text-caption text-medium-emphasis">
+                    Thresholds for final subject grades. F is anything below E.
+                  </div>
+                </div>
+                <v-btn
+                  size="x-small"
+                  variant="text"
+                  prepend-icon="mdi-refresh"
+                  @click="resetNewCourseGradingScale"
+                >
+                  Reset
+                </v-btn>
+              </div>
+
+              <v-row dense>
+                <v-col cols="6" sm="4">
+                  <v-text-field
+                    v-model.number="newCourseGradingScale.scaleA"
+                    label="Grade A (≥ %)"
+                    type="number"
+                    min="1"
+                    max="100"
+                    density="compact"
+                    variant="outlined"
+                  />
+                </v-col>
+                <v-col cols="6" sm="4">
+                  <v-text-field
+                    v-model.number="newCourseGradingScale.scaleB"
+                    label="Grade B (≥ %)"
+                    type="number"
+                    min="1"
+                    max="100"
+                    density="compact"
+                    variant="outlined"
+                  />
+                </v-col>
+                <v-col cols="6" sm="4">
+                  <v-text-field
+                    v-model.number="newCourseGradingScale.scaleC"
+                    label="Grade C (≥ %)"
+                    type="number"
+                    min="1"
+                    max="100"
+                    density="compact"
+                    variant="outlined"
+                  />
+                </v-col>
+                <v-col cols="6" sm="4">
+                  <v-text-field
+                    v-model.number="newCourseGradingScale.scaleD"
+                    label="Grade D (≥ %)"
+                    type="number"
+                    min="1"
+                    max="100"
+                    density="compact"
+                    variant="outlined"
+                  />
+                </v-col>
+                <v-col cols="6" sm="4">
+                  <v-text-field
+                    v-model.number="newCourseGradingScale.scaleE"
+                    label="Grade E (≥ %)"
+                    type="number"
+                    min="1"
+                    max="100"
+                    density="compact"
+                    variant="outlined"
+                  />
+                </v-col>
+                <v-col cols="6" sm="4" class="d-flex align-center">
+                  <span class="text-caption text-medium-emphasis">
+                    Grade F: &lt; {{ newCourseGradingScale.scaleE }}%
+                  </span>
+                </v-col>
+              </v-row>
+            </div>
           </v-form>
         </v-card-text>
 
@@ -200,7 +285,7 @@ import CourseCard from '@/components/CourseCard.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useToast } from '@/composables/useToast'
 import { listCourses, getMyCourses, selfEnroll, createCourse } from '@/api/course'
-import type { Course, CourseRole, CreateCoursePayload } from '@/types/course'
+import type { Course, CourseRole, CreateCoursePayload, GradingScale } from '@/types/course'
 
 const emit = defineEmits<{
   (e: 'select-course', courseUuid: string): void
@@ -227,6 +312,20 @@ const newCourse = ref<CreateCoursePayload>({
   term: 'AUTUMN',
   year: 2026,
 })
+
+const DEFAULT_GRADING_SCALE: GradingScale = {
+  scaleA: 90,
+  scaleB: 80,
+  scaleC: 60,
+  scaleD: 50,
+  scaleE: 40,
+}
+
+const newCourseGradingScale = ref<GradingScale>({ ...DEFAULT_GRADING_SCALE })
+
+function resetNewCourseGradingScale() {
+  newCourseGradingScale.value = { ...DEFAULT_GRADING_SCALE }
+}
 
 const filteredCourses = computed(() => {
   return courses.value.filter(c => {
@@ -291,9 +390,27 @@ async function handleEnroll(courseUuid: string) {
 
 async function handleCreateCourse() {
   if (!newCourse.value.title.trim()) return
+
+  const s = newCourseGradingScale.value
+  if (
+    s.scaleA > 100 ||
+    s.scaleA <= s.scaleB ||
+    s.scaleB <= s.scaleC ||
+    s.scaleC <= s.scaleD ||
+    s.scaleD <= s.scaleE ||
+    s.scaleE <= 0
+  ) {
+    toast.error('Invalid grading scale: Must satisfy 100 ≥ A > B > C > D > E > 0.')
+    return
+  }
+
   creating.value = true
   try {
-    const created = await createCourse(newCourse.value)
+    const payload: CreateCoursePayload = {
+      ...newCourse.value,
+      gradingScale: { ...s },
+    }
+    const created = await createCourse(payload)
     createDialogOpen.value = false
     newCourse.value = {
       title: '',
@@ -301,6 +418,7 @@ async function handleCreateCourse() {
       term: 'AUTUMN',
       year: 2026,
     }
+    resetNewCourseGradingScale()
     toast.success(`Course "${created.title}" successfully created! You are enrolled as TEACHER.`)
     await fetchCourses()
   } catch (err: unknown) {

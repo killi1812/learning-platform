@@ -52,6 +52,10 @@ func TestWriteGradebookCSV(t *testing.T) {
 				GradedByEmail:      "teacher@example.com",
 				GradedAt:           "2026-11-14T12:00:00Z",
 				Feedback:           "Line 1\nLine 2",
+				FinalCourseScore:   "95.00",
+				FinalCourseMax:     "100.00",
+				FinalCoursePercent: "95.00%",
+				FinalCourseGrade:   "A",
 			},
 			{
 				StudentEmail:       "malicious@example.com",
@@ -65,6 +69,10 @@ func TestWriteGradebookCSV(t *testing.T) {
 				Percent:            "80.00%",
 				IsVisibleToStudent: "true",
 				Feedback:           "@danger",
+				FinalCourseScore:   "80.00",
+				FinalCourseMax:     "100.00",
+				FinalCoursePercent: "80.00%",
+				FinalCourseGrade:   "B",
 			},
 		}
 
@@ -72,8 +80,8 @@ func TestWriteGradebookCSV(t *testing.T) {
 		assert.NoError(t, err)
 
 		out := buf.String()
-		assert.Contains(t, out, "student_email,student_name,module,assignment,type,attempt,submitted_at,is_late,score,max_points,percent,visible_to_student,graded_by,graded_at,feedback")
-		assert.Contains(t, out, "student@example.com,Alice,Module 1,Assignment 1,HANDIN,1,2026-11-14T10:00:00Z,false,95.00,100.00,95.00%,true,teacher@example.com,2026-11-14T12:00:00Z,Line 1 Line 2")
+		assert.Contains(t, out, "student_email,student_name,module,assignment,type,attempt,submitted_at,is_late,score,max_points,percent,visible_to_student,graded_by,graded_at,feedback,final_course_score,final_course_max,final_course_percent,final_course_grade")
+		assert.Contains(t, out, "student@example.com,Alice,Module 1,Assignment 1,HANDIN,1,2026-11-14T10:00:00Z,false,95.00,100.00,95.00%,true,teacher@example.com,2026-11-14T12:00:00Z,Line 1 Line 2,95.00,100.00,95.00%,A")
 		// Formula sanitization check
 		assert.Contains(t, out, "'=cmd")
 		assert.Contains(t, out, "'@danger")

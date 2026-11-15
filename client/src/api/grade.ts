@@ -5,6 +5,8 @@ import type {
   ReleaseResultDto,
   PendingSubmissionDto,
   StudentGradeDto,
+  CourseFinalGradeDto,
+  StudentFinalGradeRowDto,
 } from '@/types/grade'
 
 async function wrapRequest<T>(promise: Promise<{ data: T }>): Promise<T> {
@@ -57,6 +59,20 @@ export function listMyGrades(courseUuid?: string): Promise<StudentGradeDto[]> {
     params.courseUuid = courseUuid
   }
   return wrapRequest(authApi.get<StudentGradeDto[]>('/grade/my', { params }))
+}
+
+/** List authenticated student's cumulative subject evaluation and final letter grades */
+export function getMyFinalGrades(courseUuid?: string): Promise<CourseFinalGradeDto[]> {
+  const params: Record<string, string> = {}
+  if (courseUuid) {
+    params.courseUuid = courseUuid
+  }
+  return wrapRequest(authApi.get<CourseFinalGradeDto[]>('/grade/my/final', { params }))
+}
+
+/** List course roster with final cumulative points and letter grades (Teachers & Admins) */
+export function getCourseRosterFinalGrades(courseUuid: string): Promise<StudentFinalGradeRowDto[]> {
+  return wrapRequest(authApi.get<StudentFinalGradeRowDto[]>(`/course/${courseUuid}/grade/roster`))
 }
 
 /** Download course gradebook CSV */

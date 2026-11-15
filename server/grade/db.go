@@ -32,6 +32,8 @@ type IGradeService interface {
 	ReleaseAssignmentGrades(courseUuid, contentUuid uuid.UUID) (int, error)
 	ListPending(userUuid uuid.UUID, isAdmin bool, courseUuid *uuid.UUID) ([]PendingSubmissionDto, error)
 	ListMyGrades(userUuid uuid.UUID, courseUuid *uuid.UUID) ([]StudentGradeDto, error)
+	GetStudentFinalGrades(userUuid uuid.UUID, courseUuid *uuid.UUID) ([]CourseFinalGradeDto, error)
+	GetCourseRosterFinalGrades(courseUuid uuid.UUID) ([]StudentFinalGradeRowDto, error)
 	ExportCourseCSV(courseUuid uuid.UUID, w io.Writer) error
 }
 
@@ -567,6 +569,13 @@ func (s *GradeService) ExportCourseCSV(courseUuid uuid.UUID, w io.Writer) error 
 			continue
 		}
 
+		finalScore, finalMax := s.computeStudentCourseTotal(stUser.ID, crs.ID, contents, false)
+		finalPct := 0.0
+		if finalMax > 0 {
+			finalPct = (finalScore / finalMax) * 100.0
+		}
+		finalGrade := crs.CalculateGrade(finalPct)
+
 		for _, cnt := range contents {
 			modTitle := ""
 			if cnt.Module != nil {
@@ -579,10 +588,14 @@ func (s *GradeService) ExportCourseCSV(courseUuid uuid.UUID, w io.Writer) error 
 			}
 
 			rec := GradebookRecord{
-				StudentEmail:    enr.UserEmail,
-				StudentName:     stUser.Username,
-				ModuleTitle:     modTitle,
-				AssignmentTitle: cnt.Title,
+				StudentEmail:       enr.UserEmail,
+				StudentName:        stUser.Username,
+				ModuleTitle:        modTitle,
+				AssignmentTitle:    cnt.Title,
+				FinalCourseScore:   fmt.Sprintf("%.2f", finalScore),
+				FinalCourseMax:     fmt.Sprintf("%.2f", finalMax),
+				FinalCoursePercent: fmt.Sprintf("%.2f%%", finalPct),
+				FinalCourseGrade:   finalGrade,
 			}
 
 			if asgn.Type == content.AssignmentQuiz {
@@ -678,4 +691,170 @@ func (s *GradeService) ExportCourseCSV(courseUuid uuid.UUID, w io.Writer) error 
 	}
 
 	return WriteGradebookCSV(w, records)
+}
+
+// computeStudentCourseTotal calculates the earned score and total possible score for a student across all published assignments in a course.
+func (s *GradeService) computeStudentCourseTotal(studentID uint, courseID uint, contents []content.Content, studentViewOnly bool) (earned float64, totalMax float64) {
+	for _, cnt := range contents {
+		asgn := cnt.Assignment
+		if asgn == nil {
+			continue
+		}
+
+		maxPts := asgn.MaxPoints
+		if maxPts <= 0 {
+			maxPts = 100
+		}
+
+		if asgn.Type == content.AssignmentQuiz {
+			totalMax += 100.0
+			var attempts []quiz.Attempt
+			_ = s.db.Where("user_id = ? AND quiz_id = ? AND submitted_at IS NOT NULL", studentID, cnt.ID).
+				Order("percent DESC, id DESC").
+				Find(&attempts).Error
+			if len(attempts) > 0 {
+				earned += attempts[0].Percent
+			}
+			continue
+		}
+
+		if asgn.AllowsGroupSubmission {
+			continue // group grading not supported yet
+		}
+
+		totalMax += maxPts
+
+		var subs []submission.IndividualSubmission
+		_ = s.db.Preload("Grade").
+			Where("user_id = ? AND content_id = ?", studentID, cnt.ID).
+			Order("attempt DESC").
+			Find(&subs).Error
+
+		for _, sub := range subs {
+			if sub.Grade != nil {
+				if !studentViewOnly || sub.Grade.IsVisibleToStudent {
+					earned += sub.Grade.Score
+				}
+				break
+			}
+		}
+	}
+	return earned, totalMax
+}
+
+// GetStudentFinalGrades calculates the student's cumulative subject evaluation and final letter grade across enrolled courses.
+func (s *GradeService) GetStudentFinalGrades(userUuid uuid.UUID, courseUuid *uuid.UUID) ([]CourseFinalGradeDto, error) {
+	var u user.User
+	if err := s.db.Where("uuid = ?", userUuid).First(&u).Error; err != nil {
+		return nil, err
+	}
+
+	enrQuery := s.db.Preload("Course").
+		Where("enrollments.user_id = ? AND enrollments.role = ? AND enrollments.deleted_at IS NULL", u.ID, course.RoleStudent)
+
+	if courseUuid != nil {
+		enrQuery = enrQuery.Joins("JOIN courses ON courses.id = enrollments.course_id AND courses.uuid = ? AND courses.deleted_at IS NULL", *courseUuid)
+	}
+
+	var enrollments []course.Enrollment
+	if err := enrQuery.Find(&enrollments).Error; err != nil {
+		return nil, err
+	}
+
+	dtos := make([]CourseFinalGradeDto, 0, len(enrollments))
+	for _, enr := range enrollments {
+		crs := enr.Course
+		if crs == nil {
+			continue
+		}
+
+		var contents []content.Content
+		err := s.db.
+			Joins("JOIN modules ON modules.id = contents.module_id AND modules.deleted_at IS NULL").
+			Preload("Assignment").
+			Where("modules.course_id = ? AND contents.type = ? AND contents.deleted_at IS NULL", crs.ID, content.TypeAssignment).
+			Order("modules.position ASC, contents.position ASC").
+			Find(&contents).Error
+		if err != nil {
+			return nil, err
+		}
+
+		earned, totalMax := s.computeStudentCourseTotal(u.ID, crs.ID, contents, true)
+		pct := 0.0
+		if totalMax > 0 {
+			pct = (earned / totalMax) * 100.0
+		}
+		finalGrade := crs.CalculateGrade(pct)
+
+		dtos = append(dtos, CourseFinalGradeDto{
+			CourseUuid:    crs.Uuid,
+			CourseName:    crs.Title,
+			CourseCode:    fmt.Sprintf("%s %d", crs.Term, crs.Year),
+			TotalScore:    earned,
+			TotalMaxScore: totalMax,
+			Percent:       pct,
+			FinalGrade:    finalGrade,
+			GradingScale:  course.GradingScaleDto{}.FromModel(crs.GradingScale),
+		})
+	}
+
+	return dtos, nil
+}
+
+// GetCourseRosterFinalGrades returns all enrolled students in a course with their cumulative scores, percentages, and final letter grades.
+func (s *GradeService) GetCourseRosterFinalGrades(courseUuid uuid.UUID) ([]StudentFinalGradeRowDto, error) {
+	var crs course.Course
+	if err := s.db.Where("uuid = ?", courseUuid).First(&crs).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, course.ErrCourseNotFound
+		}
+		return nil, err
+	}
+
+	var enrollments []course.Enrollment
+	err := s.db.Preload("User").
+		Where("course_id = ? AND role = ? AND deleted_at IS NULL", crs.ID, course.RoleStudent).
+		Order("user_email ASC").
+		Find(&enrollments).Error
+	if err != nil {
+		return nil, err
+	}
+
+	var contents []content.Content
+	err = s.db.
+		Joins("JOIN modules ON modules.id = contents.module_id AND modules.deleted_at IS NULL").
+		Preload("Assignment").
+		Where("modules.course_id = ? AND contents.type = ? AND contents.deleted_at IS NULL", crs.ID, content.TypeAssignment).
+		Order("modules.position ASC, contents.position ASC").
+		Find(&contents).Error
+	if err != nil {
+		return nil, err
+	}
+
+	dtos := make([]StudentFinalGradeRowDto, 0, len(enrollments))
+	for _, enr := range enrollments {
+		stUser := enr.User
+		if stUser == nil {
+			continue
+		}
+
+		earned, totalMax := s.computeStudentCourseTotal(stUser.ID, crs.ID, contents, false)
+		pct := 0.0
+		if totalMax > 0 {
+			pct = (earned / totalMax) * 100.0
+		}
+		finalGrade := crs.CalculateGrade(pct)
+
+		dtos = append(dtos, StudentFinalGradeRowDto{
+			UserUuid:      stUser.Uuid,
+			UserEmail:     enr.UserEmail,
+			UserName:      stUser.Username,
+			TotalScore:    earned,
+			TotalMaxScore: totalMax,
+			Percent:       pct,
+			FinalGrade:    finalGrade,
+		})
+	}
+
+	return dtos, nil
 }

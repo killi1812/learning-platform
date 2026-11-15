@@ -43,12 +43,14 @@ func (ctn *GradeCtn) RegisterEndpoints(api *gin.RouterGroup) {
 	courses.PUT("/:uuid/content/:contentUuid/submission/:submissionUuid/grade", ctn.upsertGrade)
 	courses.POST("/:uuid/content/:contentUuid/grade/release", ctn.releaseGrades)
 	courses.GET("/:uuid/grade/export", ctn.exportCSV)
+	courses.GET("/:uuid/grade/roster", ctn.getCourseRoster)
 
 	grades := api.Group("/grade")
 	grades.Use(authutils.Protect())
 
 	grades.GET("/pending", ctn.listPending)
 	grades.GET("/my", ctn.listMyGrades)
+	grades.GET("/my/final", ctn.getMyFinalGrades)
 }
 
 func (ctn *GradeCtn) handleError(c *gin.Context, err error, fallbackMsg string) bool {
@@ -292,4 +294,75 @@ func (ctn *GradeCtn) exportCSV(c *gin.Context) {
 	if err := ctn.Service.ExportCourseCSV(courseUuid, c.Writer); err != nil {
 		ctn.logger.Errorf("Failed to stream gradebook CSV: %v", err)
 	}
+}
+
+// GetMyFinalGrades godoc
+//
+//	@Summary		Get student's final course grades
+//	@Description	Calculates and returns cumulative final subject letter grades (A-F), earned points, and overall percentage across enrolled courses.
+//	@Tags			grade
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			courseUuid	query		string	false	"Filter by course UUID"
+//	@Success		200			{array}		CourseFinalGradeDto
+//	@Failure		400			{object}	ginutil.ErrorResponse
+//	@Failure		401			{object}	ginutil.ErrorResponse
+//	@Failure		500			{object}	ginutil.ErrorResponse
+//	@Router			/grade/my/final [get]
+func (ctn *GradeCtn) getMyFinalGrades(c *gin.Context) {
+	userUuid, err := authutils.GetUserUUID(c)
+	if err != nil {
+		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	var courseUuidPtr *uuid.UUID
+	if cStr := c.Query("courseUuid"); cStr != "" {
+		parsed, err := uuid.Parse(cStr)
+		if err != nil {
+			ginutil.RespondWithError(c, http.StatusBadRequest, "Invalid course UUID parameter")
+			return
+		}
+		courseUuidPtr = &parsed
+	}
+
+	finals, err := ctn.Service.GetStudentFinalGrades(userUuid, courseUuidPtr)
+	if ctn.handleError(c, err, "Failed to retrieve student final grades") {
+		return
+	}
+
+	c.JSON(http.StatusOK, finals)
+}
+
+// GetCourseRoster godoc
+//
+//	@Summary		Get course grade roster with final letter grades
+//	@Description	Teacher or Admin only. Returns all enrolled students with their cumulative earned scores, percentages, and final letter grades (A-F).
+//	@Tags			grade
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			uuid	path		string	true	"Course UUID"
+//	@Success		200		{array}		StudentFinalGradeRowDto
+//	@Failure		400		{object}	ginutil.ErrorResponse
+//	@Failure		401		{object}	ginutil.ErrorResponse
+//	@Failure		403		{object}	ginutil.ErrorResponse
+//	@Failure		404		{object}	ginutil.ErrorResponse
+//	@Failure		500		{object}	ginutil.ErrorResponse
+//	@Router			/course/{uuid}/grade/roster [get]
+func (ctn *GradeCtn) getCourseRoster(c *gin.Context) {
+	courseUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
+	if !ok {
+		return
+	}
+
+	if !authutils.CheckCourseAccess(c, courseUuid, ctn.courseService.IsTeacherOrAdmin, course.ErrCourseNotFound) {
+		return
+	}
+
+	roster, err := ctn.Service.GetCourseRosterFinalGrades(courseUuid)
+	if ctn.handleError(c, err, "Failed to retrieve course grade roster") {
+		return
+	}
+
+	c.JSON(http.StatusOK, roster)
 }

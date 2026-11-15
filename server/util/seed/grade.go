@@ -107,5 +107,31 @@ func seedGrades(assignments []*content.Content, teachers []*user.User, students 
 		}
 	}
 
+	// 3. Quiz attempt for student 1 if a quiz assignment exists
+	for _, c := range assignments {
+		if c.Assignment != nil && c.Assignment.Type == content.AssignmentQuiz {
+			type attemptRow struct {
+				ID uint
+			}
+			var existingAttempt attemptRow
+			qErr := db.Table("attempts").Where("user_id = ? AND quiz_id = ?", student1.ID, c.ID).First(&existingAttempt).Error
+			if qErr == gorm.ErrRecordNotFound {
+				submittedTime := now.Add(-90 * time.Minute)
+				rawAttempt := map[string]interface{}{
+					"user_id":      student1.ID,
+					"quiz_id":      c.ID,
+					"started_at":   now.Add(-100 * time.Minute),
+					"submitted_at": submittedTime,
+					"percent":      88.0,
+					"passed":       true,
+					"created_at":   now,
+					"updated_at":   now,
+				}
+				_ = db.Table("attempts").Create(rawAttempt).Error
+			}
+			break
+		}
+	}
+
 	return nil
 }

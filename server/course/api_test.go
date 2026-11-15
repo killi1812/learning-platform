@@ -825,3 +825,100 @@ func TestCourseCtn_GroupEndpoints(t *testing.T) {
 		assert.Equal(t, http.StatusInternalServerError, doReq(nilCourseR, http.MethodDelete, "/api/group/"+gID, auth, nil).Code)
 	})
 }
+
+func TestCourseCtn_GradingScaleEndpoints(t *testing.T) {
+	userUuid := uuid.New()
+	auth := generateAuthHeader(t, userUuid, authutils.ROLE_USER)
+	courseUuid := uuid.New()
+	cID := courseUuid.String()
+
+	mockSvc := &mockCourseService{
+		isTeacherOrAdminFunc: func(cUuid, uUuid uuid.UUID, isSystemAdmin bool) (bool, error) {
+			return true, nil
+		},
+		createCourseFunc: func(c *Course, creatorUuid uuid.UUID) (*Course, error) {
+			if err := c.GradingScale.Validate(); err != nil {
+				return nil, err
+			}
+			c.Uuid = courseUuid
+			return c, nil
+		},
+		updateCourseFunc: func(cUuid uuid.UUID, updated *Course) (*Course, error) {
+			if err := updated.GradingScale.Validate(); err != nil {
+				return nil, err
+			}
+			updated.Uuid = cUuid
+			return updated, nil
+		},
+	}
+
+	router, _ := setupCourseTestRouter(mockSvc)
+
+	t.Run("Create course with custom grading scale succeeds", func(t *testing.T) {
+		payload := CreateCourseDto{
+			Title: "Advanced Algorithms",
+			Term:  "AUTUMN",
+			Year:  2026,
+			GradingScale: &GradingScaleDto{
+				ScaleA: 92,
+				ScaleB: 82,
+				ScaleC: 65,
+				ScaleD: 52,
+				ScaleE: 42,
+			},
+		}
+		resp := doReq(router, http.MethodPost, "/api/course", auth, payload)
+		assert.Equal(t, http.StatusCreated, resp.Code)
+	})
+
+	t.Run("Create course with invalid grading scale returns 400", func(t *testing.T) {
+		payload := CreateCourseDto{
+			Title: "Advanced Algorithms",
+			Term:  "AUTUMN",
+			Year:  2026,
+			GradingScale: &GradingScaleDto{
+				ScaleA: 80,
+				ScaleB: 85, // invalid
+				ScaleC: 60,
+				ScaleD: 50,
+				ScaleE: 40,
+			},
+		}
+		resp := doReq(router, http.MethodPost, "/api/course", auth, payload)
+		assert.Equal(t, http.StatusBadRequest, resp.Code)
+	})
+
+	t.Run("Update course with custom grading scale succeeds", func(t *testing.T) {
+		payload := UpdateCourseDto{
+			Title: "Advanced Algorithms",
+			Term:  "AUTUMN",
+			Year:  2026,
+			GradingScale: &GradingScaleDto{
+				ScaleA: 95,
+				ScaleB: 85,
+				ScaleC: 70,
+				ScaleD: 55,
+				ScaleE: 45,
+			},
+		}
+		resp := doReq(router, http.MethodPut, "/api/course/"+cID, auth, payload)
+		assert.Equal(t, http.StatusOK, resp.Code)
+	})
+
+	t.Run("Update course with invalid grading scale returns 400", func(t *testing.T) {
+		payload := UpdateCourseDto{
+			Title: "Advanced Algorithms",
+			Term:  "AUTUMN",
+			Year:  2026,
+			GradingScale: &GradingScaleDto{
+				ScaleA: 90,
+				ScaleB: 80,
+				ScaleC: 60,
+				ScaleD: 50,
+				ScaleE: 0, // invalid
+			},
+		}
+		resp := doReq(router, http.MethodPut, "/api/course/"+cID, auth, payload)
+		assert.Equal(t, http.StatusBadRequest, resp.Code)
+	})
+}

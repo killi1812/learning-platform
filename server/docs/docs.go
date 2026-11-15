@@ -1752,6 +1752,73 @@ const docTemplate = `{
                 }
             }
         },
+        "/course/{uuid}/grade/roster": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Teacher or Admin only. Returns all enrolled students with their cumulative earned scores, percentages, and final letter grades (A-F).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "grade"
+                ],
+                "summary": "Get course grade roster with final letter grades",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Course UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/grade.StudentFinalGradeRowDto"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/course/{uuid}/group": {
             "get": {
                 "security": [
@@ -3954,6 +4021,60 @@ const docTemplate = `{
                 }
             }
         },
+        "/grade/my/final": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Calculates and returns cumulative final subject letter grades (A-F), earned points, and overall percentage across enrolled courses.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "grade"
+                ],
+                "summary": "Get student's final course grades",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by course UUID",
+                        "name": "courseUuid",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/grade.CourseFinalGradeDto"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/grade/pending": {
             "get": {
                 "security": [
@@ -5480,6 +5601,9 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
+                "gradingScale": {
+                    "$ref": "#/definitions/course.GradingScaleDto"
+                },
                 "teachers": {
                     "type": "array",
                     "items": {
@@ -5524,6 +5648,9 @@ const docTemplate = `{
             "properties": {
                 "description": {
                     "type": "string"
+                },
+                "gradingScale": {
+                    "$ref": "#/definitions/course.GradingScaleDto"
                 },
                 "term": {
                     "type": "string",
@@ -5606,6 +5733,43 @@ const docTemplate = `{
                 },
                 "username": {
                     "type": "string"
+                }
+            }
+        },
+        "course.GradingScaleDto": {
+            "type": "object",
+            "required": [
+                "scaleA",
+                "scaleB",
+                "scaleC",
+                "scaleD",
+                "scaleE"
+            ],
+            "properties": {
+                "scaleA": {
+                    "type": "number",
+                    "maximum": 100,
+                    "example": 90
+                },
+                "scaleB": {
+                    "type": "number",
+                    "maximum": 100,
+                    "example": 80
+                },
+                "scaleC": {
+                    "type": "number",
+                    "maximum": 100,
+                    "example": 60
+                },
+                "scaleD": {
+                    "type": "number",
+                    "maximum": 100,
+                    "example": 50
+                },
+                "scaleE": {
+                    "type": "number",
+                    "maximum": 100,
+                    "example": 40
                 }
             }
         },
@@ -5709,6 +5873,9 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
+                "gradingScale": {
+                    "$ref": "#/definitions/course.GradingScaleDto"
+                },
                 "term": {
                     "type": "string",
                     "enum": [
@@ -5772,6 +5939,36 @@ const docTemplate = `{
                 "error": {
                     "type": "string",
                     "example": "Example error, something went wrong"
+                }
+            }
+        },
+        "grade.CourseFinalGradeDto": {
+            "type": "object",
+            "properties": {
+                "courseCode": {
+                    "type": "string"
+                },
+                "courseName": {
+                    "type": "string"
+                },
+                "courseUuid": {
+                    "type": "string"
+                },
+                "finalGrade": {
+                    "description": "\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"",
+                    "type": "string"
+                },
+                "gradingScale": {
+                    "$ref": "#/definitions/course.GradingScaleDto"
+                },
+                "percent": {
+                    "type": "number"
+                },
+                "totalMaxScore": {
+                    "type": "number"
+                },
+                "totalScore": {
+                    "type": "number"
                 }
             }
         },
@@ -5850,6 +6047,32 @@ const docTemplate = `{
             "properties": {
                 "released": {
                     "type": "integer"
+                }
+            }
+        },
+        "grade.StudentFinalGradeRowDto": {
+            "type": "object",
+            "properties": {
+                "finalGrade": {
+                    "type": "string"
+                },
+                "percent": {
+                    "type": "number"
+                },
+                "totalMaxScore": {
+                    "type": "number"
+                },
+                "totalScore": {
+                    "type": "number"
+                },
+                "userEmail": {
+                    "type": "string"
+                },
+                "userName": {
+                    "type": "string"
+                },
+                "userUuid": {
+                    "type": "string"
                 }
             }
         },

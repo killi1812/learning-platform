@@ -1,3 +1,5 @@
+import type { GradingScale } from './course'
+
 export interface UpsertGradePayload {
   score: number
   feedback?: string
@@ -50,4 +52,25 @@ export interface StudentGradeDto {
   percent: number
   feedback?: string
   gradedAt: string
+}
+
+export interface CourseFinalGradeDto {
+  courseUuid: string
+  courseName: string
+  courseCode: string
+  totalScore: number
+  totalMaxScore: number
+  percent: number
+  finalGrade: string
+  gradingScale: GradingScale
+}
+
+export interface StudentFinalGradeRowDto {
+  userUuid: string
+  userEmail: string
+  userName?: string
+  totalScore: number
+  totalMaxScore: number
+  percent: number
+  finalGrade: string
 }

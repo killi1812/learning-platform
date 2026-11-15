@@ -793,6 +793,91 @@
               </v-col>
             </v-row>
 
+            <!-- Grading Scale (A-F Minimum %) -->
+            <div class="mt-4 mb-3">
+              <div class="d-flex align-center justify-space-between mb-2">
+                <div>
+                  <h3 class="text-subtitle-1 font-weight-bold text-high-emphasis">
+                    Grading Scale (Minimum % for A–E)
+                  </h3>
+                  <p class="text-caption text-medium-emphasis mb-0">
+                    Thresholds for final subject grades. F is assigned for any total score below E.
+                  </p>
+                </div>
+                <v-btn
+                  size="small"
+                  variant="text"
+                  prepend-icon="mdi-refresh"
+                  @click="resetEditGradingScale"
+                >
+                  Reset to Defaults
+                </v-btn>
+              </div>
+
+              <v-row dense>
+                <v-col cols="6" sm="2">
+                  <v-text-field
+                    v-model.number="editGradingScale.scaleA"
+                    label="Grade A (≥ %)"
+                    type="number"
+                    min="1"
+                    max="100"
+                    density="compact"
+                    variant="outlined"
+                  />
+                </v-col>
+                <v-col cols="6" sm="2">
+                  <v-text-field
+                    v-model.number="editGradingScale.scaleB"
+                    label="Grade B (≥ %)"
+                    type="number"
+                    min="1"
+                    max="100"
+                    density="compact"
+                    variant="outlined"
+                  />
+                </v-col>
+                <v-col cols="6" sm="2">
+                  <v-text-field
+                    v-model.number="editGradingScale.scaleC"
+                    label="Grade C (≥ %)"
+                    type="number"
+                    min="1"
+                    max="100"
+                    density="compact"
+                    variant="outlined"
+                  />
+                </v-col>
+                <v-col cols="6" sm="2">
+                  <v-text-field
+                    v-model.number="editGradingScale.scaleD"
+                    label="Grade D (≥ %)"
+                    type="number"
+                    min="1"
+                    max="100"
+                    density="compact"
+                    variant="outlined"
+                  />
+                </v-col>
+                <v-col cols="6" sm="2">
+                  <v-text-field
+                    v-model.number="editGradingScale.scaleE"
+                    label="Grade E (≥ %)"
+                    type="number"
+                    min="1"
+                    max="100"
+                    density="compact"
+                    variant="outlined"
+                  />
+                </v-col>
+                <v-col cols="12" sm="2" class="d-flex align-center">
+                  <span class="text-caption text-medium-emphasis">
+                    Grade F: &lt; {{ editGradingScale.scaleE }}%
+                  </span>
+                </v-col>
+              </v-row>
+            </div>
+
             <v-btn
               class="mt-2"
               color="primary"
@@ -1317,7 +1402,14 @@ import HandinSubmissionDialog from '@/components/HandinSubmissionDialog.vue'
 import TeacherSubmissionsDialog from '@/components/TeacherSubmissionsDialog.vue'
 import { isAxiosError } from 'axios'
 import { getApiErrorMessage } from '@/api/client'
-import type { Course, Module, Enrollment, UpdateCoursePayload, Group } from '@/types/course'
+import type {
+  Course,
+  Module,
+  Enrollment,
+  UpdateCoursePayload,
+  Group,
+  GradingScale,
+} from '@/types/course'
 import type { FileUpload } from '@/types/content'
 import type { Assignment } from '@/types/quiz'
 
@@ -1358,6 +1450,20 @@ watch(activeTab, newTab => {
 })
 
 // Settings edit form
+const DEFAULT_GRADING_SCALE: GradingScale = {
+  scaleA: 90,
+  scaleB: 80,
+  scaleC: 60,
+  scaleD: 50,
+  scaleE: 40,
+}
+
+const editGradingScale = ref<GradingScale>({ ...DEFAULT_GRADING_SCALE })
+
+function resetEditGradingScale() {
+  editGradingScale.value = { ...DEFAULT_GRADING_SCALE }
+}
+
 const editCourseData = ref<UpdateCoursePayload>({
   title: '',
   description: '',
@@ -1841,6 +1947,11 @@ async function fetchCourseDetails() {
       term: course.value.term,
       year: course.value.year,
     }
+    if (course.value.gradingScale) {
+      editGradingScale.value = { ...course.value.gradingScale }
+    } else {
+      resetEditGradingScale()
+    }
 
     // Determine current user's role in this course
     const myCourses = await getMyCourses().catch(() => [])
@@ -2013,10 +2124,30 @@ async function handleRemoveEnrollment(enrollment: Enrollment) {
 }
 
 async function handleUpdateCourse() {
+  const s = editGradingScale.value
+  if (
+    s.scaleA > 100 ||
+    s.scaleA <= s.scaleB ||
+    s.scaleB <= s.scaleC ||
+    s.scaleC <= s.scaleD ||
+    s.scaleD <= s.scaleE ||
+    s.scaleE <= 0
+  ) {
+    toast.error('Invalid grading scale: Must satisfy 100 ≥ A > B > C > D > E > 0.')
+    return
+  }
+
   savingCourse.value = true
   try {
-    const updated = await updateCourse(resolvedCourseUuid.value, editCourseData.value)
+    const payload: UpdateCoursePayload = {
+      ...editCourseData.value,
+      gradingScale: { ...s },
+    }
+    const updated = await updateCourse(resolvedCourseUuid.value, payload)
     course.value = updated
+    if (updated.gradingScale) {
+      editGradingScale.value = { ...updated.gradingScale }
+    }
     toast.success('Course details updated successfully.')
   } catch (err: unknown) {
     toast.error(err instanceof Error ? err.message : 'Failed to update course.')

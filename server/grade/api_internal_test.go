@@ -61,4 +61,13 @@ func TestGradeCtn_UnauthenticatedContexts(t *testing.T) {
 		ctn.listMyGrades(c)
 		assert.Equal(t, http.StatusUnauthorized, w.Code)
 	})
+
+	t.Run("getMyFinalGrades returns 401 when user uuid missing", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request, _ = http.NewRequest(http.MethodGet, "/", nil)
+
+		ctn.getMyFinalGrades(c)
+		assert.Equal(t, http.StatusUnauthorized, w.Code)
+	})
 }
