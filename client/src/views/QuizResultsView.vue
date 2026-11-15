@@ -36,11 +36,17 @@
             </td>
             <td class="text-center">
               <template v-if="row.passed === undefined">Not taken</template>
-              <template v-else>{{ row.passed ? '✅' : '❌' }}</template>
+              <v-icon
+                v-else
+                :aria-label="row.passed ? 'Passed' : 'Failed'"
+                :color="row.passed ? 'success' : 'error'"
+                :icon="row.passed ? 'mdi-check-circle' : 'mdi-close-circle'"
+                size="small"
+              />
             </td>
           </tr>
           <tr v-if="rows.length === 0">
-            <td colspan="5" class="text-center text-medium-emphasis py-6">
+            <td class="text-center text-medium-emphasis py-6" colspan="5">
               No students enrolled yet.
             </td>
           </tr>
@@ -51,10 +57,11 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { getQuizResults } from '@/api/quiz'
 import type { StudentResultRow } from '@/types/quiz'
+import { onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import { getApiErrorMessage } from '@/api/client'
+import { getQuizResults } from '@/api/quiz'
 
 const props = defineProps<{
   courseUuid: string
@@ -66,20 +73,42 @@ const router = useRouter()
 const loading = ref(true)
 const error = ref('')
 const rows = ref<StudentResultRow[]>([])
+let loadCounter = 0
 
-function goBack() {
-  router.push(
+function goBack(): void {
+  void router.push(
     `/courses/${props.courseUuid}/modules/${props.moduleUuid}/quizzes/${props.quizUuid}/edit`,
   )
 }
 
-onMounted(async () => {
+async function loadResults(): Promise<void> {
+  const requestId = ++loadCounter
+  loading.value = true
+  error.value = ''
   try {
-    rows.value = await getQuizResults(props.courseUuid, props.quizUuid)
-  } catch (err: unknown) {
-    error.value = err instanceof Error ? err.message : 'Failed to load results.'
+    const resultRows = await getQuizResults(props.courseUuid, props.quizUuid)
+    if (requestId === loadCounter) {
+      rows.value = resultRows
+    }
+  } catch (error_: unknown) {
+    if (requestId === loadCounter) {
+      error.value = getApiErrorMessage(error_, 'Failed to load results.')
+    }
   } finally {
-    loading.value = false
+    if (requestId === loadCounter) {
+      loading.value = false
+    }
   }
+}
+
+onMounted(() => {
+  void loadResults()
 })
+
+watch(
+  () => [props.courseUuid, props.quizUuid],
+  () => {
+    void loadResults()
+  },
+)
 </script>
