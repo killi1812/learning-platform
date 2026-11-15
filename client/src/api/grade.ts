@@ -1,22 +1,16 @@
-import { authApi, getApiErrorMessage } from './client'
 import type {
-  UpsertGradePayload,
-  GradeDto,
-  ReleaseResultDto,
-  PendingSubmissionDto,
-  StudentGradeDto,
   CourseFinalGradeDto,
+  GradeDto,
+  PendingSubmissionDto,
+  ReleaseResultDto,
   StudentFinalGradeRowDto,
+  StudentGradeDto,
+  UpsertGradePayload,
 } from '@/types/grade'
+import { parseDownloadFilename, triggerBlobDownload } from '@/util/download'
+import { authApi, request } from './client'
 
-async function wrapRequest<T>(promise: Promise<{ data: T }>): Promise<T> {
-  try {
-    const response = await promise
-    return response.data
-  } catch (err: unknown) {
-    throw new Error(getApiErrorMessage(err))
-  }
-}
+const enc = encodeURIComponent
 
 /** Grade or update an individual submission (Teachers & Admins) */
 export function upsertGrade(
@@ -25,9 +19,9 @@ export function upsertGrade(
   submissionUuid: string,
   payload: UpsertGradePayload,
 ): Promise<GradeDto> {
-  return wrapRequest(
+  return request(
     authApi.put<GradeDto>(
-      `/course/${courseUuid}/content/${contentUuid}/submission/${submissionUuid}/grade`,
+      `/course/${enc(courseUuid)}/content/${enc(contentUuid)}/submission/${enc(submissionUuid)}/grade`,
       payload,
     ),
   )
@@ -38,82 +32,62 @@ export function releaseAssignmentGrades(
   courseUuid: string,
   contentUuid: string,
 ): Promise<ReleaseResultDto> {
-  return wrapRequest(
-    authApi.post<ReleaseResultDto>(`/course/${courseUuid}/content/${contentUuid}/grade/release`),
+  return request(
+    authApi.post<ReleaseResultDto>(
+      `/course/${enc(courseUuid)}/content/${enc(contentUuid)}/grade/release`,
+    ),
   )
 }
 
 /** List pending ungraded individual submissions across courses taught by caller */
 export function listPendingGrades(courseUuid?: string): Promise<PendingSubmissionDto[]> {
-  const params: Record<string, string> = {}
-  if (courseUuid) {
-    params.courseUuid = courseUuid
-  }
-  return wrapRequest(authApi.get<PendingSubmissionDto[]>('/grade/pending', { params }))
+  return request(
+    authApi.get<PendingSubmissionDto[]>('/grade/pending', {
+      params: courseUuid ? { courseUuid } : undefined,
+    }),
+  )
 }
 
 /** List authenticated student's own grades and quiz results */
 export function listMyGrades(courseUuid?: string): Promise<StudentGradeDto[]> {
-  const params: Record<string, string> = {}
-  if (courseUuid) {
-    params.courseUuid = courseUuid
-  }
-  return wrapRequest(authApi.get<StudentGradeDto[]>('/grade/my', { params }))
+  return request(
+    authApi.get<StudentGradeDto[]>('/grade/my', {
+      params: courseUuid ? { courseUuid } : undefined,
+    }),
+  )
 }
 
 /** List authenticated student's cumulative subject evaluation and final letter grades */
 export function getMyFinalGrades(courseUuid?: string): Promise<CourseFinalGradeDto[]> {
-  const params: Record<string, string> = {}
-  if (courseUuid) {
-    params.courseUuid = courseUuid
-  }
-  return wrapRequest(authApi.get<CourseFinalGradeDto[]>('/grade/my/final', { params }))
+  return request(
+    authApi.get<CourseFinalGradeDto[]>('/grade/my/final', {
+      params: courseUuid ? { courseUuid } : undefined,
+    }),
+  )
 }
 
 /** List course roster with final cumulative points and letter grades (Teachers & Admins) */
 export function getCourseRosterFinalGrades(courseUuid: string): Promise<StudentFinalGradeRowDto[]> {
-  return wrapRequest(authApi.get<StudentFinalGradeRowDto[]>(`/course/${courseUuid}/grade/roster`))
+  return request(authApi.get<StudentFinalGradeRowDto[]>(`/course/${enc(courseUuid)}/grade/roster`))
 }
 
 /** Download course gradebook CSV */
 export async function exportCourseGrades(courseUuid: string, filename?: string): Promise<void> {
-  try {
-    const response = await authApi.get<Blob>(`/course/${courseUuid}/grade/export`, {
-      responseType: 'blob',
-    })
-    const contentType =
-      typeof response.headers['content-type'] === 'string'
-        ? response.headers['content-type']
-        : 'text/csv'
-    const blob =
-      response.data instanceof Blob
-        ? response.data
-        : new Blob([response.data], { type: contentType })
+  const response = await request(
+    authApi
+      .get<Blob>(`/course/${enc(courseUuid)}/grade/export`, { responseType: 'blob' })
+      .then(res => ({ data: res })),
+    'Failed to export gradebook CSV.',
+  )
 
-    // If filename wasn't provided, try reading from Content-Disposition header
-    let targetFilename = filename
-    if (!targetFilename) {
-      const disposition = response.headers['content-disposition']
-      if (typeof disposition === 'string') {
-        const match = disposition.match(/filename=["']?([^"']+)["']?/)
-        if (match && match[1]) {
-          targetFilename = match[1]
-        }
-      }
-    }
-    if (!targetFilename) {
-      targetFilename = `course-${courseUuid.slice(0, 8)}-gradebook.csv`
-    }
-
-    const downloadUrl = window.URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = downloadUrl
-    link.download = targetFilename
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    window.URL.revokeObjectURL(downloadUrl)
-  } catch (err: unknown) {
-    throw new Error(getApiErrorMessage(err, 'Failed to export gradebook CSV.'))
-  }
+  const contentType =
+    typeof response.headers['content-type'] === 'string'
+      ? response.headers['content-type']
+      : 'text/csv'
+  const blob =
+    response.data instanceof Blob ? response.data : new Blob([response.data], { type: contentType })
+  const fallbackName = `course-${courseUuid.slice(0, 8)}-gradebook.csv`
+  const targetFilename =
+    filename || parseDownloadFilename(response.headers['content-disposition'], fallbackName)
+  triggerBlobDownload(blob, targetFilename)
 }
