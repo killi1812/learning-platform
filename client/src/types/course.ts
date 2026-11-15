@@ -9,29 +9,6 @@ export interface GradingScale {
   scaleE: number
 }
 
-export const DEFAULT_GRADING_SCALE: GradingScale = {
-  scaleA: 90,
-  scaleB: 80,
-  scaleC: 60,
-  scaleD: 50,
-  scaleE: 40,
-}
-
-export function isValidGradingScale(s: GradingScale): boolean {
-  const values = [s.scaleA, s.scaleB, s.scaleC, s.scaleD, s.scaleE]
-  if (values.some(v => typeof v !== 'number' || !Number.isFinite(v))) {
-    return false
-  }
-  return (
-    s.scaleA <= 100 &&
-    s.scaleA > s.scaleB &&
-    s.scaleB > s.scaleC &&
-    s.scaleC > s.scaleD &&
-    s.scaleD > s.scaleE &&
-    s.scaleE > 0
-  )
-}
-
 export interface Course {
   uuid: string
   createdAt: string
@@ -52,12 +29,11 @@ export interface CreateCoursePayload {
   gradingScale?: GradingScale
 }
 
-export interface UpdateCoursePayload {
-  title: string
-  description?: string
-  term: CourseTerm
-  year: number
-  gradingScale?: GradingScale
+export type UpdateCoursePayload = CreateCoursePayload
+
+export interface AddEnrollmentPayload {
+  email: string
+  role?: CourseRole
 }
 
 export interface Enrollment {
@@ -90,11 +66,7 @@ export interface CreateModulePayload {
   dependsOnUuid?: string
 }
 
-export interface UpdateModulePayload {
-  title: string
-  position?: number
-  dependsOnUuid?: string
-}
+export type UpdateModulePayload = CreateModulePayload
 
 export interface GroupMember {
   uuid: string

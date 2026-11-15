@@ -29,12 +29,7 @@ export interface UpdateQuizPayload {
   maxAttempts: number
 }
 
-export interface QuestionPayload {
-  type: QuestionType
-  prompt: string
-  options: string[]
-  correct: number[]
-}
+export type QuestionPayload = Omit<EditQuestion, 'uuid'>
 
 /** Student view of a question. The server never sends the answer key. */
 export interface StudentQuestion {
@@ -58,9 +53,11 @@ export interface QuizResult {
   maxAttempts: number
 }
 
+export type AssignmentType = 'HANDIN' | 'QUIZ'
+
 export interface Assignment {
   uuid: string
-  type: string
+  type: AssignmentType
   title: string
   moduleUuid: string
   moduleTitle: string

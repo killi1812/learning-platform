@@ -14,6 +14,18 @@ export interface TokenResponse {
   accessToken: string
 }
 
+export interface UserClaims {
+  sub?: string
+  jti?: string
+  userUuid?: string
+  username?: string
+  email?: string
+  role?: string
+  sessionUuid?: string
+  exp?: number
+  iat?: number
+}
+
 export interface SessionInfo {
   id: string
   deviceName: string
