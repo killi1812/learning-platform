@@ -102,5 +102,6 @@ func loadBool(name string) bool {
 	if rez == "" {
 		zap.S().Errorf("Env variable %s is empty", name)
 	}
+	zap.S().Debugf("Loaded %s = %s", name, rez)
 	return rez == "true" || rez == "True"
 }
