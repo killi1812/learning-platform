@@ -1,11 +1,11 @@
 <template>
-  <div class="login-page d-flex align-center justify-center">
+  <div class="auth-page d-flex align-center justify-center">
     <v-container max-width="480">
       <v-card class="login-card pa-4 pa-sm-6" elevation="8" rounded="xl">
         <!-- Brand Header -->
         <div class="text-center mb-6">
-          <v-avatar color="primary" size="64" class="mb-3 elevation-4">
-            <v-icon color="white" icon="mdi-school" size="36" />
+          <v-avatar class="mb-3 elevation-4" color="primary" size="64">
+            <v-icon icon="mdi-school" size="36" />
           </v-avatar>
           <h1 class="text-h5 font-weight-bold text-high-emphasis">DAT250 Learning Platform</h1>
           <p class="text-body-2 text-medium-emphasis mt-1">
@@ -22,7 +22,7 @@
           icon="mdi-alert-circle-outline"
           rounded="lg"
           variant="tonal"
-          @click:close="authError = undefined"
+          @click:close="clearAuthError"
         >
           {{ authError }}
         </v-alert>
@@ -57,8 +57,9 @@
 
           <v-text-field
             v-model="password"
+            :append-inner-icon="showPassword ? 'mdi-eye-off-outline' : 'mdi-eye-outline'"
             autocomplete="current-password"
-            class="mb-3"
+            class="mb-5"
             density="comfortable"
             label="Password"
             name="password"
@@ -67,22 +68,8 @@
             :rules="[rules.required]"
             :type="showPassword ? 'text' : 'password'"
             variant="outlined"
-            :append-inner-icon="showPassword ? 'mdi-eye-off-outline' : 'mdi-eye-outline'"
             @click:append-inner="showPassword = !showPassword"
           />
-
-          <div class="d-flex align-center justify-space-between mb-4">
-            <v-checkbox
-              v-model="rememberMe"
-              color="primary"
-              density="compact"
-              hide-details
-              label="Remember me"
-            />
-            <span class="text-caption text-primary cursor-pointer font-weight-medium">
-              Need help?
-            </span>
-          </div>
 
           <v-btn
             block
@@ -103,8 +90,8 @@
         <div class="text-center text-body-2 text-medium-emphasis">
           Don't have an account?
           <router-link
-            to="/register"
             class="text-primary font-weight-bold text-decoration-none ml-1"
+            to="/register"
           >
             Sign Up
           </router-link>
@@ -115,23 +102,25 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { getSafeRedirect } from '@/util/redirect'
+import { EMAIL_PATTERN } from '@/util/validation'
 
 const router = useRouter()
 const route = useRoute()
-const { login, isSubmitting, authError } = useAuth()
+const { login, isSubmitting, authError, clearAuthError } = useAuth()
 
-const email = ref<string>()
-const password = ref<string>()
+const formRef = ref<{ validate: () => Promise<{ valid: boolean }> } | undefined>(undefined)
+const email = ref('')
+const password = ref('')
 const showPassword = ref(false)
-const rememberMe = ref(true)
 
 const rules = {
-  required: (value: string) => !!value || 'This field is required',
-  email: (value: string) => /.+@.+\..+/.test(value) || 'Please enter a valid email address',
+  required: (value: string) => !!value.trim() || 'This field is required',
+  email: (value: string) =>
+    EMAIL_PATTERN.test(value.trim()) || 'Please enter a valid email address',
 }
 
 const redirectReason = computed(() => {
@@ -141,8 +130,17 @@ const redirectReason = computed(() => {
   return undefined
 })
 
-async function handleSubmit() {
-  if (!email.value || !password.value) {
+onMounted(() => {
+  clearAuthError()
+})
+
+onBeforeUnmount(() => {
+  clearAuthError()
+})
+
+async function handleSubmit(): Promise<void> {
+  const result = await formRef.value?.validate()
+  if (result && !result.valid) {
     return
   }
 
@@ -153,27 +151,14 @@ async function handleSubmit() {
 
   if (success) {
     const target = getSafeRedirect(route.query.redirect)
-    router.push(target)
+    void router.push(target)
   }
 }
 </script>
 
 <style scoped>
-.login-page {
-  min-height: 100vh;
-  background: radial-gradient(
-    circle at 50% 30%,
-    rgba(var(--v-theme-primary), 0.08),
-    transparent 70%
-  );
-}
-
 .login-card {
   border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
   backdrop-filter: blur(8px);
-}
-
-.cursor-pointer {
-  cursor: pointer;
 }
 </style>

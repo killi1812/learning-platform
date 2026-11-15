@@ -1,11 +1,11 @@
 <template>
-  <div class="register-page d-flex align-center justify-center">
+  <div class="auth-page d-flex align-center justify-center">
     <v-container max-width="500">
       <v-card class="register-card pa-4 pa-sm-6" elevation="8" rounded="xl">
         <!-- Brand Header -->
         <div class="text-center mb-6">
-          <v-avatar color="primary" size="64" class="mb-3 elevation-4">
-            <v-icon color="white" icon="mdi-account-plus" size="36" />
+          <v-avatar class="mb-3 elevation-4" color="primary" size="64">
+            <v-icon icon="mdi-account-plus" size="36" />
           </v-avatar>
           <h1 class="text-h5 font-weight-bold text-high-emphasis">Create an Account</h1>
           <p class="text-body-2 text-medium-emphasis mt-1">
@@ -22,7 +22,7 @@
           icon="mdi-alert-circle-outline"
           rounded="lg"
           variant="tonal"
-          @click:close="authError = undefined"
+          @click:close="clearAuthError"
         >
           {{ authError }}
         </v-alert>
@@ -58,6 +58,7 @@
 
           <v-text-field
             v-model="password"
+            :append-inner-icon="showPassword ? 'mdi-eye-off-outline' : 'mdi-eye-outline'"
             autocomplete="new-password"
             class="mb-2"
             density="comfortable"
@@ -68,7 +69,6 @@
             :rules="[rules.required, rules.minPassword]"
             :type="showPassword ? 'text' : 'password'"
             variant="outlined"
-            :append-inner-icon="showPassword ? 'mdi-eye-off-outline' : 'mdi-eye-outline'"
             @click:append-inner="showPassword = !showPassword"
           />
 
@@ -104,7 +104,7 @@
 
         <div class="text-center text-body-2 text-medium-emphasis">
           Already have an account?
-          <router-link to="/login" class="text-primary font-weight-bold text-decoration-none ml-1">
+          <router-link class="text-primary font-weight-bold text-decoration-none ml-1" to="/login">
             Sign In
           </router-link>
         </div>
@@ -114,15 +114,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { getSafeRedirect } from '@/util/redirect'
+import { EMAIL_PATTERN } from '@/util/validation'
 
 const router = useRouter()
 const route = useRoute()
-const { register, isSubmitting, authError } = useAuth()
+const { register, isSubmitting, authError, clearAuthError } = useAuth()
 
+const formRef = ref<{ validate: () => Promise<{ valid: boolean }> } | undefined>(undefined)
 const username = ref('')
 const email = ref('')
 const password = ref('')
@@ -130,23 +132,27 @@ const confirmPassword = ref('')
 const showPassword = ref(false)
 
 const rules = {
-  required: (v: string) => !!v || 'This field is required',
+  required: (v: string) => !!v.trim() || 'This field is required',
   minUsername: (v: string) =>
-    (v && v.length >= 3 && v.length <= 30) || 'Username must be between 3 and 30 characters',
+    (v.length >= 3 && v.length <= 30) || 'Username must be between 3 and 30 characters',
   validUsername: (v: string) =>
-    /^[a-zA-Z0-9]+$/.test(v) || 'Username must be alphanumeric (no spaces or symbols)',
-  email: (v: string) => /.+@.+\..+/.test(v) || 'Please enter a valid email address',
-  minPassword: (v: string) => (v && v.length >= 8) || 'Password must be at least 8 characters',
+    /^[a-z0-9]+$/i.test(v) || 'Username must be alphanumeric (no spaces or symbols)',
+  email: (v: string) => EMAIL_PATTERN.test(v.trim()) || 'Please enter a valid email address',
+  minPassword: (v: string) => v.length >= 8 || 'Password must be at least 8 characters',
   matchPassword: (v: string) => v === password.value || 'Passwords do not match',
 }
 
-async function handleSubmit() {
-  if (
-    !username.value ||
-    !email.value ||
-    !password.value ||
-    password.value !== confirmPassword.value
-  ) {
+onMounted(() => {
+  clearAuthError()
+})
+
+onBeforeUnmount(() => {
+  clearAuthError()
+})
+
+async function handleSubmit(): Promise<void> {
+  const result = await formRef.value?.validate()
+  if (result && !result.valid) {
     return
   }
 
@@ -158,21 +164,12 @@ async function handleSubmit() {
 
   if (success) {
     const target = getSafeRedirect(route.query.redirect)
-    router.push(target)
+    void router.push(target)
   }
 }
 </script>
 
 <style scoped>
-.register-page {
-  min-height: 100vh;
-  background: radial-gradient(
-    circle at 50% 30%,
-    rgba(var(--v-theme-primary), 0.08),
-    transparent 70%
-  );
-}
-
 .register-card {
   border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
   backdrop-filter: blur(8px);
