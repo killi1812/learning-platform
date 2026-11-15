@@ -16,11 +16,11 @@
         >
           Results
         </v-btn>
-        <v-btn :loading="saving" variant="tonal" color="primary" @click="save(false)">Save</v-btn>
+        <v-btn color="primary" :loading="saving" variant="tonal" @click="save(false)">Save</v-btn>
         <v-btn
           v-if="!quiz.published"
-          :loading="saving"
           color="primary"
+          :loading="saving"
           variant="elevated"
           @click="save(true)"
         >
@@ -97,9 +97,9 @@
           <template #activator="{ props: menuProps }">
             <v-btn
               v-bind="menuProps"
+              append-icon="mdi-chevron-down"
               color="primary"
               prepend-icon="mdi-plus"
-              append-icon="mdi-chevron-down"
               variant="tonal"
             >
               Add question
@@ -145,22 +145,25 @@
           </div>
           <div class="d-flex ga-1">
             <v-btn
-              :disabled="index === 0"
+              aria-label="Move question up"
               density="comfortable"
+              :disabled="index === 0"
               icon="mdi-arrow-up"
               title="Move up"
               variant="text"
               @click="moveQuestion(index, -1)"
             />
             <v-btn
-              :disabled="index === questions.length - 1"
+              aria-label="Move question down"
               density="comfortable"
+              :disabled="index === questions.length - 1"
               icon="mdi-arrow-down"
               title="Move down"
               variant="text"
               @click="moveQuestion(index, 1)"
             />
             <v-btn
+              aria-label="Delete question"
               color="error"
               density="comfortable"
               icon="mdi-delete-outline"
@@ -182,11 +185,12 @@
         <!-- True / false -->
         <v-radio-group
           v-if="q.type === 'TRUE_FALSE'"
-          :model-value="q.correct[0]"
           hide-details
           inline
+          :model-value="q.correct[0]"
           @update:model-value="
-            (value: number | null) => (q.correct = value === null ? [] : [value])
+            (value: number | null) =>
+              (q.correct = value === null || value === undefined ? [] : [value])
           "
         >
           <span class="text-caption text-medium-emphasis mr-4 align-self-center">
@@ -209,16 +213,17 @@
             />
             <v-text-field
               v-model="q.options[optIndex]"
+              class="mb-2"
               density="compact"
               hide-details
               :label="`Option ${optIndex + 1}`"
               variant="outlined"
-              class="mb-2"
             />
             <v-btn
-              :disabled="q.options.length <= 2"
+              aria-label="Remove option"
               color="error"
               density="comfortable"
+              :disabled="q.options.length <= 2"
               icon="mdi-close"
               title="Remove option"
               variant="text"
@@ -241,12 +246,14 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { getQuizForEdit, publishQuiz, replaceQuestions, updateQuiz } from '@/api/quiz'
-import { useToast } from '@/composables/useToast'
-import { useConfirm } from '@/composables/useConfirm'
 import type { EditQuiz, QuestionType } from '@/types/quiz'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { onBeforeRouteLeave, useRouter } from 'vue-router'
+import { getApiErrorMessage } from '@/api/client'
+import { getQuizForEdit, publishQuiz, replaceQuestions, updateQuiz } from '@/api/quiz'
+import { useConfirm } from '@/composables/useConfirm'
+import { useToast } from '@/composables/useToast'
+import { fromLocalDateTimeInput, toLocalDateTimeInput } from '@/util/dateTime'
 
 interface DraftQuestion {
   key: number
@@ -271,7 +278,9 @@ const saving = ref(false)
 const error = ref('')
 const quiz = ref<EditQuiz | undefined>(undefined)
 const questions = ref<DraftQuestion[]>([])
+const savedSnapshot = ref('')
 let nextKey = 0
+let loadCounter = 0
 
 const form = reactive({
   title: '',
@@ -281,22 +290,25 @@ const form = reactive({
   maxAttempts: 1,
 })
 
-function toLocalInput(iso?: string): string {
-  if (!iso) return ''
-  const date = new Date(iso)
-  const offsetMs = date.getTimezoneOffset() * 60_000
-  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16)
+function serializeDraft(): string {
+  return JSON.stringify({
+    form: { ...form },
+    questions: questions.value.map(q => ({
+      type: q.type,
+      prompt: q.prompt,
+      options: q.options,
+      correct: q.correct,
+    })),
+  })
 }
 
-function fromLocalInput(value: string): string | undefined {
-  return value ? new Date(value).toISOString() : undefined
-}
+const isDirty = computed(() => Boolean(quiz.value) && serializeDraft() !== savedSnapshot.value)
 
-function applyQuiz(loaded: EditQuiz) {
+function applyQuiz(loaded: EditQuiz): void {
   quiz.value = loaded
   form.title = loaded.title
-  form.visibleFrom = toLocalInput(loaded.visibleFrom)
-  form.visibleUntil = toLocalInput(loaded.visibleUntil)
+  form.visibleFrom = toLocalDateTimeInput(loaded.visibleFrom)
+  form.visibleUntil = toLocalDateTimeInput(loaded.visibleUntil)
   form.passPercent = loaded.passPercent
   form.maxAttempts = loaded.maxAttempts
   questions.value = loaded.questions.map(q => ({
@@ -306,6 +318,7 @@ function applyQuiz(loaded: EditQuiz) {
     options: [...q.options],
     correct: [...q.correct],
   }))
+  savedSnapshot.value = serializeDraft()
 }
 
 function newQuestion(type: QuestionType): DraftQuestion {
@@ -318,54 +331,79 @@ function newQuestion(type: QuestionType): DraftQuestion {
   }
 }
 
-function addQuestion(type: QuestionType) {
+function addQuestion(type: QuestionType): void {
   questions.value.push(newQuestion(type))
 }
 
-function removeQuestion(index: number) {
+function removeQuestion(index: number): void {
   questions.value.splice(index, 1)
 }
 
-function moveQuestion(index: number, delta: number) {
+function moveQuestion(index: number, delta: number): void {
   const target = index + delta
-  if (target < 0 || target >= questions.value.length) return
+  if (target < 0 || target >= questions.value.length) {
+    return
+  }
   const [moved] = questions.value.splice(index, 1)
-  questions.value.splice(target, 0, moved!)
+  if (moved) {
+    questions.value.splice(target, 0, moved)
+  }
 }
 
-function toggleCorrect(q: DraftQuestion, optIndex: number) {
-  q.correct = q.correct.includes(optIndex)
-    ? q.correct.filter(i => i !== optIndex)
-    : [...q.correct, optIndex].sort((a, b) => a - b)
+function toggleCorrect(q: DraftQuestion, optIndex: number): void {
+  if (q.correct.includes(optIndex)) {
+    q.correct = q.correct.filter(i => i !== optIndex)
+    return
+  }
+  const next = [...q.correct, optIndex]
+  next.sort((a, b) => a - b)
+  q.correct = next
 }
 
-function removeOption(q: DraftQuestion, optIndex: number) {
+function removeOption(q: DraftQuestion, optIndex: number): void {
   q.options.splice(optIndex, 1)
   q.correct = q.correct.filter(i => i !== optIndex).map(i => (i > optIndex ? i - 1 : i))
 }
 
-/** Returns a message for the first problem found, or undefined when the quiz is valid. */
-function validate(): string | undefined {
-  if (form.title.trim().length < 2) return 'Title must be at least 2 characters.'
-  if (form.passPercent < 0 || form.passPercent > 100) return 'Pass percent must be 0 to 100.'
-  if (!Number.isInteger(form.maxAttempts) || form.maxAttempts < 1)
-    return 'Attempts must be 1 or more.'
-  if (form.visibleFrom && form.visibleUntil && form.visibleUntil < form.visibleFrom) {
-    return 'The end date is before the start date.'
+function validateQuestion(q: DraftQuestion, index: number): string | undefined {
+  const label = `Question ${index + 1}`
+  if (!q.prompt.trim()) {
+    return `${label} has no text.`
   }
-  for (const [i, q] of questions.value.entries()) {
-    const label = `Question ${i + 1}`
-    if (!q.prompt.trim()) return `${label} has no text.`
-    if (q.type === 'MULTIPLE_CHOICE') {
-      if (q.options.some(o => !o.trim())) return `${label} has an empty option.`
-      if (q.correct.length === 0) return `${label} needs at least one correct option.`
+  if (q.type === 'MULTIPLE_CHOICE') {
+    if (q.options.some(o => !o.trim())) {
+      return `${label} has an empty option.`
     }
-    if (q.type === 'TRUE_FALSE' && q.correct.length !== 1) return `${label} needs a correct answer.`
+    if (q.correct.length === 0) {
+      return `${label} needs at least one correct option.`
+    }
+  }
+  if (q.type === 'TRUE_FALSE' && q.correct.length !== 1) {
+    return `${label} needs a correct answer.`
   }
   return undefined
 }
 
-async function save(publish: boolean) {
+/** Returns a message for the first problem found, or undefined when the quiz is valid. */
+function validate(): string | undefined {
+  if (form.title.trim().length < 2) {
+    return 'Title must be at least 2 characters.'
+  }
+  if (form.passPercent < 0 || form.passPercent > 100) {
+    return 'Pass percent must be 0 to 100.'
+  }
+  if (!Number.isInteger(form.maxAttempts) || form.maxAttempts < 1) {
+    return 'Attempts must be 1 or more.'
+  }
+  if (form.visibleFrom && form.visibleUntil && form.visibleUntil < form.visibleFrom) {
+    return 'The end date is before the start date.'
+  }
+  return questions.value
+    .map((q, index) => validateQuestion(q, index))
+    .find((problem): problem is string => problem !== undefined)
+}
+
+async function save(publish: boolean): Promise<void> {
   const problem = validate()
   if (problem) {
     toast.error(problem)
@@ -383,15 +421,16 @@ async function save(publish: boolean) {
       confirmText: 'Continue',
       confirmColor: 'warning',
     }))
-  )
+  ) {
     return
+  }
 
   saving.value = true
   try {
     await updateQuiz(props.courseUuid, props.quizUuid, {
       title: form.title.trim(),
-      visibleFrom: fromLocalInput(form.visibleFrom),
-      visibleUntil: fromLocalInput(form.visibleUntil),
+      visibleFrom: fromLocalDateTimeInput(form.visibleFrom),
+      visibleUntil: fromLocalDateTimeInput(form.visibleUntil),
       passPercent: form.passPercent,
       maxAttempts: form.maxAttempts,
     })
@@ -405,33 +444,68 @@ async function save(publish: boolean) {
         correct: q.correct,
       })),
     )
-    if (publish) saved = await publishQuiz(props.courseUuid, props.quizUuid)
+    if (publish) {
+      saved = await publishQuiz(props.courseUuid, props.quizUuid)
+    }
     applyQuiz(saved)
     toast.success(publish ? 'Quiz published.' : 'Quiz saved.')
-  } catch (err: unknown) {
-    toast.error(err instanceof Error ? err.message : 'Failed to save quiz.')
+  } catch (error_: unknown) {
+    toast.error(getApiErrorMessage(error_, 'Failed to save quiz.'))
   } finally {
     saving.value = false
   }
 }
 
-function goBack() {
-  router.push(`/courses/${props.courseUuid}`)
+function goBack(): void {
+  void router.push(`/courses/${props.courseUuid}`)
 }
 
-function openResults() {
-  router.push(
+function openResults(): void {
+  void router.push(
     `/courses/${props.courseUuid}/modules/${props.moduleUuid}/quizzes/${props.quizUuid}/results`,
   )
 }
 
-onMounted(async () => {
+async function loadQuiz(): Promise<void> {
+  const requestId = ++loadCounter
+  loading.value = true
+  error.value = ''
   try {
-    applyQuiz(await getQuizForEdit(props.courseUuid, props.quizUuid))
-  } catch (err: unknown) {
-    error.value = err instanceof Error ? err.message : 'Failed to load quiz.'
+    const loaded = await getQuizForEdit(props.courseUuid, props.quizUuid)
+    if (requestId === loadCounter) {
+      applyQuiz(loaded)
+    }
+  } catch (error_: unknown) {
+    if (requestId === loadCounter) {
+      error.value = getApiErrorMessage(error_, 'Failed to load quiz.')
+    }
   } finally {
-    loading.value = false
+    if (requestId === loadCounter) {
+      loading.value = false
+    }
   }
+}
+
+onBeforeRouteLeave(async () => {
+  if (!isDirty.value) {
+    return true
+  }
+  return await confirm({
+    title: 'Unsaved Changes',
+    message: 'You have unsaved changes to this quiz. Leave without saving?',
+    confirmText: 'Leave',
+    confirmColor: 'warning',
+  })
 })
+
+onMounted(() => {
+  void loadQuiz()
+})
+
+watch(
+  () => [props.courseUuid, props.moduleUuid, props.quizUuid],
+  () => {
+    void loadQuiz()
+  },
+)
 </script>
