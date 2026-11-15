@@ -1,87 +1,82 @@
-import axios from 'axios'
-import { authApi, getApiErrorMessage } from './client'
-import type { FileUpload, UploadFilePayload, UpdateFilePayload } from '@/types/content'
+import type { FileUpload, UpdateFilePayload, UploadFilePayload } from '@/types/content'
+import { authApi, request } from './client'
 
-async function wrapRequest<T>(promise: Promise<{ data: T }>): Promise<T> {
-  try {
-    const response = await promise
-    return response.data
-  } catch (err: unknown) {
-    throw new Error(getApiErrorMessage(err))
-  }
+function filesBasePath(courseUuid: string, moduleUuid: string) {
+  return `/course/${encodeURIComponent(courseUuid)}/module/${encodeURIComponent(moduleUuid)}/file`
 }
 
-export async function listFiles(courseUuid: string, moduleUuid: string): Promise<FileUpload[]> {
-  return wrapRequest(authApi.get<FileUpload[]>(`/course/${courseUuid}/module/${moduleUuid}/file`))
+export function listFiles(courseUuid: string, moduleUuid: string): Promise<FileUpload[]> {
+  return request(authApi.get<FileUpload[]>(filesBasePath(courseUuid, moduleUuid)))
 }
 
-export async function getFile(
+export function getFile(
   courseUuid: string,
   moduleUuid: string,
   fileUuid: string,
+  signal?: AbortSignal,
 ): Promise<FileUpload> {
-  return wrapRequest(
-    authApi.get<FileUpload>(`/course/${courseUuid}/module/${moduleUuid}/file/${fileUuid}`),
+  return request(
+    authApi.get<FileUpload>(
+      `${filesBasePath(courseUuid, moduleUuid)}/${encodeURIComponent(fileUuid)}`,
+      { signal },
+    ),
   )
 }
 
-export async function uploadFile(
+export function uploadFile(
   courseUuid: string,
   moduleUuid: string,
   payload: UploadFilePayload,
 ): Promise<FileUpload> {
   const formData = new FormData()
-  if (payload.file) formData.append('file', payload.file)
-  if (payload.title) formData.append('title', payload.title)
-  if (payload.description) formData.append('description', payload.description)
-  if (payload.sourceUrl) formData.append('sourceUrl', payload.sourceUrl)
+  if (payload.file) {
+    formData.append('file', payload.file)
+  }
+  if (payload.title) {
+    formData.append('title', payload.title)
+  }
+  if (payload.description) {
+    formData.append('description', payload.description)
+  }
+  if (payload.sourceUrl) {
+    formData.append('sourceUrl', payload.sourceUrl)
+  }
 
-  return wrapRequest(
-    authApi.post<FileUpload>(`/course/${courseUuid}/module/${moduleUuid}/file`, formData, {
+  return request(
+    authApi.post<FileUpload>(filesBasePath(courseUuid, moduleUuid), formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     }),
   )
 }
 
-export async function getFilePreviewBlob(
+export function getFilePreviewBlob(
   courseUuid: string,
   moduleUuid: string,
   fileUuid: string,
+  signal?: AbortSignal,
 ): Promise<Blob> {
-  try {
-    const response = await authApi.get<Blob>(
-      `/course/${courseUuid}/module/${moduleUuid}/file/${fileUuid}/preview`,
+  return request(
+    authApi.get<Blob>(
+      `${filesBasePath(courseUuid, moduleUuid)}/${encodeURIComponent(fileUuid)}/preview`,
       {
         responseType: 'blob',
+        signal,
       },
-    )
-    return response.data
-  } catch (err: unknown) {
-    if (axios.isAxiosError(err) && err.response?.data instanceof Blob) {
-      try {
-        const text = await err.response.data.text()
-        const parsed = JSON.parse(text)
-        if (parsed && typeof parsed.error === 'string') {
-          throw new Error(parsed.error)
-        }
-      } catch (parseErr: unknown) {
-        if (parseErr instanceof Error && parseErr.message && !parseErr.message.includes('JSON')) {
-          throw parseErr
-        }
-      }
-    }
-    throw new Error(getApiErrorMessage(err))
-  }
+    ),
+  )
 }
 
-export async function updateFile(
+export function updateFile(
   courseUuid: string,
   moduleUuid: string,
   fileUuid: string,
   payload: UpdateFilePayload,
 ): Promise<FileUpload> {
-  return wrapRequest(
-    authApi.put<FileUpload>(`/course/${courseUuid}/module/${moduleUuid}/file/${fileUuid}`, payload),
+  return request(
+    authApi.put<FileUpload>(
+      `${filesBasePath(courseUuid, moduleUuid)}/${encodeURIComponent(fileUuid)}`,
+      payload,
+    ),
   )
 }
 
@@ -90,7 +85,9 @@ export async function deleteFile(
   moduleUuid: string,
   fileUuid: string,
 ): Promise<void> {
-  await wrapRequest(
-    authApi.delete<void>(`/course/${courseUuid}/module/${moduleUuid}/file/${fileUuid}`),
+  await request(
+    authApi.delete<void>(
+      `${filesBasePath(courseUuid, moduleUuid)}/${encodeURIComponent(fileUuid)}`,
+    ),
   )
 }
