@@ -10,7 +10,7 @@
 
       <div class="d-flex align-center ga-3">
         <!-- Export Gradebook Menu (Teachers/Admins) -->
-        <v-menu v-if="canGrade && teacherCourses.length > 0" location="bottom end">
+        <v-menu v-if="canGrade && gradingCourses.length > 0" location="bottom end">
           <template #activator="{ props: menuProps }">
             <v-btn
               v-bind="menuProps"
@@ -25,12 +25,12 @@
           <v-list density="compact">
             <v-list-subheader>Select Course</v-list-subheader>
             <v-list-item
-              v-for="c in teacherCourses"
-              :key="c.course.uuid"
-              :title="c.course.title"
-              :subtitle="`${c.course.term} ${c.course.year}`"
+              v-for="c in gradingCourses"
+              :key="c.uuid"
+              :title="c.title"
+              :subtitle="`${c.term} ${c.year}`"
               prepend-icon="mdi-download"
-              @click="handleExportCourse(c.course.uuid, c.course.title)"
+              @click="handleExportCourse(c.uuid, c.title)"
             />
           </v-list>
         </v-menu>
@@ -246,7 +246,7 @@
           </div>
 
           <v-select
-            v-if="teacherCourses.length > 1"
+            v-if="gradingCourses.length > 1"
             v-model="selectedTeacherCourse"
             :items="teacherCourseFilterOptions"
             density="compact"
@@ -469,7 +469,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useToast } from '@/composables/useToast'
 import { useAuth } from '@/composables/useAuth'
 import { getApiErrorMessage } from '@/api/client'
-import { getMyCourses } from '@/api/course'
+import { getMyCourses, listCourses } from '@/api/course'
 import {
   listMyGrades,
   listPendingGrades,
@@ -479,7 +479,7 @@ import {
 } from '@/api/grade'
 import MarkdownView from '@/components/MarkdownView.vue'
 import GradeDialog from '@/components/GradeDialog.vue'
-import type { MyCourse } from '@/types/course'
+import type { Course, MyCourse } from '@/types/course'
 import type {
   StudentGradeDto,
   PendingSubmissionDto,
@@ -493,6 +493,7 @@ const { currentUser } = useAuth()
 const loading = ref(true)
 const exporting = ref(false)
 const myCourses = ref<MyCourse[]>([])
+const allCourses = ref<Course[]>([])
 const myGrades = ref<StudentGradeDto[]>([])
 const myFinalGrades = ref<CourseFinalGradeDto[]>([])
 const pendingSubmissions = ref<PendingSubmissionDto[]>([])
@@ -521,7 +522,10 @@ const isAdmin = computed(() => {
 const canGrade = computed(() => isTeacher.value || isAdmin.value)
 
 const studentCourses = computed(() => myCourses.value.filter(c => c.role === 'STUDENT'))
-const teacherCourses = computed(() => myCourses.value.filter(c => c.role === 'TEACHER'))
+const gradingCourses = computed<Course[]>(() => {
+  if (isAdmin.value) return allCourses.value
+  return myCourses.value.filter(c => c.role === 'TEACHER').map(c => c.course)
+})
 
 const studentCourseFilterOptions = computed(() =>
   studentCourses.value.map(c => ({
@@ -531,9 +535,9 @@ const studentCourseFilterOptions = computed(() =>
 )
 
 const teacherCourseFilterOptions = computed(() =>
-  teacherCourses.value.map(c => ({
-    title: c.course.title,
-    value: c.course.uuid,
+  gradingCourses.value.map(c => ({
+    title: c.title,
+    value: c.uuid,
   })),
 )
 
@@ -619,16 +623,20 @@ async function fetchRoster() {
 
 async function handleExportSelectedRosterCourse() {
   if (!selectedRosterCourse.value) return
-  const crs = teacherCourses.value.find(c => c.course.uuid === selectedRosterCourse.value)
-  const title = crs ? crs.course.title : 'course'
+  const crs = gradingCourses.value.find(c => c.uuid === selectedRosterCourse.value)
+  const title = crs ? crs.title : 'course'
   await handleExportCourse(selectedRosterCourse.value, title)
 }
 
 async function loadAll() {
   loading.value = true
   try {
-    const courses = await getMyCourses()
+    const [courses, catalog] = await Promise.all([
+      getMyCourses(),
+      isAdmin.value ? listCourses() : Promise.resolve([] as Course[]),
+    ])
     myCourses.value = courses
+    allCourses.value = catalog
 
     const hasTeacherRole = courses.some(c => c.role === 'TEACHER') || isAdmin.value
     const hasStudentRole = courses.some(c => c.role === 'STUDENT')
@@ -640,8 +648,8 @@ async function loadAll() {
       activeTab.value = 'my-grades'
     }
 
-    if (hasTeacherRole && teacherCourses.value.length > 0 && !selectedRosterCourse.value) {
-      selectedRosterCourse.value = teacherCourses.value[0].course.uuid
+    if (hasTeacherRole && gradingCourses.value.length > 0 && !selectedRosterCourse.value) {
+      selectedRosterCourse.value = gradingCourses.value[0].uuid
     }
 
     const tasks: Promise<void>[] = []

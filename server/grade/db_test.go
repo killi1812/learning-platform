@@ -437,15 +437,26 @@ func TestGradeService_ListPending(t *testing.T) {
 		assert.NotEmpty(t, pending)
 	})
 
-	t.Run("non-existent user returns error in ListPending", func(t *testing.T) {
+	t.Run("non-existent user returns ErrUserNotFound in ListPending", func(t *testing.T) {
 		_, err := svc.ListPending(uuid.New(), false, nil)
-		assert.Error(t, err)
+		assert.ErrorIs(t, err, ErrUserNotFound)
 	})
 
-	t.Run("non-teacher sees no pending submissions", func(t *testing.T) {
-		pending, err := svc.ListPending(st.Uuid, false, nil)
-		assert.NoError(t, err)
-		assert.Empty(t, pending)
+	t.Run("non-teacher receives ErrNotTeacher", func(t *testing.T) {
+		_, err := svc.ListPending(st.Uuid, false, nil)
+		assert.ErrorIs(t, err, ErrNotTeacher)
+	})
+
+	t.Run("teacher filtering untaught or missing course receives ErrNotTeacher or ErrCourseNotFound", func(t *testing.T) {
+		otherCourse := course.Course{Uuid: uuid.New(), Title: "Other", Term: "AUTUMN", Year: 2026}
+		assert.NoError(t, db.Create(&otherCourse).Error)
+
+		_, err := svc.ListPending(teacher.Uuid, false, &otherCourse.Uuid)
+		assert.ErrorIs(t, err, ErrNotTeacher)
+
+		missingUuid := uuid.New()
+		_, err = svc.ListPending(teacher.Uuid, false, &missingUuid)
+		assert.ErrorIs(t, err, course.ErrCourseNotFound)
 	})
 }
 
@@ -528,13 +539,45 @@ func TestGradeService_ListMyGrades(t *testing.T) {
 		assert.Empty(t, emptyGrades)
 	})
 
-	t.Run("non-existent student returns error", func(t *testing.T) {
+	t.Run("non-existent student returns ErrUserNotFound", func(t *testing.T) {
 		_, err := svc.ListMyGrades(uuid.New(), nil)
-		assert.Error(t, err)
+		assert.ErrorIs(t, err, ErrUserNotFound)
+	})
+
+	t.Run("returns only latest released handin grade per assignment", func(t *testing.T) {
+		// Seed a second attempt whose grade is initially hidden, then released.
+		sub2 := submission.IndividualSubmission{
+			Submission: submission.Submission{Uuid: uuid.New(), ContentID: hCnt.ID, Attempt: 2, SubmittedAt: time.Now().Add(time.Minute)},
+			UserID:     &st.ID,
+			UserEmail:  st.Email,
+		}
+		assert.NoError(t, db.Create(&sub2).Error)
+		grd2 := submission.Grade{
+			IndividualSubmissionID: &sub2.ID,
+			Score:                  99.0,
+			IsVisibleToStudent:     false,
+			GradedByID:             &teacher.ID,
+		}
+		assert.NoError(t, db.Create(&grd2).Error)
+
+		// While attempt 2 is hidden, attempt 1 (released, 92.0) is still shown.
+		grades, err := svc.ListMyGrades(st.Uuid, nil)
+		assert.NoError(t, err)
+		assert.Len(t, grades, 2)
+		assert.Equal(t, 1, grades[0].Attempt)
+		assert.Equal(t, 92.0, grades[0].Score)
+
+		// Once attempt 2 is released, only attempt 2 (99.0) is returned for that hand-in.
+		assert.NoError(t, db.Model(&grd2).Update("is_visible_to_student", true).Error)
+		grades, err = svc.ListMyGrades(st.Uuid, nil)
+		assert.NoError(t, err)
+		assert.Len(t, grades, 2)
+		assert.Equal(t, 2, grades[0].Attempt)
+		assert.Equal(t, 99.0, grades[0].Score)
 	})
 
 	t.Run("hiding grade excludes it from student view", func(t *testing.T) {
-		assert.NoError(t, db.Model(&grd).Update("is_visible_to_student", false).Error)
+		assert.NoError(t, db.Model(&submission.Grade{}).Where("1 = 1").Update("is_visible_to_student", false).Error)
 
 		grades, err := svc.ListMyGrades(st.Uuid, nil)
 		assert.NoError(t, err)
@@ -591,6 +634,12 @@ func TestGradeService_ExportCourseCSV(t *testing.T) {
 	assert.NoError(t, db.Create(&content.Assignment{ContentID: qCnt.ID, Type: content.AssignmentQuiz}).Error)
 	assert.NoError(t, db.Create(&content.Quiz{ContentID: qCnt.ID, Published: true}).Error)
 
+	// Unpublished draft quiz must be ignored by CSV export and max totals
+	draftQCnt := content.Content{Uuid: uuid.New(), ModuleID: mod.ID, Title: "Draft Quiz", Position: 5, Type: content.TypeAssignment}
+	assert.NoError(t, db.Create(&draftQCnt).Error)
+	assert.NoError(t, db.Create(&content.Assignment{ContentID: draftQCnt.ID, Type: content.AssignmentQuiz}).Error)
+	assert.NoError(t, db.Create(&content.Quiz{ContentID: draftQCnt.ID, Published: false}).Error)
+
 	// Group Handin
 	gCnt := content.Content{Uuid: uuid.New(), ModuleID: mod.ID, Title: "Group Work", Position: 2, Type: content.TypeAssignment}
 	assert.NoError(t, db.Create(&gCnt).Error)
@@ -611,6 +660,7 @@ func TestGradeService_ExportCourseCSV(t *testing.T) {
 		assert.True(t, strings.Contains(out, "88.00"))
 		assert.True(t, strings.Contains(out, "Group Work"))
 		assert.True(t, strings.Contains(out, "N/A (Group)"))
+		assert.False(t, strings.Contains(out, "Draft Quiz"))
 	})
 
 	t.Run("non-existent course returns ErrCourseNotFound", func(t *testing.T) {
@@ -737,8 +787,74 @@ func TestGradeService_FinalGrades(t *testing.T) {
 		assert.ErrorIs(t, err, course.ErrCourseNotFound)
 	})
 
-	t.Run("GetStudentFinalGrades returns error for non-existent user", func(t *testing.T) {
+	t.Run("GetStudentFinalGrades returns ErrUserNotFound for non-existent user", func(t *testing.T) {
 		_, err := svc.GetStudentFinalGrades(uuid.New(), nil)
-		assert.Error(t, err)
+		assert.ErrorIs(t, err, ErrUserNotFound)
 	})
+}
+
+func TestGradeService_FinalGradeEdgeCases(t *testing.T) {
+	db, _, svc := setupGradeTestDb(t)
+
+	crs := course.Course{
+		Uuid:         uuid.New(),
+		Title:        "Edge Cases Course",
+		Term:         course.TermSpring,
+		Year:         2026,
+		GradingScale: course.DefaultGradingScale(),
+	}
+	assert.NoError(t, db.Create(&crs).Error)
+
+	mod := course.Module{CourseID: crs.ID, Title: "Module 1", Position: 1}
+	assert.NoError(t, db.Create(&mod).Error)
+
+	st := user.User{Uuid: uuid.New(), Username: "edge_student", Email: "edge@example.com"}
+	assert.NoError(t, db.Create(&st).Error)
+	assert.NoError(t, db.Create(&course.Enrollment{CourseID: crs.ID, UserID: st.ID, UserEmail: st.Email, Role: course.RoleStudent}).Error)
+
+	// Hand-in with MaxPoints=7 where attempt 1 is released (2.8 -> 40.00% exactly after rounding)
+	// and attempt 2 has an unreleased grade (5.6).
+	hCnt := content.Content{Uuid: uuid.New(), ModuleID: mod.ID, Title: "Precision Handin", Position: 1, Type: content.TypeAssignment}
+	assert.NoError(t, db.Create(&hCnt).Error)
+	assert.NoError(t, db.Create(&content.Assignment{ContentID: hCnt.ID, Type: content.AssignmentHandIn, MaxPoints: 7.0}).Error)
+
+	// Draft unpublished quiz must NOT inflate TotalMaxScore.
+	draftQuiz := content.Content{Uuid: uuid.New(), ModuleID: mod.ID, Title: "Unpublished Quiz", Position: 2, Type: content.TypeAssignment}
+	assert.NoError(t, db.Create(&draftQuiz).Error)
+	assert.NoError(t, db.Create(&content.Assignment{ContentID: draftQuiz.ID, Type: content.AssignmentQuiz}).Error)
+	assert.NoError(t, db.Create(&content.Quiz{ContentID: draftQuiz.ID, Published: false}).Error)
+
+	sub1 := submission.IndividualSubmission{
+		Submission: submission.Submission{Uuid: uuid.New(), ContentID: hCnt.ID, Attempt: 1, SubmittedAt: time.Now().Add(-time.Hour)},
+		UserID:     &st.ID,
+		UserEmail:  st.Email,
+	}
+	assert.NoError(t, db.Create(&sub1).Error)
+	assert.NoError(t, db.Create(&submission.Grade{IndividualSubmissionID: &sub1.ID, Score: 2.8, IsVisibleToStudent: true}).Error)
+
+	sub2 := submission.IndividualSubmission{
+		Submission: submission.Submission{Uuid: uuid.New(), ContentID: hCnt.ID, Attempt: 2, SubmittedAt: time.Now()},
+		UserID:     &st.ID,
+		UserEmail:  st.Email,
+	}
+	assert.NoError(t, db.Create(&sub2).Error)
+	assert.NoError(t, db.Create(&submission.Grade{IndividualSubmissionID: &sub2.ID, Score: 5.6, IsVisibleToStudent: false}).Error)
+
+	// Student view uses attempt 1 (2.8 / 7.0 = 40.00% -> E, not F from float drift), ignores draft quiz and hidden attempt 2.
+	finals, err := svc.GetStudentFinalGrades(st.Uuid, nil)
+	assert.NoError(t, err)
+	assert.Len(t, finals, 1)
+	assert.Equal(t, 2.8, finals[0].TotalScore)
+	assert.Equal(t, 7.0, finals[0].TotalMaxScore)
+	assert.Equal(t, 40.0, finals[0].Percent)
+	assert.Equal(t, "E", finals[0].FinalGrade)
+
+	// Roster view (instructor) uses latest attempt 2 (5.6 / 7.0 = 80.00% -> B) and excludes draft quiz.
+	roster, err := svc.GetCourseRosterFinalGrades(crs.Uuid)
+	assert.NoError(t, err)
+	assert.Len(t, roster, 1)
+	assert.Equal(t, 5.6, roster[0].TotalScore)
+	assert.Equal(t, 7.0, roster[0].TotalMaxScore)
+	assert.Equal(t, 80.0, roster[0].Percent)
+	assert.Equal(t, "B", roster[0].FinalGrade)
 }

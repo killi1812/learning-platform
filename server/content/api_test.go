@@ -724,6 +724,10 @@ func TestContentCtn_Handin(t *testing.T) {
 		payload := content.CreateHandinDto{Title: ""}
 		w := doReq(r, http.MethodPost, basePath, auth, payload)
 		assert.Equal(t, http.StatusBadRequest, w.Code)
+
+		tooHigh := 1000.0
+		wHigh := doReq(r, http.MethodPost, basePath, auth, content.CreateHandinDto{Title: "Valid Title", MaxPoints: &tooHigh})
+		assert.Equal(t, http.StatusBadRequest, wHigh.Code)
 	})
 
 	t.Run("list handins success", func(t *testing.T) {

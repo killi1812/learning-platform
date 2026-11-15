@@ -127,7 +127,9 @@ func seedGrades(assignments []*content.Content, teachers []*user.User, students 
 					"created_at":   now,
 					"updated_at":   now,
 				}
-				_ = db.Table("attempts").Create(rawAttempt).Error
+				if err := db.Table("attempts").Create(rawAttempt).Error; err != nil {
+					return fmt.Errorf("failed to seed quiz attempt: %w", err)
+				}
 			}
 			break
 		}

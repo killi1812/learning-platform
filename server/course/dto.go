@@ -50,27 +50,34 @@ type CreateCourseDto struct {
 	GradingScale *GradingScaleDto `json:"gradingScale,omitempty"`
 }
 
-func (d CreateCourseDto) ToModel() (*Course, error) {
-	if d.Term != string(TermSpring) && d.Term != string(TermAutumn) {
+func buildCourseModel(title, description, term string, year int, gradingScale *GradingScaleDto, useDefaultScale bool) (*Course, error) {
+	if term != string(TermSpring) && term != string(TermAutumn) {
 		return nil, ErrInvalidTerm
 	}
-	if d.Year < 2000 || d.Year > 2100 {
+	if year < 2000 || year > 2100 {
 		return nil, ErrInvalidYear
 	}
-	scale := DefaultGradingScale()
-	if d.GradingScale != nil {
-		scale = d.GradingScale.ToModel()
+	var scale GradingScale
+	if useDefaultScale {
+		scale = DefaultGradingScale()
+	}
+	if gradingScale != nil {
+		scale = gradingScale.ToModel()
 		if err := scale.Validate(); err != nil {
 			return nil, err
 		}
 	}
 	return &Course{
-		Title:        d.Title,
-		Description:  d.Description,
-		Term:         Term(d.Term),
-		Year:         d.Year,
+		Title:        title,
+		Description:  description,
+		Term:         Term(term),
+		Year:         year,
 		GradingScale: scale,
 	}, nil
+}
+
+func (d CreateCourseDto) ToModel() (*Course, error) {
+	return buildCourseModel(d.Title, d.Description, d.Term, d.Year, d.GradingScale, true)
 }
 
 type UpdateCourseDto struct {
@@ -82,26 +89,7 @@ type UpdateCourseDto struct {
 }
 
 func (d UpdateCourseDto) ToModel() (*Course, error) {
-	if d.Term != string(TermSpring) && d.Term != string(TermAutumn) {
-		return nil, ErrInvalidTerm
-	}
-	if d.Year < 2000 || d.Year > 2100 {
-		return nil, ErrInvalidYear
-	}
-	scale := DefaultGradingScale()
-	if d.GradingScale != nil {
-		scale = d.GradingScale.ToModel()
-		if err := scale.Validate(); err != nil {
-			return nil, err
-		}
-	}
-	return &Course{
-		Title:        d.Title,
-		Description:  d.Description,
-		Term:         Term(d.Term),
-		Year:         d.Year,
-		GradingScale: scale,
-	}, nil
+	return buildCourseModel(d.Title, d.Description, d.Term, d.Year, d.GradingScale, false)
 }
 
 type CourseDto struct {

@@ -285,6 +285,7 @@ import CourseCard from '@/components/CourseCard.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useToast } from '@/composables/useToast'
 import { listCourses, getMyCourses, selfEnroll, createCourse } from '@/api/course'
+import { DEFAULT_GRADING_SCALE, isValidGradingScale } from '@/types/course'
 import type { Course, CourseRole, CreateCoursePayload, GradingScale } from '@/types/course'
 
 const emit = defineEmits<{
@@ -312,14 +313,6 @@ const newCourse = ref<CreateCoursePayload>({
   term: 'AUTUMN',
   year: 2026,
 })
-
-const DEFAULT_GRADING_SCALE: GradingScale = {
-  scaleA: 90,
-  scaleB: 80,
-  scaleC: 60,
-  scaleD: 50,
-  scaleE: 40,
-}
 
 const newCourseGradingScale = ref<GradingScale>({ ...DEFAULT_GRADING_SCALE })
 
@@ -392,14 +385,7 @@ async function handleCreateCourse() {
   if (!newCourse.value.title.trim()) return
 
   const s = newCourseGradingScale.value
-  if (
-    s.scaleA > 100 ||
-    s.scaleA <= s.scaleB ||
-    s.scaleB <= s.scaleC ||
-    s.scaleC <= s.scaleD ||
-    s.scaleD <= s.scaleE ||
-    s.scaleE <= 0
-  ) {
+  if (!isValidGradingScale(s)) {
     toast.error('Invalid grading scale: Must satisfy 100 ≥ A > B > C > D > E > 0.')
     return
   }

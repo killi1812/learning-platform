@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"time"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/content"
@@ -25,7 +26,108 @@ var (
 	ErrGroupGradingNotSupported = errors.New("group assignment grading is not supported yet")
 	ErrContentNotFound          = errors.New("assignment not found")
 	ErrGraderNotFound           = errors.New("grader user not found")
+	ErrUserNotFound             = errors.New("user not found")
+	ErrNotTeacher               = errors.New("user is not a teacher")
 )
+
+type userContentKey struct {
+	userID    uint
+	contentID uint
+}
+
+type courseScoreLookup struct {
+	quizBest         map[userContentKey]quiz.Attempt
+	quizAttemptCount map[userContentKey]int
+	handinSubs       map[userContentKey][]submission.IndividualSubmission
+}
+
+func roundPercent2(pct float64) float64 {
+	return math.Round(pct*100) / 100
+}
+
+func isCountedAssignment(cnt content.Content) bool {
+	if cnt.Assignment == nil {
+		return false
+	}
+	if cnt.Assignment.Type == content.AssignmentQuiz {
+		return cnt.Assignment.Quiz != nil && cnt.Assignment.Quiz.Published
+	}
+	return true
+}
+
+func (s *GradeService) findUserByUUID(userUuid uuid.UUID) (*user.User, error) {
+	var u user.User
+	if err := s.db.Where("uuid = ?", userUuid).First(&u).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrUserNotFound
+		}
+		return nil, err
+	}
+	return &u, nil
+}
+
+func (s *GradeService) buildCourseScoreLookup(studentIDs []uint, contents []content.Content, preloadGrader bool) (*courseScoreLookup, error) {
+	lookup := &courseScoreLookup{
+		quizBest:         make(map[userContentKey]quiz.Attempt),
+		quizAttemptCount: make(map[userContentKey]int),
+		handinSubs:       make(map[userContentKey][]submission.IndividualSubmission),
+	}
+	if len(studentIDs) == 0 || len(contents) == 0 {
+		return lookup, nil
+	}
+
+	var quizIDs []uint
+	var handinIDs []uint
+	for _, cnt := range contents {
+		if !isCountedAssignment(cnt) {
+			continue
+		}
+		if cnt.Assignment.Type == content.AssignmentQuiz {
+			quizIDs = append(quizIDs, cnt.ID)
+		} else if !cnt.Assignment.AllowsGroupSubmission {
+			handinIDs = append(handinIDs, cnt.ID)
+		}
+	}
+
+	if len(quizIDs) > 0 {
+		var attempts []quiz.Attempt
+		if err := s.db.Where("user_id IN ? AND quiz_id IN ? AND submitted_at IS NOT NULL", studentIDs, quizIDs).
+			Order("user_id ASC, quiz_id ASC, percent DESC, id DESC").
+			Find(&attempts).Error; err != nil {
+			return nil, err
+		}
+		for _, att := range attempts {
+			key := userContentKey{userID: att.UserID, contentID: att.QuizID}
+			lookup.quizAttemptCount[key]++
+			if _, exists := lookup.quizBest[key]; !exists {
+				lookup.quizBest[key] = att
+			}
+		}
+	}
+
+	if len(handinIDs) > 0 {
+		query := s.db.Preload("Grade")
+		if preloadGrader {
+			query = query.Preload("Grade.GradedBy")
+		}
+		var subs []submission.IndividualSubmission
+		if err := query.
+			Where("user_id IN ? AND content_id IN ?", studentIDs, handinIDs).
+			Order("attempt DESC").
+			Find(&subs).Error; err != nil {
+			return nil, err
+		}
+		for _, sub := range subs {
+			if sub.UserID == nil {
+				continue
+			}
+			key := userContentKey{userID: *sub.UserID, contentID: sub.ContentID}
+			lookup.handinSubs[key] = append(lookup.handinSubs[key], sub)
+		}
+	}
+
+	return lookup, nil
+}
 
 type IGradeService interface {
 	UpsertGrade(courseUuid, contentUuid, submissionUuid, graderUuid uuid.UUID, dto UpsertGradeDto) (*GradeDto, error)
@@ -63,8 +165,8 @@ func (s *GradeService) UpsertGrade(courseUuid, contentUuid, submissionUuid, grad
 
 	var cnt content.Content
 	err := s.db.
-		Joins("JOIN modules ON modules.id = contents.module_id").
-		Joins("JOIN courses ON courses.id = modules.course_id").
+		Joins("JOIN modules ON modules.id = contents.module_id AND modules.deleted_at IS NULL").
+		Joins("JOIN courses ON courses.id = modules.course_id AND courses.deleted_at IS NULL").
 		Preload("Assignment").
 		Where("contents.uuid = ? AND courses.uuid = ?", contentUuid, courseUuid).
 		First(&cnt).Error
@@ -98,14 +200,6 @@ func (s *GradeService) UpsertGrade(courseUuid, contentUuid, submissionUuid, grad
 		return nil, err
 	}
 
-	maxPoints := cnt.Assignment.MaxPoints
-	if maxPoints <= 0 {
-		maxPoints = 100
-	}
-	if *dto.Score > maxPoints {
-		return nil, ErrScoreOutOfRange
-	}
-
 	var studentUuid uuid.UUID
 	if indSub.UserID != nil {
 		var student user.User
@@ -117,8 +211,22 @@ func (s *GradeService) UpsertGrade(courseUuid, contentUuid, submissionUuid, grad
 	now := time.Now()
 	var shouldNotify bool
 	var savedGrade submission.Grade
+	var maxPoints float64
 
 	err = s.db.Transaction(func(tx *gorm.DB) error {
+		// Lock assignment row to prevent concurrent maxPoints reduction below this grade.
+		var lockedAsgn content.Assignment
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("content_id = ?", cnt.ID).First(&lockedAsgn).Error; err != nil {
+			return err
+		}
+		maxPoints = lockedAsgn.MaxPoints
+		if maxPoints <= 0 {
+			maxPoints = 100
+		}
+		if math.IsNaN(*dto.Score) || *dto.Score < 0 || *dto.Score > maxPoints {
+			return ErrScoreOutOfRange
+		}
+
 		var existing submission.Grade
 		findErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("individual_submission_id = ?", indSub.ID).
@@ -197,8 +305,8 @@ func (s *GradeService) UpsertGrade(courseUuid, contentUuid, submissionUuid, grad
 func (s *GradeService) ReleaseAssignmentGrades(courseUuid, contentUuid uuid.UUID) (int, error) {
 	var cnt content.Content
 	err := s.db.
-		Joins("JOIN modules ON modules.id = contents.module_id").
-		Joins("JOIN courses ON courses.id = modules.course_id").
+		Joins("JOIN modules ON modules.id = contents.module_id AND modules.deleted_at IS NULL").
+		Joins("JOIN courses ON courses.id = modules.course_id AND courses.deleted_at IS NULL").
 		Preload("Assignment").
 		Where("contents.uuid = ? AND courses.uuid = ?", contentUuid, courseUuid).
 		First(&cnt).Error
@@ -225,9 +333,9 @@ func (s *GradeService) ReleaseAssignmentGrades(courseUuid, contentUuid uuid.UUID
 	var rows []unreleasedRow
 	err = s.db.Table("grades").
 		Select("grades.id as grade_id, users.id as user_id, users.uuid as user_uuid").
-		Joins("JOIN individual_submissions ON individual_submissions.id = grades.individual_submission_id").
-		Joins("JOIN users ON users.id = individual_submissions.user_id").
-		Where("individual_submissions.content_id = ? AND grades.is_visible_to_student = false AND grades.deleted_at IS NULL", cnt.ID).
+		Joins("JOIN individual_submissions ON individual_submissions.id = grades.individual_submission_id AND individual_submissions.deleted_at IS NULL").
+		Joins("JOIN users ON users.id = individual_submissions.user_id AND users.deleted_at IS NULL").
+		Where("individual_submissions.content_id = ? AND grades.is_visible_to_student = ? AND grades.deleted_at IS NULL", cnt.ID, false).
 		Scan(&rows).Error
 	if err != nil {
 		return 0, err
@@ -278,12 +386,13 @@ func (s *GradeService) ReleaseAssignmentGrades(courseUuid, contentUuid uuid.UUID
 
 // ListPending returns latest ungraded individual submissions across courses taught by the user.
 func (s *GradeService) ListPending(userUuid uuid.UUID, isAdmin bool, courseUuid *uuid.UUID) ([]PendingSubmissionDto, error) {
-	var u user.User
-	if err := s.db.Where("uuid = ?", userUuid).First(&u).Error; err != nil {
+	u, err := s.findUserByUUID(userUuid)
+	if err != nil {
 		return nil, err
 	}
 
 	var courseIDs []uint
+	courseIDSet := make(map[uint]bool)
 	if !isAdmin {
 		err := s.db.Model(&course.Enrollment{}).
 			Where("user_id = ? AND role = ? AND deleted_at IS NULL", u.ID, course.RoleTeacher).
@@ -292,7 +401,23 @@ func (s *GradeService) ListPending(userUuid uuid.UUID, isAdmin bool, courseUuid 
 			return nil, err
 		}
 		if len(courseIDs) == 0 {
-			return []PendingSubmissionDto{}, nil
+			return nil, ErrNotTeacher
+		}
+		for _, id := range courseIDs {
+			courseIDSet[id] = true
+		}
+	}
+
+	if courseUuid != nil {
+		var targetCourse course.Course
+		if err := s.db.Select("id").Where("uuid = ?", *courseUuid).First(&targetCourse).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, course.ErrCourseNotFound
+			}
+			return nil, err
+		}
+		if !isAdmin && !courseIDSet[targetCourse.ID] {
+			return nil, ErrNotTeacher
 		}
 	}
 
@@ -332,9 +457,9 @@ func (s *GradeService) ListPending(userUuid uuid.UUID, isAdmin bool, courseUuid 
 		Joins("JOIN assignments asgn ON asgn.content_id = cnt.id").
 		Joins("JOIN modules mod ON mod.id = cnt.module_id AND mod.deleted_at IS NULL").
 		Joins("JOIN courses crs ON crs.id = mod.course_id AND crs.deleted_at IS NULL").
-		Joins("LEFT JOIN users u ON u.id = s.user_id").
+		Joins("LEFT JOIN users u ON u.id = s.user_id AND u.deleted_at IS NULL").
 		Joins("LEFT JOIN grades g ON g.individual_submission_id = s.id AND g.deleted_at IS NULL").
-		Where("asgn.type = ? AND asgn.allows_group_submission = false", content.AssignmentHandIn).
+		Where("asgn.type = ? AND asgn.allows_group_submission = ?", content.AssignmentHandIn, false).
 		Where("g.id IS NULL").
 		Where("s.deleted_at IS NULL").
 		Where("NOT EXISTS (SELECT 1 FROM individual_submissions s2 WHERE s2.user_id = s.user_id AND s2.content_id = s.content_id AND s2.attempt > s.attempt AND s2.deleted_at IS NULL)")
@@ -347,7 +472,7 @@ func (s *GradeService) ListPending(userUuid uuid.UUID, isAdmin bool, courseUuid 
 	}
 
 	var results []queryResult
-	err := query.Order("s.submitted_at ASC").Limit(500).Scan(&results).Error
+	err = query.Order("s.submitted_at ASC").Limit(500).Scan(&results).Error
 	if err != nil {
 		return nil, err
 	}
@@ -379,14 +504,14 @@ func (s *GradeService) ListPending(userUuid uuid.UUID, isAdmin bool, courseUuid 
 	return dtos, nil
 }
 
-// ListMyGrades returns all released hand-in grades and quiz best-attempt scores for the student.
+// ListMyGrades returns the latest released hand-in grade per assignment and quiz best-attempt scores for the student.
 func (s *GradeService) ListMyGrades(userUuid uuid.UUID, courseUuid *uuid.UUID) ([]StudentGradeDto, error) {
-	var u user.User
-	if err := s.db.Where("uuid = ?", userUuid).First(&u).Error; err != nil {
+	u, err := s.findUserByUUID(userUuid)
+	if err != nil {
 		return nil, err
 	}
 
-	// 1. Fetch released hand-in grades
+	// 1. Fetch latest released hand-in grade per assignment
 	type handinGradeRow struct {
 		CourseUuid      uuid.UUID `gorm:"column:course_uuid"`
 		ContentUuid     uuid.UUID `gorm:"column:content_uuid"`
@@ -420,7 +545,14 @@ func (s *GradeService) ListMyGrades(userUuid uuid.UUID, courseUuid *uuid.UUID) (
 		Joins("JOIN assignments asgn ON asgn.content_id = cnt.id").
 		Joins("JOIN modules mod ON mod.id = cnt.module_id AND mod.deleted_at IS NULL").
 		Joins("JOIN courses crs ON crs.id = mod.course_id AND crs.deleted_at IS NULL").
-		Where("ind.user_id = ? AND g.is_visible_to_student = ? AND g.deleted_at IS NULL", u.ID, true)
+		Where("ind.user_id = ? AND g.is_visible_to_student = ? AND g.deleted_at IS NULL", u.ID, true).
+		Where(`NOT EXISTS (
+			SELECT 1 FROM individual_submissions ind2
+			JOIN grades g2 ON g2.individual_submission_id = ind2.id AND g2.deleted_at IS NULL
+			WHERE ind2.user_id = ind.user_id AND ind2.content_id = ind.content_id
+			  AND ind2.attempt > ind.attempt AND ind2.deleted_at IS NULL
+			  AND g2.is_visible_to_student = ?
+		)`, true)
 
 	if courseUuid != nil {
 		hQuery = hQuery.Where("crs.uuid = ?", *courseUuid)
@@ -494,16 +626,37 @@ func (s *GradeService) ListMyGrades(userUuid uuid.UUID, courseUuid *uuid.UUID) (
 		return nil, err
 	}
 
+	if len(qRows) == 0 {
+		return dtos, nil
+	}
+
+	quizIDs := make([]uint, 0, len(qRows))
 	for _, qr := range qRows {
-		var attempts []quiz.Attempt
-		err := s.db.Where("user_id = ? AND quiz_id = ? AND submitted_at IS NOT NULL", u.ID, qr.ContentID).
-			Order("percent DESC, id DESC").
-			Find(&attempts).Error
-		if err != nil || len(attempts) == 0 {
+		quizIDs = append(quizIDs, qr.ContentID)
+	}
+
+	var attempts []quiz.Attempt
+	if err := s.db.Where("user_id = ? AND quiz_id IN ? AND submitted_at IS NOT NULL", u.ID, quizIDs).
+		Order("quiz_id ASC, percent DESC, id DESC").
+		Find(&attempts).Error; err != nil {
+		return nil, err
+	}
+
+	bestByQuiz := make(map[uint]quiz.Attempt, len(quizIDs))
+	countByQuiz := make(map[uint]int, len(quizIDs))
+	for _, att := range attempts {
+		countByQuiz[att.QuizID]++
+		if _, exists := bestByQuiz[att.QuizID]; !exists {
+			bestByQuiz[att.QuizID] = att
+		}
+	}
+
+	for _, qr := range qRows {
+		best, ok := bestByQuiz[qr.ContentID]
+		if !ok {
 			continue
 		}
 
-		best := attempts[0]
 		submittedTime := time.Now()
 		if best.SubmittedAt != nil {
 			submittedTime = *best.SubmittedAt
@@ -517,7 +670,7 @@ func (s *GradeService) ListMyGrades(userUuid uuid.UUID, courseUuid *uuid.UUID) (
 			CourseCode:      fmt.Sprintf("%s %d", qr.CourseTerm, qr.CourseYear),
 			ModuleTitle:     qr.ModuleTitle,
 			AssignmentTitle: qr.AssignmentTitle,
-			Attempt:         len(attempts),
+			Attempt:         countByQuiz[qr.ContentID],
 			Score:           best.Percent,
 			MaxPoints:       100,
 			Percent:         best.Percent,
@@ -561,6 +714,18 @@ func (s *GradeService) ExportCourseCSV(courseUuid uuid.UUID, w io.Writer) error 
 		return err
 	}
 
+	studentIDs := make([]uint, 0, len(enrollments))
+	for _, enr := range enrollments {
+		if enr.User != nil {
+			studentIDs = append(studentIDs, enr.User.ID)
+		}
+	}
+
+	lookup, err := s.buildCourseScoreLookup(studentIDs, contents, true)
+	if err != nil {
+		return err
+	}
+
 	records := make([]GradebookRecord, 0, len(enrollments)*len(contents))
 
 	for _, enr := range enrollments {
@@ -569,24 +734,24 @@ func (s *GradeService) ExportCourseCSV(courseUuid uuid.UUID, w io.Writer) error 
 			continue
 		}
 
-		finalScore, finalMax := s.computeStudentCourseTotal(stUser.ID, crs.ID, contents, false)
+		finalScore, finalMax := computeStudentCourseTotal(stUser.ID, contents, lookup, false)
 		finalPct := 0.0
 		if finalMax > 0 {
-			finalPct = (finalScore / finalMax) * 100.0
+			finalPct = roundPercent2((finalScore / finalMax) * 100.0)
 		}
 		finalGrade := crs.CalculateGrade(finalPct)
 
 		for _, cnt := range contents {
+			if !isCountedAssignment(cnt) {
+				continue
+			}
+
 			modTitle := ""
 			if cnt.Module != nil {
 				modTitle = cnt.Module.Title
 			}
 
 			asgn := cnt.Assignment
-			if asgn == nil {
-				continue
-			}
-
 			rec := GradebookRecord{
 				StudentEmail:       enr.UserEmail,
 				StudentName:        stUser.Username,
@@ -598,16 +763,12 @@ func (s *GradeService) ExportCourseCSV(courseUuid uuid.UUID, w io.Writer) error 
 				FinalCourseGrade:   finalGrade,
 			}
 
+			key := userContentKey{userID: stUser.ID, contentID: cnt.ID}
+
 			if asgn.Type == content.AssignmentQuiz {
 				rec.AssignmentType = "QUIZ"
-				var attempts []quiz.Attempt
-				_ = s.db.Where("user_id = ? AND quiz_id = ? AND submitted_at IS NOT NULL", stUser.ID, cnt.ID).
-					Order("percent DESC, id DESC").
-					Find(&attempts).Error
-
-				if len(attempts) > 0 {
-					best := attempts[0]
-					rec.Attempt = fmt.Sprintf("%d", len(attempts))
+				if best, ok := lookup.quizBest[key]; ok {
+					rec.Attempt = fmt.Sprintf("%d", lookup.quizAttemptCount[key])
 					if best.SubmittedAt != nil {
 						rec.SubmittedAt = best.SubmittedAt.Format(time.RFC3339)
 					}
@@ -638,13 +799,7 @@ func (s *GradeService) ExportCourseCSV(courseUuid uuid.UUID, w io.Writer) error 
 			}
 			rec.MaxPoints = fmt.Sprintf("%.2f", maxPts)
 
-			var subs []submission.IndividualSubmission
-			_ = s.db.Preload("Grade").
-				Preload("Grade.GradedBy").
-				Where("user_id = ? AND content_id = ?", stUser.ID, cnt.ID).
-				Order("attempt DESC").
-				Find(&subs).Error
-
+			subs := lookup.handinSubs[key]
 			if len(subs) > 0 {
 				var targetSub *submission.IndividualSubmission
 				for i := range subs {
@@ -694,26 +849,24 @@ func (s *GradeService) ExportCourseCSV(courseUuid uuid.UUID, w io.Writer) error 
 }
 
 // computeStudentCourseTotal calculates the earned score and total possible score for a student across all published assignments in a course.
-func (s *GradeService) computeStudentCourseTotal(studentID uint, courseID uint, contents []content.Content, studentViewOnly bool) (earned float64, totalMax float64) {
+func computeStudentCourseTotal(studentID uint, contents []content.Content, lookup *courseScoreLookup, studentViewOnly bool) (earned float64, totalMax float64) {
 	for _, cnt := range contents {
-		asgn := cnt.Assignment
-		if asgn == nil {
+		if !isCountedAssignment(cnt) {
 			continue
 		}
+		asgn := cnt.Assignment
 
 		maxPts := asgn.MaxPoints
 		if maxPts <= 0 {
 			maxPts = 100
 		}
 
+		key := userContentKey{userID: studentID, contentID: cnt.ID}
+
 		if asgn.Type == content.AssignmentQuiz {
 			totalMax += 100.0
-			var attempts []quiz.Attempt
-			_ = s.db.Where("user_id = ? AND quiz_id = ? AND submitted_at IS NOT NULL", studentID, cnt.ID).
-				Order("percent DESC, id DESC").
-				Find(&attempts).Error
-			if len(attempts) > 0 {
-				earned += attempts[0].Percent
+			if best, ok := lookup.quizBest[key]; ok {
+				earned += best.Percent
 			}
 			continue
 		}
@@ -724,17 +877,9 @@ func (s *GradeService) computeStudentCourseTotal(studentID uint, courseID uint, 
 
 		totalMax += maxPts
 
-		var subs []submission.IndividualSubmission
-		_ = s.db.Preload("Grade").
-			Where("user_id = ? AND content_id = ?", studentID, cnt.ID).
-			Order("attempt DESC").
-			Find(&subs).Error
-
-		for _, sub := range subs {
-			if sub.Grade != nil {
-				if !studentViewOnly || sub.Grade.IsVisibleToStudent {
-					earned += sub.Grade.Score
-				}
+		for _, sub := range lookup.handinSubs[key] {
+			if sub.Grade != nil && (!studentViewOnly || sub.Grade.IsVisibleToStudent) {
+				earned += sub.Grade.Score
 				break
 			}
 		}
@@ -744,8 +889,8 @@ func (s *GradeService) computeStudentCourseTotal(studentID uint, courseID uint, 
 
 // GetStudentFinalGrades calculates the student's cumulative subject evaluation and final letter grade across enrolled courses.
 func (s *GradeService) GetStudentFinalGrades(userUuid uuid.UUID, courseUuid *uuid.UUID) ([]CourseFinalGradeDto, error) {
-	var u user.User
-	if err := s.db.Where("uuid = ?", userUuid).First(&u).Error; err != nil {
+	u, err := s.findUserByUUID(userUuid)
+	if err != nil {
 		return nil, err
 	}
 
@@ -761,6 +906,39 @@ func (s *GradeService) GetStudentFinalGrades(userUuid uuid.UUID, courseUuid *uui
 		return nil, err
 	}
 
+	courseIDs := make([]uint, 0, len(enrollments))
+	for _, enr := range enrollments {
+		if enr.Course != nil {
+			courseIDs = append(courseIDs, enr.Course.ID)
+		}
+	}
+
+	contentsByCourse := make(map[uint][]content.Content, len(courseIDs))
+	var allContents []content.Content
+	if len(courseIDs) > 0 {
+		err := s.db.
+			Joins("JOIN modules ON modules.id = contents.module_id AND modules.deleted_at IS NULL").
+			Preload("Module").
+			Preload("Assignment").
+			Preload("Assignment.Quiz").
+			Where("modules.course_id IN ? AND contents.type = ? AND contents.deleted_at IS NULL", courseIDs, content.TypeAssignment).
+			Order("modules.position ASC, contents.position ASC").
+			Find(&allContents).Error
+		if err != nil {
+			return nil, err
+		}
+		for _, cnt := range allContents {
+			if cnt.Module != nil {
+				contentsByCourse[cnt.Module.CourseID] = append(contentsByCourse[cnt.Module.CourseID], cnt)
+			}
+		}
+	}
+
+	lookup, err := s.buildCourseScoreLookup([]uint{u.ID}, allContents, false)
+	if err != nil {
+		return nil, err
+	}
+
 	dtos := make([]CourseFinalGradeDto, 0, len(enrollments))
 	for _, enr := range enrollments {
 		crs := enr.Course
@@ -768,21 +946,10 @@ func (s *GradeService) GetStudentFinalGrades(userUuid uuid.UUID, courseUuid *uui
 			continue
 		}
 
-		var contents []content.Content
-		err := s.db.
-			Joins("JOIN modules ON modules.id = contents.module_id AND modules.deleted_at IS NULL").
-			Preload("Assignment").
-			Where("modules.course_id = ? AND contents.type = ? AND contents.deleted_at IS NULL", crs.ID, content.TypeAssignment).
-			Order("modules.position ASC, contents.position ASC").
-			Find(&contents).Error
-		if err != nil {
-			return nil, err
-		}
-
-		earned, totalMax := s.computeStudentCourseTotal(u.ID, crs.ID, contents, true)
+		earned, totalMax := computeStudentCourseTotal(u.ID, contentsByCourse[crs.ID], lookup, true)
 		pct := 0.0
 		if totalMax > 0 {
-			pct = (earned / totalMax) * 100.0
+			pct = roundPercent2((earned / totalMax) * 100.0)
 		}
 		finalGrade := crs.CalculateGrade(pct)
 
@@ -824,9 +991,22 @@ func (s *GradeService) GetCourseRosterFinalGrades(courseUuid uuid.UUID) ([]Stude
 	err = s.db.
 		Joins("JOIN modules ON modules.id = contents.module_id AND modules.deleted_at IS NULL").
 		Preload("Assignment").
+		Preload("Assignment.Quiz").
 		Where("modules.course_id = ? AND contents.type = ? AND contents.deleted_at IS NULL", crs.ID, content.TypeAssignment).
 		Order("modules.position ASC, contents.position ASC").
 		Find(&contents).Error
+	if err != nil {
+		return nil, err
+	}
+
+	studentIDs := make([]uint, 0, len(enrollments))
+	for _, enr := range enrollments {
+		if enr.User != nil {
+			studentIDs = append(studentIDs, enr.User.ID)
+		}
+	}
+
+	lookup, err := s.buildCourseScoreLookup(studentIDs, contents, false)
 	if err != nil {
 		return nil, err
 	}
@@ -838,10 +1018,10 @@ func (s *GradeService) GetCourseRosterFinalGrades(courseUuid uuid.UUID) ([]Stude
 			continue
 		}
 
-		earned, totalMax := s.computeStudentCourseTotal(stUser.ID, crs.ID, contents, false)
+		earned, totalMax := computeStudentCourseTotal(stUser.ID, contents, lookup, false)
 		pct := 0.0
 		if totalMax > 0 {
-			pct = (earned / totalMax) * 100.0
+			pct = roundPercent2((earned / totalMax) * 100.0)
 		}
 		finalGrade := crs.CalculateGrade(pct)
 

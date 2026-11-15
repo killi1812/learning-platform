@@ -692,7 +692,17 @@ func TestContentService_HandinAssignment(t *testing.T) {
 	assert.ErrorIs(t, err, content.ErrContentNotFound)
 
 	// Ensure submission and grade tables exist for lock check
-	assert.NoError(t, db.Exec("CREATE TABLE IF NOT EXISTS individual_submissions (id INTEGER PRIMARY KEY, content_id INTEGER); CREATE TABLE IF NOT EXISTS group_submissions (id INTEGER PRIMARY KEY, content_id INTEGER); CREATE TABLE IF NOT EXISTS grades (id INTEGER PRIMARY KEY, individual_submission_id INTEGER, score DECIMAL(5,2));").Error)
+	assert.NoError(t, db.Exec("CREATE TABLE IF NOT EXISTS individual_submissions (id INTEGER PRIMARY KEY, content_id INTEGER, deleted_at DATETIME); CREATE TABLE IF NOT EXISTS group_submissions (id INTEGER PRIMARY KEY, content_id INTEGER, deleted_at DATETIME); CREATE TABLE IF NOT EXISTS grades (id INTEGER PRIMARY KEY, individual_submission_id INTEGER, score DECIMAL(5,2), deleted_at DATETIME);").Error)
+
+	// Invalid maxPoints rejected on CreateHandin and UpdateHandin
+	for _, invalid := range []float64{0, -10, 1000} {
+		v := invalid
+		_, err = svc.CreateHandin(c.Uuid, m.Uuid, "Bad Max", nil, false, false, &v)
+		assert.ErrorIs(t, err, content.ErrInvalidMaxPoints)
+
+		_, err = svc.UpdateHandin(c.Uuid, m.Uuid, created.Uuid, "Bad Max Update", nil, false, false, &v)
+		assert.ErrorIs(t, err, content.ErrInvalidMaxPoints)
+	}
 
 	// 3. UpdateHandin
 	newDeadline := time.Now().Add(72 * time.Hour)

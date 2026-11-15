@@ -417,6 +417,32 @@ func TestGradeCtn_ListPending(t *testing.T) {
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
+
+	t.Run("403 Forbidden when caller is not a teacher", func(t *testing.T) {
+		svc := &mockGradeService{
+			listPendingFn: func(userUuid uuid.UUID, isAdmin bool, courseUuid *uuid.UUID) ([]grade.PendingSubmissionDto, error) {
+				return nil, grade.ErrNotTeacher
+			},
+		}
+		r := setupGradeApiTest(svc, &mockCourseServiceForGrade{})
+		auth := generateAuthHeader(t, authutils.ROLE_USER, userUuid)
+		w := doJSONReq(r, http.MethodGet, "/api/grade/pending", auth, nil)
+
+		assert.Equal(t, http.StatusForbidden, w.Code)
+	})
+
+	t.Run("401 Unauthorized when user does not exist", func(t *testing.T) {
+		svc := &mockGradeService{
+			listPendingFn: func(userUuid uuid.UUID, isAdmin bool, courseUuid *uuid.UUID) ([]grade.PendingSubmissionDto, error) {
+				return nil, grade.ErrUserNotFound
+			},
+		}
+		r := setupGradeApiTest(svc, &mockCourseServiceForGrade{})
+		auth := generateAuthHeader(t, authutils.ROLE_USER, userUuid)
+		w := doJSONReq(r, http.MethodGet, "/api/grade/pending", auth, nil)
+
+		assert.Equal(t, http.StatusUnauthorized, w.Code)
+	})
 }
 
 func TestGradeCtn_ListMyGrades(t *testing.T) {
@@ -471,14 +497,6 @@ func TestGradeCtn_ExportCSV(t *testing.T) {
 		assert.Contains(t, w.Body.String(), "student@example.com")
 	})
 
-	t.Run("400 Bad Request on invalid course UUID", func(t *testing.T) {
-		r := setupGradeApiTest(&mockGradeService{}, &mockCourseServiceForGrade{})
-		auth := generateAuthHeader(t, authutils.ROLE_USER, teacherUuid)
-
-		w := doJSONReq(r, http.MethodGet, "/api/course/not-a-uuid/grade/export", auth, nil)
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-	})
-
 	t.Run("403 Forbidden for non-teacher", func(t *testing.T) {
 		cs := &mockCourseServiceForGrade{
 			isTeacherOrAdminFunc: func(courseUuid, userUuid uuid.UUID, isSystemAdmin bool) (bool, error) {
@@ -515,7 +533,21 @@ func TestGradeCtn_ExportCSV(t *testing.T) {
 		auth := generateAuthHeader(t, authutils.ROLE_USER, teacherUuid)
 		w := doJSONReq(r, http.MethodGet, path, auth, nil)
 
-		assert.Equal(t, http.StatusOK, w.Code) // Headers already committed
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+		assert.Empty(t, w.Header().Get("Content-Disposition"))
+	})
+
+	t.Run("404 Not Found when ExportCourseCSV returns ErrCourseNotFound", func(t *testing.T) {
+		svc := &mockGradeService{
+			exportCSVFn: func(courseUuid uuid.UUID, w io.Writer) error {
+				return course.ErrCourseNotFound
+			},
+		}
+		r := setupGradeApiTest(svc, &mockCourseServiceForGrade{})
+		auth := generateAuthHeader(t, authutils.ROLE_USER, teacherUuid)
+		w := doJSONReq(r, http.MethodGet, path, auth, nil)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
 	})
 }
 

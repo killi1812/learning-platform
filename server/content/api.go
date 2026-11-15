@@ -92,6 +92,10 @@ func (ctn *ContentCtn) handleError(c *gin.Context, err error) bool {
 		ctn.logger.Errorf("Content forbidden: %v", err)
 		ginutil.RespondWithError(c, http.StatusForbidden, err.Error())
 		return true
+	case errors.Is(err, ErrInvalidMaxPoints):
+		ctn.logger.Errorf("Invalid content parameter: %v", err)
+		ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
+		return true
 	case errors.Is(err, ErrGroupModeLocked),
 		errors.Is(err, ErrMaxPointsBelowExistingGrade):
 		ctn.logger.Errorf("Content conflict: %v", err)

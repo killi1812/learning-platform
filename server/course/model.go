@@ -106,7 +106,9 @@ func (c *Course) Update(updated *Course) *Course {
 	c.Description = updated.Description
 	c.Term = updated.Term
 	c.Year = updated.Year
-	c.GradingScale = updated.GradingScale
+	if updated.GradingScale != (GradingScale{}) {
+		c.GradingScale = updated.GradingScale
+	}
 	return c
 }
 

@@ -277,12 +277,12 @@ func (s *CourseService) ListCourses(term *Term, year *int) ([]Course, error) {
 }
 
 // UpdateCourse modifies title, description, term, year, or grading scale of an existing course.
+// Zero GradingScale leaves the existing grading scale unchanged.
 func (s *CourseService) UpdateCourse(courseUuid uuid.UUID, updated *Course) (*Course, error) {
-	if updated.GradingScale.ScaleA == 0 && updated.GradingScale.ScaleB == 0 && updated.GradingScale.ScaleC == 0 && updated.GradingScale.ScaleD == 0 && updated.GradingScale.ScaleE == 0 {
-		updated.GradingScale = DefaultGradingScale()
-	}
-	if err := updated.GradingScale.Validate(); err != nil {
-		return nil, err
+	if updated.GradingScale != (GradingScale{}) {
+		if err := updated.GradingScale.Validate(); err != nil {
+			return nil, err
+		}
 	}
 	var existing Course
 	if err := s.db.Preload("Enrollments.User").Where("uuid = ?", courseUuid).First(&existing).Error; err != nil {

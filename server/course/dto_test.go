@@ -119,6 +119,17 @@ func TestUpdateCourseDto_ToModel(t *testing.T) {
 		assert.Nil(t, model)
 	})
 
+	t.Run("omitted grading scale leaves zero GradingScale on UpdateCourseDto", func(t *testing.T) {
+		dto := UpdateCourseDto{
+			Title: "Partial Update",
+			Term:  "SPRING",
+			Year:  2027,
+		}
+		model, err := dto.ToModel()
+		assert.NoError(t, err)
+		assert.Equal(t, GradingScale{}, model.GradingScale)
+	})
+
 	t.Run("invalid term returns ErrInvalidTerm", func(t *testing.T) {
 		dto := UpdateCourseDto{
 			Title: "Updated",

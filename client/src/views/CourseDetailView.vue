@@ -1402,6 +1402,7 @@ import HandinSubmissionDialog from '@/components/HandinSubmissionDialog.vue'
 import TeacherSubmissionsDialog from '@/components/TeacherSubmissionsDialog.vue'
 import { isAxiosError } from 'axios'
 import { getApiErrorMessage } from '@/api/client'
+import { DEFAULT_GRADING_SCALE, isValidGradingScale } from '@/types/course'
 import type {
   Course,
   Module,
@@ -1450,14 +1451,6 @@ watch(activeTab, newTab => {
 })
 
 // Settings edit form
-const DEFAULT_GRADING_SCALE: GradingScale = {
-  scaleA: 90,
-  scaleB: 80,
-  scaleC: 60,
-  scaleD: 50,
-  scaleE: 40,
-}
-
 const editGradingScale = ref<GradingScale>({ ...DEFAULT_GRADING_SCALE })
 
 function resetEditGradingScale() {
@@ -2125,14 +2118,7 @@ async function handleRemoveEnrollment(enrollment: Enrollment) {
 
 async function handleUpdateCourse() {
   const s = editGradingScale.value
-  if (
-    s.scaleA > 100 ||
-    s.scaleA <= s.scaleB ||
-    s.scaleB <= s.scaleC ||
-    s.scaleC <= s.scaleD ||
-    s.scaleD <= s.scaleE ||
-    s.scaleE <= 0
-  ) {
+  if (!isValidGradingScale(s)) {
     toast.error('Invalid grading scale: Must satisfy 100 ≥ A > B > C > D > E > 0.')
     return
   }

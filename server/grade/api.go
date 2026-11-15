@@ -1,6 +1,7 @@
 package grade
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"net/http"
@@ -67,6 +68,14 @@ func (ctn *GradeCtn) handleError(c *gin.Context, err error, fallbackMsg string) 
 	case errors.Is(err, ErrGraderNotFound):
 		ctn.logger.Errorf("Grader not found: %v", err)
 		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized grader")
+		return true
+	case errors.Is(err, ErrUserNotFound):
+		ctn.logger.Errorf("User not found: %v", err)
+		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
+		return true
+	case errors.Is(err, ErrNotTeacher):
+		ctn.logger.Errorf("Teacher access required: %v", err)
+		ginutil.RespondWithError(c, http.StatusForbidden, "Forbidden")
 		return true
 	case errors.Is(err, ErrNotHandin):
 		ctn.logger.Errorf("Invalid content type for grading: %v", err)
@@ -195,6 +204,8 @@ func (ctn *GradeCtn) releaseGrades(c *gin.Context) {
 //	@Success		200			{array}		PendingSubmissionDto
 //	@Failure		400			{object}	ginutil.ErrorResponse
 //	@Failure		401			{object}	ginutil.ErrorResponse
+//	@Failure		403			{object}	ginutil.ErrorResponse
+//	@Failure		404			{object}	ginutil.ErrorResponse
 //	@Failure		500			{object}	ginutil.ErrorResponse
 //	@Router			/grade/pending [get]
 func (ctn *GradeCtn) listPending(c *gin.Context) {
@@ -286,14 +297,16 @@ func (ctn *GradeCtn) exportCSV(c *gin.Context) {
 		return
 	}
 
+	var buf bytes.Buffer
+	if err := ctn.Service.ExportCourseCSV(courseUuid, &buf); err != nil {
+		ctn.handleError(c, err, "Failed to export gradebook CSV")
+		return
+	}
+
 	filename := fmt.Sprintf("course-%s-gradebook-%s.csv", courseUuid.String()[:8], time.Now().Format("20060102"))
-	c.Header("Content-Type", "text/csv; charset=utf-8")
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
 	c.Header("X-Content-Type-Options", "nosniff")
-
-	if err := ctn.Service.ExportCourseCSV(courseUuid, c.Writer); err != nil {
-		ctn.logger.Errorf("Failed to stream gradebook CSV: %v", err)
-	}
+	c.Data(http.StatusOK, "text/csv; charset=utf-8", buf.Bytes())
 }
 
 // GetMyFinalGrades godoc

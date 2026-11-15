@@ -8,17 +8,31 @@ import (
 )
 
 // SanitizeCSVCell guards against CSV formula injection (OWASP).
-// If a cell value starts with '=', '+', '-', '@', '\t', or '\r',
-// it prepends a single quote so spreadsheet programs treat it as raw text.
+// If a cell value starts with '=', '+', '-', '@', '\t', '\r', or '\n' (or leading
+// whitespace before '=', '+', '-', '@'), it prepends a single quote so spreadsheet
+// programs treat it as raw text.
 func SanitizeCSVCell(value string) string {
 	if len(value) == 0 {
 		return ""
 	}
 	first := value[0]
-	if first == '=' || first == '+' || first == '-' || first == '@' || first == '\t' || first == '\r' {
+	if isFormulaPrefix(first) || first == '\t' || first == '\r' || first == '\n' {
+		return "'" + value
+	}
+	trimmed := strings.TrimLeft(value, " \t\r\n")
+	if len(trimmed) > 0 && isFormulaPrefix(trimmed[0]) {
 		return "'" + value
 	}
 	return value
+}
+
+func isFormulaPrefix(b byte) bool {
+	return b == '=' || b == '+' || b == '-' || b == '@'
+}
+
+func sanitizeCSVTextCell(value string) string {
+	cleaned := strings.NewReplacer("\r\n", " ", "\r", " ", "\n", " ").Replace(value)
+	return SanitizeCSVCell(cleaned)
 }
 
 // GradebookRecord holds the resolved data for one student row in a course grade export.
@@ -77,25 +91,25 @@ func WriteGradebookCSV(w io.Writer, records []GradebookRecord) error {
 
 	for _, rec := range records {
 		row := []string{
-			SanitizeCSVCell(rec.StudentEmail),
-			SanitizeCSVCell(rec.StudentName),
-			SanitizeCSVCell(rec.ModuleTitle),
-			SanitizeCSVCell(rec.AssignmentTitle),
-			SanitizeCSVCell(rec.AssignmentType),
-			SanitizeCSVCell(rec.Attempt),
-			SanitizeCSVCell(rec.SubmittedAt),
-			SanitizeCSVCell(rec.IsLate),
-			SanitizeCSVCell(rec.Score),
-			SanitizeCSVCell(rec.MaxPoints),
-			SanitizeCSVCell(rec.Percent),
-			SanitizeCSVCell(rec.IsVisibleToStudent),
-			SanitizeCSVCell(rec.GradedByEmail),
-			SanitizeCSVCell(rec.GradedAt),
-			SanitizeCSVCell(strings.ReplaceAll(rec.Feedback, "\n", " ")),
-			SanitizeCSVCell(rec.FinalCourseScore),
-			SanitizeCSVCell(rec.FinalCourseMax),
-			SanitizeCSVCell(rec.FinalCoursePercent),
-			SanitizeCSVCell(rec.FinalCourseGrade),
+			sanitizeCSVTextCell(rec.StudentEmail),
+			sanitizeCSVTextCell(rec.StudentName),
+			sanitizeCSVTextCell(rec.ModuleTitle),
+			sanitizeCSVTextCell(rec.AssignmentTitle),
+			sanitizeCSVTextCell(rec.AssignmentType),
+			sanitizeCSVTextCell(rec.Attempt),
+			sanitizeCSVTextCell(rec.SubmittedAt),
+			sanitizeCSVTextCell(rec.IsLate),
+			sanitizeCSVTextCell(rec.Score),
+			sanitizeCSVTextCell(rec.MaxPoints),
+			sanitizeCSVTextCell(rec.Percent),
+			sanitizeCSVTextCell(rec.IsVisibleToStudent),
+			sanitizeCSVTextCell(rec.GradedByEmail),
+			sanitizeCSVTextCell(rec.GradedAt),
+			sanitizeCSVTextCell(rec.Feedback),
+			sanitizeCSVTextCell(rec.FinalCourseScore),
+			sanitizeCSVTextCell(rec.FinalCourseMax),
+			sanitizeCSVTextCell(rec.FinalCoursePercent),
+			sanitizeCSVTextCell(rec.FinalCourseGrade),
 		}
 		if err := writer.Write(row); err != nil {
 			return fmt.Errorf("failed to write CSV row: %w", err)

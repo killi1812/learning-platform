@@ -4120,6 +4120,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/ginutil.ErrorResponse"
                         }
                     },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -6259,6 +6271,9 @@ const docTemplate = `{
                 },
                 "maxAttempts": {
                     "type": "integer"
+                },
+                "maxPoints": {
+                    "type": "number"
                 },
                 "moduleTitle": {
                     "type": "string"

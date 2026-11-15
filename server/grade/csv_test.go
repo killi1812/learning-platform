@@ -22,6 +22,10 @@ func TestSanitizeCSVCell(t *testing.T) {
 		{"formula at", "@cmd|' /C calc'!A0", "'@cmd|' /C calc'!A0"},
 		{"tab prefix", "\tmalicious", "'\tmalicious"},
 		{"carriage return prefix", "\rmalicious", "'\rmalicious"},
+		{"newline prefix", "\n=cmd", "'\n=cmd"},
+		{"leading space before equals", " =SUM(A1)", "' =SUM(A1)"},
+		{"leading spaces before plus", "  +1+1", "'  +1+1"},
+		{"leading spaces normal text untouched", "  Hello", "  Hello"},
 		{"normal email", "student@example.com", "student@example.com"},
 	}
 
@@ -85,6 +89,29 @@ func TestWriteGradebookCSV(t *testing.T) {
 		// Formula sanitization check
 		assert.Contains(t, out, "'=cmd")
 		assert.Contains(t, out, "'@danger")
+	})
+
+	t.Run("normalizes newlines and leading whitespace formulas in all text fields", func(t *testing.T) {
+		var buf bytes.Buffer
+		records := []GradebookRecord{
+			{
+				StudentEmail:    "alice@example.com",
+				StudentName:     "Alice\r\nSmith",
+				ModuleTitle:     "\r\n=IMPORTXML()",
+				AssignmentTitle: "HW\r1",
+				Feedback:        "Line 1\r\nLine 2",
+			},
+		}
+
+		err := WriteGradebookCSV(&buf, records)
+		assert.NoError(t, err)
+
+		lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+		assert.Len(t, lines, 2)
+		assert.Contains(t, lines[1], "Alice Smith")
+		assert.Contains(t, lines[1], "' =IMPORTXML()")
+		assert.Contains(t, lines[1], "HW 1")
+		assert.Contains(t, lines[1], "Line 1 Line 2")
 	})
 
 	t.Run("empty records produces only header", func(t *testing.T) {
