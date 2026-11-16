@@ -3,14 +3,12 @@
     <template #append>
       <v-btn aria-label="Toggle color theme" class="mr-2" icon="mdi-theme-light-dark" @click="theme.cycle()" />
 
-      <template v-if="isAuthenticated">
-        <NotificationBell />
+      <NotificationBell />
 
-        <v-chip class="mr-2 font-weight-medium" variant="tonal">
-          <v-icon icon="mdi-account" start />
-          {{ currentUser?.username || 'User' }}
-        </v-chip>
-      </template>
+      <v-chip class="mr-2 font-weight-medium" variant="tonal">
+        <v-icon icon="mdi-account" start />
+        {{ currentUser?.username }}
+      </v-chip>
 
     </template>
   </v-app-bar>
@@ -22,5 +20,5 @@ import NotificationBell from '@/components/NotificationBell.vue'
 import { useAuth } from '@/composables/useAuth'
 
 const theme = useTheme()
-const { isAuthenticated, currentUser } = useAuth()
+const { currentUser } = useAuth()
 </script>
