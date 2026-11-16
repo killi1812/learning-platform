@@ -692,7 +692,7 @@ func TestContentService_HandinAssignment(t *testing.T) {
 	assert.ErrorIs(t, err, content.ErrContentNotFound)
 
 	// Ensure submission and grade tables exist for lock check
-	assert.NoError(t, db.Exec("CREATE TABLE IF NOT EXISTS individual_submissions (id INTEGER PRIMARY KEY, content_id INTEGER, deleted_at DATETIME); CREATE TABLE IF NOT EXISTS group_submissions (id INTEGER PRIMARY KEY, content_id INTEGER, deleted_at DATETIME); CREATE TABLE IF NOT EXISTS grades (id INTEGER PRIMARY KEY, individual_submission_id INTEGER, score DECIMAL(5,2), deleted_at DATETIME);").Error)
+	assert.NoError(t, db.Exec("CREATE TABLE IF NOT EXISTS individual_submissions (id INTEGER PRIMARY KEY, content_id INTEGER, deleted_at DATETIME); CREATE TABLE IF NOT EXISTS group_submissions (id INTEGER PRIMARY KEY, content_id INTEGER, deleted_at DATETIME); CREATE TABLE IF NOT EXISTS grades (id INTEGER PRIMARY KEY, individual_submission_id INTEGER, group_submission_id INTEGER, score DECIMAL(5,2), deleted_at DATETIME);").Error)
 
 	// Invalid maxPoints rejected on CreateHandin and UpdateHandin
 	for _, invalid := range []float64{0, -10, 1000} {
@@ -714,16 +714,33 @@ func TestContentService_HandinAssignment(t *testing.T) {
 	assert.True(t, updated.Assignment.AllowsGroupSubmission)
 	assert.Equal(t, 80.0, updated.Assignment.MaxPoints)
 
-	// Test ErrMaxPointsBelowExistingGrade
+	// Test ErrMaxPointsBelowExistingGrade (individual submission)
 	assert.NoError(t, db.Exec("INSERT INTO individual_submissions (id, content_id) VALUES (999, ?)", created.ID).Error)
 	assert.NoError(t, db.Exec("INSERT INTO grades (individual_submission_id, score) VALUES (999, 75.0)").Error)
 	tooLowMax := 70.0
 	_, err = svc.UpdateHandin(c.Uuid, m.Uuid, created.Uuid, "Assignment 1 Updated", &newDeadline, false, true, &tooLowMax)
 	assert.ErrorIs(t, err, content.ErrMaxPointsBelowExistingGrade)
 
-	// Test ErrGroupModeLocked: simulate existing submission
+	// Test ErrMaxPointsBelowExistingGrade (group submission)
+	assert.NoError(t, db.Exec("INSERT INTO group_submissions (id, content_id) VALUES (888, ?)", created2.ID).Error)
+	assert.NoError(t, db.Exec("INSERT INTO grades (group_submission_id, score) VALUES (888, 45.0)").Error)
+	tooLowGroupMax := 40.0
+	_, err = svc.UpdateHandin(c.Uuid, m.Uuid, created2.Uuid, "Assignment 2", nil, true, true, &tooLowGroupMax)
+	assert.ErrorIs(t, err, content.ErrMaxPointsBelowExistingGrade)
+
+	// Test ErrGroupModeLocked: simulate existing submission (individual and group)
 	_, err = svc.UpdateHandin(c.Uuid, m.Uuid, created.Uuid, "Assignment 1 Updated Again", &newDeadline, false, false, nil)
 	assert.ErrorIs(t, err, content.ErrGroupModeLocked)
+	_, err = svc.UpdateHandin(c.Uuid, m.Uuid, created2.Uuid, "Assignment 2 Updated", nil, true, false, nil)
+	assert.ErrorIs(t, err, content.ErrGroupModeLocked)
+
+	// Not found error paths for Handin CRUD
+	_, err = svc.CreateHandin(uuid.New(), m.Uuid, "Missing Course", nil, false, false, nil)
+	assert.ErrorIs(t, err, content.ErrCourseNotFound)
+	_, err = svc.UpdateHandin(c.Uuid, m.Uuid, uuid.New(), "Missing Handin", nil, false, false, nil)
+	assert.ErrorIs(t, err, content.ErrContentNotFound)
+	_, err = svc.ListHandins(uuid.New(), m.Uuid)
+	assert.ErrorIs(t, err, content.ErrCourseNotFound)
 
 	// 4. ListHandins
 	list, err := svc.ListHandins(c.Uuid, m.Uuid)

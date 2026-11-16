@@ -99,7 +99,15 @@
               <div class="font-weight-bold text-high-emphasis">{{ g.courseName }}</div>
               <div class="text-caption text-medium-emphasis">{{ g.moduleTitle }}</div>
             </td>
-            <td class="font-weight-medium">{{ g.assignmentTitle }}</td>
+            <td class="font-weight-medium">
+              <div class="d-flex align-center flex-wrap ga-1">
+                <span>{{ g.assignmentTitle }}</span>
+                <v-chip v-if="g.isGroup" color="info" size="x-small" variant="tonal">
+                  <v-icon icon="mdi-account-group" size="x-small" start />
+                  {{ g.groupName || 'Group' }}
+                </v-chip>
+              </div>
+            </td>
             <td class="text-center">
               <v-chip
                 :color="g.type === 'QUIZ' ? 'info' : 'secondary'"

@@ -960,6 +960,43 @@ func TestSubmissionService_GroupSubmissionsWorkflow(t *testing.T) {
 	assert.True(t, instructorList[0].IsGroup)
 	assert.Equal(t, "Group Alpha", instructorList[0].GroupName)
 
+	// 6b. Group grades visibility in ListMySubmissions vs ListCourseAssignmentSubmissions
+	var grpSub1, grpSub2 submission.GroupSubmission
+	assert.NoError(t, db.Where("uuid = ?", sub1Uuid).First(&grpSub1).Error)
+	assert.NoError(t, db.Where("uuid = ?", sub2Uuid).First(&grpSub2).Error)
+	assert.NoError(t, db.Create(&submission.Grade{
+		GroupSubmissionID:  &grpSub1.ID,
+		Score:              88.5,
+		Feedback:           "Solid milestone 1",
+		IsVisibleToStudent: true,
+	}).Error)
+	assert.NoError(t, db.Create(&submission.Grade{
+		GroupSubmissionID:  &grpSub2.ID,
+		Score:              95.0,
+		Feedback:           "Draft hidden feedback",
+		IsVisibleToStudent: false,
+	}).Error)
+
+	// Student sees visible grade on attempt 1, nil on hidden attempt 2
+	gradedList1, err := svc.ListMySubmissions(c.Uuid, cnt.Uuid, s1.Uuid)
+	assert.NoError(t, err)
+	assert.Len(t, gradedList1, 2)
+	assert.Nil(t, gradedList1[0].Grade) // attempt 2 hidden
+	if assert.NotNil(t, gradedList1[1].Grade) {
+		assert.Equal(t, 88.5, gradedList1[1].Grade.Score)
+		assert.Equal(t, "Solid milestone 1", gradedList1[1].Grade.Feedback)
+		assert.True(t, gradedList1[1].Grade.IsVisibleToStudent)
+	}
+
+	// Teacher sees both hidden and visible group grades
+	instructorGradedList, err := svc.ListCourseAssignmentSubmissions(c.Uuid, cnt.Uuid)
+	assert.NoError(t, err)
+	assert.Len(t, instructorGradedList, 2)
+	if assert.NotNil(t, instructorGradedList[0].Grade) {
+		assert.Equal(t, 95.0, instructorGradedList[0].Grade.Score)
+		assert.False(t, instructorGradedList[0].Grade.IsVisibleToStudent)
+	}
+
 	// 7. GetSubmissionForDownload on group submission
 	fileSubUuid := uuid.New()
 	fileMsg := submission.SubmissionMessage{

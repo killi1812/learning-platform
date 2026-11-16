@@ -17,7 +17,17 @@
 
       <v-card-subtitle class="px-4 text-medium-emphasis">
         <div>{{ assignmentTitle || 'Assignment' }} · Attempt #{{ attempt || 1 }}</div>
-        <div v-if="studentEmail" class="text-caption">Student: {{ studentEmail }}</div>
+        <div v-if="groupName" class="d-flex flex-wrap align-center ga-1 mt-1">
+          <v-chip color="info" size="x-small" variant="tonal">
+            <v-icon icon="mdi-account-group" size="x-small" start />
+            {{ groupName }}
+          </v-chip>
+          <span v-if="studentEmail" class="text-caption">Submitted by {{ studentEmail }}</span>
+          <span v-if="memberEmails?.length" class="text-caption">
+            · Members: {{ memberEmails.join(', ') }}
+          </span>
+        </div>
+        <div v-else-if="studentEmail" class="text-caption">Student: {{ studentEmail }}</div>
       </v-card-subtitle>
 
       <v-form ref="formRef" @submit.prevent="handleSave">
@@ -93,8 +103,16 @@
           <v-switch
             v-model="isVisibleToStudent"
             color="primary"
-            label="Make grade & feedback visible to student immediately"
-            messages="If disabled, student cannot see score until grades are released in bulk."
+            :label="
+              groupName
+                ? 'Make grade & feedback visible to group members immediately'
+                : 'Make grade & feedback visible to student immediately'
+            "
+            :messages="
+              groupName
+                ? 'If disabled, group members cannot see score until grades are released in bulk.'
+                : 'If disabled, student cannot see score until grades are released in bulk.'
+            "
           />
         </v-card-text>
 
@@ -136,6 +154,8 @@ const props = withDefaults(
     submissionUuid: string
     assignmentTitle?: string
     studentEmail?: string
+    groupName?: string
+    memberEmails?: readonly string[]
     attempt?: number
     maxPoints?: number
     initialScore?: number
@@ -145,6 +165,8 @@ const props = withDefaults(
   {
     assignmentTitle: '',
     studentEmail: '',
+    groupName: '',
+    memberEmails: undefined,
     attempt: 1,
     maxPoints: 100,
     initialScore: undefined,

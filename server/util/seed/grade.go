@@ -1,11 +1,13 @@
 package seed
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/content"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/course"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/submission"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 	"github.com/google/uuid"
@@ -129,6 +131,52 @@ func seedGrades(assignments []*content.Content, teachers []*user.User, students 
 				}
 				if err := db.Table("attempts").Create(rawAttempt).Error; err != nil {
 					return fmt.Errorf("failed to seed quiz attempt: %w", err)
+				}
+			}
+			break
+		}
+	}
+
+	// 4. Ungraded group submission for Group 1 on first group hand-in assignment
+	for _, c := range assignments {
+		if c.Assignment != nil && c.Assignment.Type == content.AssignmentHandIn && c.Assignment.AllowsGroupSubmission {
+			var mod course.Module
+			if err := db.Where("id = ?", c.ModuleID).First(&mod).Error; err != nil {
+				break
+			}
+			var grp course.Group
+			if err := db.Preload("Members").Where("course_id = ? AND name = ?", mod.CourseID, "Group 1").First(&grp).Error; err != nil {
+				break
+			}
+
+			var existingGrpSub submission.GroupSubmission
+			gErr := db.Where("content_id = ? AND group_id = ?", c.ID, grp.ID).First(&existingGrpSub).Error
+			if errors.Is(gErr, gorm.ErrRecordNotFound) {
+				submitter := student1
+				if len(grp.Members) > 0 {
+					submitter = &grp.Members[0]
+				}
+				members := grp.Members
+				if len(members) == 0 {
+					members = []user.User{*student1}
+				}
+				grpSub := submission.GroupSubmission{
+					Submission: submission.Submission{
+						Uuid:        uuid.New(),
+						ContentID:   c.ID,
+						Attempt:     1,
+						IsLate:      false,
+						PayloadType: submission.PayloadTypeURL,
+						PayloadURL:  "https://git.app.uib.no/group-1/project-part1.git",
+						SubmittedAt: now.Add(-20 * time.Minute),
+					},
+					GroupID:   &grp.ID,
+					UserID:    &submitter.ID,
+					UserEmail: submitter.Email,
+					Members:   members,
+				}
+				if err := db.Create(&grpSub).Error; err != nil {
+					return fmt.Errorf("failed to seed group submission: %w", err)
 				}
 			}
 			break

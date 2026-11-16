@@ -487,10 +487,18 @@ definitions:
         type: string
       deadline:
         type: string
+      groupName:
+        type: string
+      isGroup:
+        type: boolean
       isLate:
         type: boolean
       maxPoints:
         type: number
+      memberEmails:
+        items:
+          type: string
+        type: array
       submissionUuid:
         type: string
       submittedAt:
@@ -540,6 +548,10 @@ definitions:
         type: string
       gradedAt:
         type: string
+      groupName:
+        type: string
+      isGroup:
+        type: boolean
       maxPoints:
         type: number
       moduleTitle:
@@ -1393,8 +1405,8 @@ paths:
       - quiz
   /course/{uuid}/content/{contentUuid}/grade/release:
     post:
-      description: Teacher or Admin only. Transitions all unreleased individual grades
-        to visible and notifies students.
+      description: Teacher or Admin only. Transitions all unreleased individual or
+        group grades to visible and notifies students.
       parameters:
       - description: Course UUID
         in: path
@@ -1664,7 +1676,7 @@ paths:
             $ref: '#/definitions/ginutil.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: Grade or update an individual submission
+      summary: Grade or update an individual or group submission
       tags:
       - grade
   /course/{uuid}/content/{contentUuid}/submission/file/init:
@@ -3639,8 +3651,8 @@ paths:
       - grade
   /grade/pending:
     get:
-      description: Teacher or Admin only. Returns latest ungraded individual submissions
-        across courses taught by caller.
+      description: Teacher or Admin only. Returns latest ungraded individual and group
+        submissions across courses taught by caller.
       parameters:
       - description: Filter by course UUID
         in: query

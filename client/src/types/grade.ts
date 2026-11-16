@@ -29,6 +29,9 @@ export interface PendingSubmissionDto {
   assignmentTitle: string
   userEmail: string
   userName?: string
+  isGroup?: boolean
+  groupName?: string
+  memberEmails?: string[]
   attempt: number
   isLate: boolean
   submittedAt: string
@@ -46,6 +49,8 @@ export interface StudentGradeDto {
   courseCode: string
   moduleTitle: string
   assignmentTitle: string
+  isGroup?: boolean
+  groupName?: string
   attempt: number
   score: number
   maxPoints: number

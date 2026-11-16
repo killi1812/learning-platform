@@ -81,8 +81,7 @@ func (ctn *GradeCtn) handleError(c *gin.Context, err error, fallbackMsg string) 
 		ctn.logger.Errorf("Invalid content type for grading: %v", err)
 		ginutil.RespondWithError(c, http.StatusConflict, err.Error())
 		return true
-	case errors.Is(err, ErrScoreOutOfRange),
-		errors.Is(err, ErrGroupGradingNotSupported):
+	case errors.Is(err, ErrScoreOutOfRange):
 		ctn.logger.Errorf("Grading domain validation error: %v", err)
 		ginutil.RespondWithError(c, http.StatusUnprocessableEntity, err.Error())
 		return true
@@ -95,7 +94,7 @@ func (ctn *GradeCtn) handleError(c *gin.Context, err error, fallbackMsg string) 
 
 // UpsertGrade godoc
 //
-//	@Summary		Grade or update an individual submission
+//	@Summary		Grade or update an individual or group submission
 //	@Description	Teacher or Admin only. Sets evaluation score, Markdown feedback, and student visibility.
 //	@Tags			grade
 //	@Accept			json
@@ -156,7 +155,7 @@ func (ctn *GradeCtn) upsertGrade(c *gin.Context) {
 // ReleaseGrades godoc
 //
 //	@Summary		Release all unreleased grades for an assignment
-//	@Description	Teacher or Admin only. Transitions all unreleased individual grades to visible and notifies students.
+//	@Description	Teacher or Admin only. Transitions all unreleased individual or group grades to visible and notifies students.
 //	@Tags			grade
 //	@Produce		json
 //	@Security		BearerAuth
@@ -196,7 +195,7 @@ func (ctn *GradeCtn) releaseGrades(c *gin.Context) {
 // ListPending godoc
 //
 //	@Summary		List pending ungraded submissions
-//	@Description	Teacher or Admin only. Returns latest ungraded individual submissions across courses taught by caller.
+//	@Description	Teacher or Admin only. Returns latest ungraded individual and group submissions across courses taught by caller.
 //	@Tags			grade
 //	@Produce		json
 //	@Security		BearerAuth

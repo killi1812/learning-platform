@@ -166,7 +166,7 @@ func TestGradeService_UpsertGrade(t *testing.T) {
 		assert.Nil(t, res.ReleasedAt)
 	})
 
-	t.Run("target is a group submission returns ErrGroupGradingNotSupported", func(t *testing.T) {
+	t.Run("group submission on individual assignment returns ErrSubmissionNotFound", func(t *testing.T) {
 		grpSub := submission.GroupSubmission{
 			Submission: submission.Submission{
 				Uuid:        uuid.New(),
@@ -180,7 +180,7 @@ func TestGradeService_UpsertGrade(t *testing.T) {
 		score := 80.0
 		dto := UpsertGradeDto{Score: &score}
 		_, err := svc.UpsertGrade(crs.Uuid, cnt.Uuid, grpSub.Uuid, teacher.Uuid, dto)
-		assert.ErrorIs(t, err, ErrGroupGradingNotSupported)
+		assert.ErrorIs(t, err, ErrSubmissionNotFound)
 	})
 
 	t.Run("creates grade directly as visible (notifies immediately)", func(t *testing.T) {
@@ -263,16 +263,56 @@ func TestGradeService_UpsertGrade(t *testing.T) {
 		assert.ErrorIs(t, err, ErrNotHandin)
 	})
 
-	t.Run("group assignment returns ErrGroupGradingNotSupported", func(t *testing.T) {
+	t.Run("group assignment grades group submission and notifies all members", func(t *testing.T) {
+		st2 := user.User{Uuid: uuid.New(), Username: "student2", Email: "student2@example.com"}
+		assert.NoError(t, db.Create(&st2).Error)
+
+		grp := course.Group{Uuid: uuid.New(), CourseID: crs.ID, Name: "Group 1", MaxMembers: 4}
+		assert.NoError(t, db.Create(&grp).Error)
+
 		grpCnt := content.Content{Uuid: uuid.New(), ModuleID: mod.ID, Title: "Group Assignment", Type: content.TypeAssignment}
 		assert.NoError(t, db.Create(&grpCnt).Error)
-		grpAsgn := content.Assignment{ContentID: grpCnt.ID, Type: content.AssignmentHandIn, AllowsGroupSubmission: true}
+		grpAsgn := content.Assignment{ContentID: grpCnt.ID, Type: content.AssignmentHandIn, AllowsGroupSubmission: true, MaxPoints: 50}
 		assert.NoError(t, db.Create(&grpAsgn).Error)
 
-		score := 50.0
-		dto := UpsertGradeDto{Score: &score}
-		_, err := svc.UpsertGrade(crs.Uuid, grpCnt.Uuid, sub.Uuid, teacher.Uuid, dto)
-		assert.ErrorIs(t, err, ErrGroupGradingNotSupported)
+		grpSub := submission.GroupSubmission{
+			Submission: submission.Submission{Uuid: uuid.New(), ContentID: grpCnt.ID, Attempt: 1, SubmittedAt: time.Now()},
+			GroupID:    &grp.ID,
+			UserID:     &student.ID,
+			UserEmail:  student.Email,
+			Members:    []user.User{student, st2},
+		}
+		assert.NoError(t, db.Create(&grpSub).Error)
+
+		// Missing submission returns ErrSubmissionNotFound
+		score := 42.5
+		_, err := svc.UpsertGrade(crs.Uuid, grpCnt.Uuid, uuid.New(), teacher.Uuid, UpsertGradeDto{Score: &score})
+		assert.ErrorIs(t, err, ErrSubmissionNotFound)
+
+		// Draft grade does not notify
+		draftRes, err := svc.UpsertGrade(crs.Uuid, grpCnt.Uuid, grpSub.Uuid, teacher.Uuid, UpsertGradeDto{
+			Score:              &score,
+			Feedback:           "Draft group review",
+			IsVisibleToStudent: false,
+		})
+		assert.NoError(t, err)
+		assert.Equal(t, 42.5, draftRes.Score)
+		assert.Equal(t, 50.0, draftRes.MaxPoints)
+		assert.False(t, draftRes.IsVisibleToStudent)
+		assert.Empty(t, notifier.manyCalls)
+
+		// Releasing notifies all members via NotifySystemMany
+		updatedScore := 46.0
+		visRes, err := svc.UpsertGrade(crs.Uuid, grpCnt.Uuid, grpSub.Uuid, teacher.Uuid, UpsertGradeDto{
+			Score:              &updatedScore,
+			Feedback:           "Great teamwork!",
+			IsVisibleToStudent: true,
+		})
+		assert.NoError(t, err)
+		assert.True(t, visRes.IsVisibleToStudent)
+		assert.NotNil(t, visRes.ReleasedAt)
+		assert.Len(t, notifier.manyCalls, 1)
+		assert.ElementsMatch(t, []uuid.UUID{student.Uuid, st2.Uuid}, notifier.manyCalls[0])
 	})
 }
 
@@ -353,13 +393,35 @@ func TestGradeService_ReleaseAssignmentGrades(t *testing.T) {
 		assert.ErrorIs(t, err, ErrNotHandin)
 	})
 
-	t.Run("group assignment returns ErrGroupGradingNotSupported", func(t *testing.T) {
-		grpCnt := content.Content{Uuid: uuid.New(), ModuleID: mod.ID, Title: "G", Type: content.TypeAssignment}
+	t.Run("group assignment releases all unreleased group grades and notifies all members", func(t *testing.T) {
+		grpCnt := content.Content{Uuid: uuid.New(), ModuleID: mod.ID, Title: "Group Release HW", Type: content.TypeAssignment}
 		assert.NoError(t, db.Create(&grpCnt).Error)
-		assert.NoError(t, db.Create(&content.Assignment{ContentID: grpCnt.ID, Type: content.AssignmentHandIn, AllowsGroupSubmission: true}).Error)
+		assert.NoError(t, db.Create(&content.Assignment{ContentID: grpCnt.ID, Type: content.AssignmentHandIn, AllowsGroupSubmission: true, MaxPoints: 100}).Error)
 
-		_, err := svc.ReleaseAssignmentGrades(crs.Uuid, grpCnt.Uuid)
-		assert.ErrorIs(t, err, ErrGroupGradingNotSupported)
+		grp := course.Group{Uuid: uuid.New(), CourseID: crs.ID, Name: "Team A", MaxMembers: 4}
+		assert.NoError(t, db.Create(&grp).Error)
+
+		grpSub := submission.GroupSubmission{
+			Submission: submission.Submission{Uuid: uuid.New(), ContentID: grpCnt.ID, Attempt: 1, SubmittedAt: time.Now()},
+			GroupID:    &grp.ID,
+			UserID:     &st1.ID,
+			UserEmail:  st1.Email,
+			Members:    []user.User{st1, st2},
+		}
+		assert.NoError(t, db.Create(&grpSub).Error)
+		assert.NoError(t, db.Create(&submission.Grade{GroupSubmissionID: &grpSub.ID, Score: 88, IsVisibleToStudent: false}).Error)
+
+		prevManyCalls := len(notifier.manyCalls)
+		rel, err := svc.ReleaseAssignmentGrades(crs.Uuid, grpCnt.Uuid)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, rel)
+		assert.Len(t, notifier.manyCalls, prevManyCalls+1)
+		assert.ElementsMatch(t, []uuid.UUID{st1.Uuid, st2.Uuid}, notifier.manyCalls[prevManyCalls])
+
+		// Second call returns 0
+		relAgain, err := svc.ReleaseAssignmentGrades(crs.Uuid, grpCnt.Uuid)
+		assert.NoError(t, err)
+		assert.Equal(t, 0, relAgain)
 	})
 }
 
@@ -640,16 +702,28 @@ func TestGradeService_ExportCourseCSV(t *testing.T) {
 	assert.NoError(t, db.Create(&content.Assignment{ContentID: draftQCnt.ID, Type: content.AssignmentQuiz}).Error)
 	assert.NoError(t, db.Create(&content.Quiz{ContentID: draftQCnt.ID, Published: false}).Error)
 
-	// Group Handin
+	// Group Handin with graded submission for st & st2
 	gCnt := content.Content{Uuid: uuid.New(), ModuleID: mod.ID, Title: "Group Work", Position: 2, Type: content.TypeAssignment}
 	assert.NoError(t, db.Create(&gCnt).Error)
 	assert.NoError(t, db.Create(&content.Assignment{ContentID: gCnt.ID, Type: content.AssignmentHandIn, AllowsGroupSubmission: true, MaxPoints: 100}).Error)
+
+	grp := course.Group{Uuid: uuid.New(), CourseID: crs.ID, Name: "Group Export", MaxMembers: 4}
+	assert.NoError(t, db.Create(&grp).Error)
+	grpSub := submission.GroupSubmission{
+		Submission: submission.Submission{Uuid: uuid.New(), ContentID: gCnt.ID, Attempt: 1, SubmittedAt: time.Now()},
+		GroupID:    &grp.ID,
+		UserID:     &st.ID,
+		UserEmail:  st.Email,
+		Members:    []user.User{st, st2},
+	}
+	assert.NoError(t, db.Create(&grpSub).Error)
+	assert.NoError(t, db.Create(&submission.Grade{GroupSubmissionID: &grpSub.ID, Score: 92, Feedback: "Strong team output", IsVisibleToStudent: true, GradedByID: &teacher.ID}).Error)
 
 	// File content without assignment
 	fileCnt := content.Content{Uuid: uuid.New(), ModuleID: mod.ID, Title: "Syllabus File", Position: 4, Type: content.TypeFile}
 	assert.NoError(t, db.Create(&fileCnt).Error)
 
-	t.Run("exports CSV with individual grades and N/A for group assignments", func(t *testing.T) {
+	t.Run("exports CSV with individual and group grades", func(t *testing.T) {
 		var buf bytes.Buffer
 		err := svc.ExportCourseCSV(crs.Uuid, &buf)
 		assert.NoError(t, err)
@@ -659,7 +733,9 @@ func TestGradeService_ExportCourseCSV(t *testing.T) {
 		assert.True(t, strings.Contains(out, "Project"))
 		assert.True(t, strings.Contains(out, "88.00"))
 		assert.True(t, strings.Contains(out, "Group Work"))
-		assert.True(t, strings.Contains(out, "N/A (Group)"))
+		assert.True(t, strings.Contains(out, "HANDIN (GROUP)"))
+		assert.True(t, strings.Contains(out, "92.00"))
+		assert.True(t, strings.Contains(out, "Strong team output"))
 		assert.False(t, strings.Contains(out, "Draft Quiz"))
 	})
 
@@ -857,4 +933,189 @@ func TestGradeService_FinalGradeEdgeCases(t *testing.T) {
 	assert.Equal(t, 7.0, roster[0].TotalMaxScore)
 	assert.Equal(t, 80.0, roster[0].Percent)
 	assert.Equal(t, "B", roster[0].FinalGrade)
+}
+
+func TestGradeService_GroupGradingEndToEnd(t *testing.T) {
+	db, _, svc := setupGradeTestDb(t)
+
+	teacher := user.User{Uuid: uuid.New(), Username: "teacher_g", Email: "teacher_g@example.com"}
+	st1 := user.User{Uuid: uuid.New(), Username: "st1_g", Email: "st1_g@example.com"}
+	st2 := user.User{Uuid: uuid.New(), Username: "st2_g", Email: "st2_g@example.com"}
+	st3 := user.User{Uuid: uuid.New(), Username: "st3_g", Email: "st3_g@example.com"}
+	assert.NoError(t, db.Create(&teacher).Error)
+	assert.NoError(t, db.Create(&st1).Error)
+	assert.NoError(t, db.Create(&st2).Error)
+	assert.NoError(t, db.Create(&st3).Error)
+
+	crs := course.Course{
+		Uuid:         uuid.New(),
+		Title:        "Group Systems",
+		Term:         course.TermAutumn,
+		Year:         2026,
+		GradingScale: course.DefaultGradingScale(),
+	}
+	assert.NoError(t, db.Create(&crs).Error)
+	assert.NoError(t, db.Create(&course.Enrollment{CourseID: crs.ID, UserID: teacher.ID, UserEmail: teacher.Email, Role: course.RoleTeacher}).Error)
+	assert.NoError(t, db.Create(&course.Enrollment{CourseID: crs.ID, UserID: st1.ID, UserEmail: st1.Email, Role: course.RoleStudent}).Error)
+	assert.NoError(t, db.Create(&course.Enrollment{CourseID: crs.ID, UserID: st2.ID, UserEmail: st2.Email, Role: course.RoleStudent}).Error)
+	assert.NoError(t, db.Create(&course.Enrollment{CourseID: crs.ID, UserID: st3.ID, UserEmail: st3.Email, Role: course.RoleStudent}).Error)
+
+	mod := course.Module{Uuid: uuid.New(), CourseID: crs.ID, Title: "Project Module", Position: 1}
+	assert.NoError(t, db.Create(&mod).Error)
+
+	grp := course.Group{Uuid: uuid.New(), CourseID: crs.ID, Name: "Alpha Squad", MaxMembers: 4}
+	assert.NoError(t, db.Create(&grp).Error)
+
+	grpCnt := content.Content{Uuid: uuid.New(), ModuleID: mod.ID, Title: "Team Deliverable", Position: 1, Type: content.TypeAssignment}
+	assert.NoError(t, db.Create(&grpCnt).Error)
+	assert.NoError(t, db.Create(&content.Assignment{ContentID: grpCnt.ID, Type: content.AssignmentHandIn, AllowsGroupSubmission: true, MaxPoints: 100}).Error)
+
+	// Attempt 1 and Attempt 2 for Alpha Squad (submitted by st1, snapshotted with st1 & st2)
+	sub1 := submission.GroupSubmission{
+		Submission: submission.Submission{Uuid: uuid.New(), ContentID: grpCnt.ID, Attempt: 1, SubmittedAt: time.Now().Add(-2 * time.Hour)},
+		GroupID:    &grp.ID,
+		UserID:     &st1.ID,
+		UserEmail:  st1.Email,
+		Members:    []user.User{st1, st2},
+	}
+	assert.NoError(t, db.Create(&sub1).Error)
+
+	sub2 := submission.GroupSubmission{
+		Submission: submission.Submission{Uuid: uuid.New(), ContentID: grpCnt.ID, Attempt: 2, SubmittedAt: time.Now().Add(-1 * time.Hour)},
+		GroupID:    &grp.ID,
+		UserID:     &st2.ID,
+		UserEmail:  st2.Email,
+		Members:    []user.User{st1, st2},
+	}
+	assert.NoError(t, db.Create(&sub2).Error)
+
+	// 1. ListPending returns only latest attempt (#2) with group metadata
+	pending, err := svc.ListPending(teacher.Uuid, false, &crs.Uuid)
+	assert.NoError(t, err)
+	assert.Len(t, pending, 1)
+	assert.Equal(t, sub2.Uuid, pending[0].SubmissionUuid)
+	assert.True(t, pending[0].IsGroup)
+	assert.Equal(t, "Alpha Squad", pending[0].GroupName)
+	assert.Equal(t, 2, pending[0].Attempt)
+	assert.ElementsMatch(t, []string{st1.Email, st2.Email}, pending[0].MemberEmails)
+
+	// 2. Grade attempt 2 as hidden draft -> removes from pending, hidden from students, visible in roster
+	draftScore := 92.0
+	_, err = svc.UpsertGrade(crs.Uuid, grpCnt.Uuid, sub2.Uuid, teacher.Uuid, UpsertGradeDto{
+		Score:              &draftScore,
+		Feedback:           "Solid group work",
+		IsVisibleToStudent: false,
+	})
+	assert.NoError(t, err)
+
+	pendingAfter, err := svc.ListPending(teacher.Uuid, false, &crs.Uuid)
+	assert.NoError(t, err)
+	assert.Empty(t, pendingAfter)
+
+	// Student 1 and 2 see 0 grades and 0 final score while hidden
+	myGradesHidden, err := svc.ListMyGrades(st1.Uuid, &crs.Uuid)
+	assert.NoError(t, err)
+	assert.Empty(t, myGradesHidden)
+
+	finalsHidden, err := svc.GetStudentFinalGrades(st2.Uuid, &crs.Uuid)
+	assert.NoError(t, err)
+	assert.Len(t, finalsHidden, 1)
+	assert.Equal(t, 0.0, finalsHidden[0].TotalScore)
+	assert.Equal(t, 100.0, finalsHidden[0].TotalMaxScore)
+
+	// Roster already includes unreleased group score for Alpha Squad members, 0 for st3
+	roster, err := svc.GetCourseRosterFinalGrades(crs.Uuid)
+	assert.NoError(t, err)
+	assert.Len(t, roster, 3)
+	scoreByEmail := make(map[string]float64, 3)
+	for _, r := range roster {
+		scoreByEmail[r.UserEmail] = r.TotalScore
+	}
+	assert.Equal(t, 92.0, scoreByEmail[st1.Email])
+	assert.Equal(t, 92.0, scoreByEmail[st2.Email])
+	assert.Equal(t, 0.0, scoreByEmail[st3.Email])
+
+	// 3. Release all grades -> both st1 and st2 see group grade in ListMyGrades and GetStudentFinalGrades
+	released, err := svc.ReleaseAssignmentGrades(crs.Uuid, grpCnt.Uuid)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, released)
+
+	for _, memberUuid := range []uuid.UUID{st1.Uuid, st2.Uuid} {
+		myGrades, err := svc.ListMyGrades(memberUuid, &crs.Uuid)
+		assert.NoError(t, err)
+		assert.Len(t, myGrades, 1)
+		assert.True(t, myGrades[0].IsGroup)
+		assert.Equal(t, "Alpha Squad", myGrades[0].GroupName)
+		assert.Equal(t, 92.0, myGrades[0].Score)
+		assert.Equal(t, "Solid group work", myGrades[0].Feedback)
+
+		finals, err := svc.GetStudentFinalGrades(memberUuid, &crs.Uuid)
+		assert.NoError(t, err)
+		assert.Len(t, finals, 1)
+		assert.Equal(t, 92.0, finals[0].TotalScore)
+		assert.Equal(t, 100.0, finals[0].TotalMaxScore)
+		assert.Equal(t, "A", finals[0].FinalGrade)
+	}
+
+	// Non-member st3 still sees no grade
+	myGrades3, err := svc.ListMyGrades(st3.Uuid, &crs.Uuid)
+	assert.NoError(t, err)
+	assert.Empty(t, myGrades3)
+
+	// 4. Add a second module/individual handin and a second group to exercise sorting & multiple pending/graded rows
+	mod2 := course.Module{Uuid: uuid.New(), CourseID: crs.ID, Title: "Individual Module", Position: 2}
+	assert.NoError(t, db.Create(&mod2).Error)
+	indCnt := content.Content{Uuid: uuid.New(), ModuleID: mod2.ID, Title: "Reflection", Position: 1, Type: content.TypeAssignment}
+	assert.NoError(t, db.Create(&indCnt).Error)
+	assert.NoError(t, db.Create(&content.Assignment{ContentID: indCnt.ID, Type: content.AssignmentHandIn, AllowsGroupSubmission: false, MaxPoints: 50}).Error)
+
+	indSub := submission.IndividualSubmission{
+		Submission: submission.Submission{Uuid: uuid.New(), ContentID: indCnt.ID, Attempt: 1, SubmittedAt: time.Now().Add(-30 * time.Minute)},
+		UserID:     &st1.ID,
+		UserEmail:  st1.Email,
+	}
+	assert.NoError(t, db.Create(&indSub).Error)
+
+	grp2 := course.Group{Uuid: uuid.New(), CourseID: crs.ID, Name: "Beta Squad", MaxMembers: 4}
+	assert.NoError(t, db.Create(&grp2).Error)
+	grp2Sub := submission.GroupSubmission{
+		Submission: submission.Submission{Uuid: uuid.New(), ContentID: grpCnt.ID, Attempt: 1, IsLate: true, SubmittedAt: time.Now().Add(-15 * time.Minute)},
+		GroupID:    &grp2.ID,
+		UserID:     &st3.ID,
+		UserEmail:  st3.Email,
+		Members:    []user.User{st3},
+	}
+	assert.NoError(t, db.Create(&grp2Sub).Error)
+
+	// ListPending returns both indSub and grp2Sub sorted by SubmittedAt ASC
+	pendingBoth, err := svc.ListPending(teacher.Uuid, false, &crs.Uuid)
+	assert.NoError(t, err)
+	assert.Len(t, pendingBoth, 2)
+	assert.Equal(t, indSub.Uuid, pendingBoth[0].SubmissionUuid)
+	assert.Equal(t, grp2Sub.Uuid, pendingBoth[1].SubmissionUuid)
+	assert.True(t, pendingBoth[1].IsGroup)
+	assert.True(t, pendingBoth[1].IsLate)
+
+	// Grade and release indSub -> st1 sees both group and individual grades sorted by module/content order
+	indScore := 45.0
+	_, err = svc.UpsertGrade(crs.Uuid, indCnt.Uuid, indSub.Uuid, teacher.Uuid, UpsertGradeDto{
+		Score:              &indScore,
+		Feedback:           "Nice reflection",
+		IsVisibleToStudent: true,
+	})
+	assert.NoError(t, err)
+
+	allMyGrades, err := svc.ListMyGrades(st1.Uuid, nil)
+	assert.NoError(t, err)
+	assert.Len(t, allMyGrades, 2)
+	assert.True(t, allMyGrades[0].IsGroup)
+	assert.False(t, allMyGrades[1].IsGroup)
+
+	// ExportCourseCSV includes graded Alpha Squad and ungraded late Beta Squad
+	var csvBuf bytes.Buffer
+	assert.NoError(t, svc.ExportCourseCSV(crs.Uuid, &csvBuf))
+	csvOut := csvBuf.String()
+	assert.Contains(t, csvOut, "HANDIN (GROUP)")
+	assert.Contains(t, csvOut, "92.00")
+	assert.Contains(t, csvOut, st3.Email)
 }

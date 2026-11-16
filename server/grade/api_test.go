@@ -315,20 +315,6 @@ func TestGradeCtn_UpsertGrade(t *testing.T) {
 
 		assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
 	})
-
-	t.Run("422 Unprocessable Entity when group grading requested", func(t *testing.T) {
-		svc := &mockGradeService{
-			upsertGradeFn: func(courseUuid, contentUuid, submissionUuid, graderUuid uuid.UUID, dto grade.UpsertGradeDto) (*grade.GradeDto, error) {
-				return nil, grade.ErrGroupGradingNotSupported
-			},
-		}
-		r := setupGradeApiTest(svc, &mockCourseServiceForGrade{})
-		score := 80.0
-		auth := generateAuthHeader(t, authutils.ROLE_USER, teacherUuid)
-		w := doJSONReq(r, http.MethodPut, path, auth, grade.UpsertGradeDto{Score: &score})
-
-		assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
-	})
 }
 
 func TestGradeCtn_ReleaseGrades(t *testing.T) {
@@ -376,19 +362,6 @@ func TestGradeCtn_ReleaseGrades(t *testing.T) {
 
 		assert.Equal(t, http.StatusForbidden, w.Code)
 	})
-
-	t.Run("422 Unprocessable Entity for group assignment", func(t *testing.T) {
-		svc := &mockGradeService{
-			releaseFn: func(courseUuid, contentUuid uuid.UUID) (int, error) {
-				return 0, grade.ErrGroupGradingNotSupported
-			},
-		}
-		r := setupGradeApiTest(svc, &mockCourseServiceForGrade{})
-		auth := generateAuthHeader(t, authutils.ROLE_USER, teacherUuid)
-		w := doJSONReq(r, http.MethodPost, path, auth, nil)
-
-		assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
-	})
 }
 
 func TestGradeCtn_ListPending(t *testing.T) {
@@ -408,6 +381,40 @@ func TestGradeCtn_ListPending(t *testing.T) {
 		validQuery := fmt.Sprintf("/api/grade/pending?courseUuid=%s", uuid.New().String())
 		wFiltered := doJSONReq(r, http.MethodGet, validQuery, auth, nil)
 		assert.Equal(t, http.StatusOK, wFiltered.Code)
+	})
+
+	t.Run("200 OK returns group metadata on pending submissions", func(t *testing.T) {
+		svc := &mockGradeService{
+			listPendingFn: func(userUuid uuid.UUID, isAdmin bool, courseUuid *uuid.UUID) ([]grade.PendingSubmissionDto, error) {
+				return []grade.PendingSubmissionDto{
+					{
+						SubmissionUuid:  uuid.New(),
+						CourseUuid:      uuid.New(),
+						ContentUuid:     uuid.New(),
+						CourseName:      "DAT250",
+						AssignmentTitle: "Group Lab",
+						UserEmail:       "s1@example.com",
+						IsGroup:         true,
+						GroupName:       "Group 1",
+						MemberEmails:    []string{"s1@example.com", "s2@example.com"},
+						Attempt:         1,
+						SubmittedAt:     time.Now(),
+						MaxPoints:       100.0,
+					},
+				}, nil
+			},
+		}
+		r := setupGradeApiTest(svc, &mockCourseServiceForGrade{})
+		auth := generateAuthHeader(t, authutils.ROLE_USER, userUuid)
+		w := doJSONReq(r, http.MethodGet, "/api/grade/pending", auth, nil)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		var dtos []grade.PendingSubmissionDto
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &dtos))
+		require.Len(t, dtos, 1)
+		assert.True(t, dtos[0].IsGroup)
+		assert.Equal(t, "Group 1", dtos[0].GroupName)
+		assert.Equal(t, []string{"s1@example.com", "s2@example.com"}, dtos[0].MemberEmails)
 	})
 
 	t.Run("400 Bad Request on invalid course query param", func(t *testing.T) {

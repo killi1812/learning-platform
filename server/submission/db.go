@@ -606,6 +606,50 @@ func (s *SubmissionService) NotifySubmissionFailed(userUuid, courseUuid uuid.UUI
 	}
 }
 
+func gradeToDto(g *Grade) *SubmissionGradeDto {
+	if g == nil {
+		return nil
+	}
+	return &SubmissionGradeDto{
+		Score:              g.Score,
+		Feedback:           g.Feedback,
+		IsVisibleToStudent: g.IsVisibleToStudent,
+		GradedAt:           g.UpdatedAt,
+		ReleasedAt:         g.ReleasedAt,
+	}
+}
+
+func groupSubmissionsToDtos(grpSubs []GroupSubmission) []SubmissionDto {
+	dtos := make([]SubmissionDto, 0, len(grpSubs))
+	for _, sub := range grpSubs {
+		var memberEmails []string
+		for _, m := range sub.Members {
+			memberEmails = append(memberEmails, m.Email)
+		}
+		groupName := ""
+		if sub.Group != nil {
+			groupName = sub.Group.Name
+		}
+		dtos = append(dtos, SubmissionDto{
+			Uuid:         sub.Uuid,
+			Attempt:      sub.Attempt,
+			IsLate:       sub.IsLate,
+			PayloadType:  sub.PayloadType,
+			PayloadURL:   sub.PayloadURL,
+			FileName:     sub.FileName,
+			FileSize:     sub.FileSize,
+			ContentType:  sub.ContentType,
+			SubmittedAt:  sub.SubmittedAt,
+			UserEmail:    sub.UserEmail,
+			IsGroup:      true,
+			GroupName:    groupName,
+			MemberEmails: memberEmails,
+			Grade:        gradeToDto(sub.Grade),
+		})
+	}
+	return dtos
+}
+
 // ListMySubmissions returns all submissions for a student on a specific assignment.
 func (s *SubmissionService) ListMySubmissions(courseUuid, contentUuid, userUuid uuid.UUID) ([]SubmissionDto, error) {
 	var u user.User
@@ -635,40 +679,14 @@ func (s *SubmissionService) ListMySubmissions(courseUuid, contentUuid, userUuid 
 		err = s.db.
 			Preload("Group", func(db *gorm.DB) *gorm.DB { return db.Unscoped() }).
 			Preload("Members").
+			Preload("Grade", "is_visible_to_student = ?", true).
 			Where("content_id = ? AND (user_id = ? OR id IN (SELECT group_submission_id FROM group_submission_members WHERE user_id = ?))", cnt.ID, u.ID, u.ID).
 			Order("attempt DESC").
 			Find(&grpSubs).Error
 		if err != nil {
 			return nil, err
 		}
-
-		dtos := make([]SubmissionDto, 0, len(grpSubs))
-		for _, sub := range grpSubs {
-			var memberEmails []string
-			for _, m := range sub.Members {
-				memberEmails = append(memberEmails, m.Email)
-			}
-			groupName := ""
-			if sub.Group != nil {
-				groupName = sub.Group.Name
-			}
-			dtos = append(dtos, SubmissionDto{
-				Uuid:         sub.Uuid,
-				Attempt:      sub.Attempt,
-				IsLate:       sub.IsLate,
-				PayloadType:  sub.PayloadType,
-				PayloadURL:   sub.PayloadURL,
-				FileName:     sub.FileName,
-				FileSize:     sub.FileSize,
-				ContentType:  sub.ContentType,
-				SubmittedAt:  sub.SubmittedAt,
-				UserEmail:    sub.UserEmail,
-				IsGroup:      true,
-				GroupName:    groupName,
-				MemberEmails: memberEmails,
-			})
-		}
-		return dtos, nil
+		return groupSubmissionsToDtos(grpSubs), nil
 	}
 
 	var subs []IndividualSubmission
@@ -683,16 +701,6 @@ func (s *SubmissionService) ListMySubmissions(courseUuid, contentUuid, userUuid 
 
 	dtos := make([]SubmissionDto, 0, len(subs))
 	for _, sub := range subs {
-		var gradeDto *SubmissionGradeDto
-		if sub.Grade != nil {
-			gradeDto = &SubmissionGradeDto{
-				Score:              sub.Grade.Score,
-				Feedback:           sub.Grade.Feedback,
-				IsVisibleToStudent: sub.Grade.IsVisibleToStudent,
-				GradedAt:           sub.Grade.UpdatedAt,
-				ReleasedAt:         sub.Grade.ReleasedAt,
-			}
-		}
 		dtos = append(dtos, SubmissionDto{
 			Uuid:        sub.Uuid,
 			Attempt:     sub.Attempt,
@@ -704,7 +712,7 @@ func (s *SubmissionService) ListMySubmissions(courseUuid, contentUuid, userUuid 
 			ContentType: sub.ContentType,
 			SubmittedAt: sub.SubmittedAt,
 			UserEmail:   sub.UserEmail,
-			Grade:       gradeDto,
+			Grade:       gradeToDto(sub.Grade),
 		})
 	}
 	return dtos, nil
@@ -731,40 +739,14 @@ func (s *SubmissionService) ListCourseAssignmentSubmissions(courseUuid, contentU
 		err = s.db.
 			Preload("Group", func(db *gorm.DB) *gorm.DB { return db.Unscoped() }).
 			Preload("Members").
+			Preload("Grade").
 			Where("content_id = ?", cnt.ID).
 			Order("submitted_at DESC").
 			Find(&grpSubs).Error
 		if err != nil {
 			return nil, err
 		}
-
-		dtos := make([]SubmissionDto, 0, len(grpSubs))
-		for _, sub := range grpSubs {
-			var memberEmails []string
-			for _, m := range sub.Members {
-				memberEmails = append(memberEmails, m.Email)
-			}
-			groupName := ""
-			if sub.Group != nil {
-				groupName = sub.Group.Name
-			}
-			dtos = append(dtos, SubmissionDto{
-				Uuid:         sub.Uuid,
-				Attempt:      sub.Attempt,
-				IsLate:       sub.IsLate,
-				PayloadType:  sub.PayloadType,
-				PayloadURL:   sub.PayloadURL,
-				FileName:     sub.FileName,
-				FileSize:     sub.FileSize,
-				ContentType:  sub.ContentType,
-				SubmittedAt:  sub.SubmittedAt,
-				UserEmail:    sub.UserEmail,
-				IsGroup:      true,
-				GroupName:    groupName,
-				MemberEmails: memberEmails,
-			})
-		}
-		return dtos, nil
+		return groupSubmissionsToDtos(grpSubs), nil
 	}
 
 	var subs []IndividualSubmission
@@ -779,16 +761,6 @@ func (s *SubmissionService) ListCourseAssignmentSubmissions(courseUuid, contentU
 
 	dtos := make([]SubmissionDto, 0, len(subs))
 	for _, sub := range subs {
-		var gradeDto *SubmissionGradeDto
-		if sub.Grade != nil {
-			gradeDto = &SubmissionGradeDto{
-				Score:              sub.Grade.Score,
-				Feedback:           sub.Grade.Feedback,
-				IsVisibleToStudent: sub.Grade.IsVisibleToStudent,
-				GradedAt:           sub.Grade.UpdatedAt,
-				ReleasedAt:         sub.Grade.ReleasedAt,
-			}
-		}
 		dtos = append(dtos, SubmissionDto{
 			Uuid:        sub.Uuid,
 			Attempt:     sub.Attempt,
@@ -800,7 +772,7 @@ func (s *SubmissionService) ListCourseAssignmentSubmissions(courseUuid, contentU
 			ContentType: sub.ContentType,
 			SubmittedAt: sub.SubmittedAt,
 			UserEmail:   sub.UserEmail,
-			Grade:       gradeDto,
+			Grade:       gradeToDto(sub.Grade),
 		})
 	}
 	return dtos, nil

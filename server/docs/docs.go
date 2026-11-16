@@ -709,7 +709,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Teacher or Admin only. Transitions all unreleased individual grades to visible and notifies students.",
+                "description": "Teacher or Admin only. Transitions all unreleased individual or group grades to visible and notifies students.",
                 "produces": [
                     "application/json"
                 ],
@@ -1274,7 +1274,7 @@ const docTemplate = `{
                 "tags": [
                     "grade"
                 ],
-                "summary": "Grade or update an individual submission",
+                "summary": "Grade or update an individual or group submission",
                 "parameters": [
                     {
                         "type": "string",
@@ -4082,7 +4082,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Teacher or Admin only. Returns latest ungraded individual submissions across courses taught by caller.",
+                "description": "Teacher or Admin only. Returns latest ungraded individual and group submissions across courses taught by caller.",
                 "produces": [
                     "application/json"
                 ],
@@ -6034,11 +6034,23 @@ const docTemplate = `{
                 "deadline": {
                     "type": "string"
                 },
+                "groupName": {
+                    "type": "string"
+                },
+                "isGroup": {
+                    "type": "boolean"
+                },
                 "isLate": {
                     "type": "boolean"
                 },
                 "maxPoints": {
                     "type": "number"
+                },
+                "memberEmails": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "submissionUuid": {
                     "type": "string"
@@ -6114,6 +6126,12 @@ const docTemplate = `{
                 },
                 "gradedAt": {
                     "type": "string"
+                },
+                "groupName": {
+                    "type": "string"
+                },
+                "isGroup": {
+                    "type": "boolean"
                 },
                 "maxPoints": {
                     "type": "number"
