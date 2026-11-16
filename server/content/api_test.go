@@ -134,7 +134,7 @@ func (m *mockContentService) GetAssignmentByModule(moduleUuid uuid.UUID) (*conte
 }
 
 func (m *mockContentService) CreateHandin(courseUuid, moduleUuid uuid.UUID, title string, deadline *time.Time, lateAllowed, groupAllowed bool, maxPoints *float64) (*content.Content, error) {
-	mp := 100.0
+	mp := content.DefaultHandinMaxPoints
 	if maxPoints != nil && *maxPoints > 0 {
 		mp = *maxPoints
 	}
@@ -156,7 +156,7 @@ func (m *mockContentService) UpdateHandin(courseUuid, moduleUuid, assignmentUuid
 	if m.updateHandinErr != nil {
 		return nil, m.updateHandinErr
 	}
-	mp := 100.0
+	mp := content.DefaultHandinMaxPoints
 	if maxPoints != nil && *maxPoints > 0 {
 		mp = *maxPoints
 	}

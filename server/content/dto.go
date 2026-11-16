@@ -106,7 +106,7 @@ func (HandinDto) FromModel(cnt *Content) HandinDto {
 		dto.AllowsGroupSubmission = cnt.Assignment.AllowsGroupSubmission
 		dto.MaxPoints = cnt.Assignment.MaxPoints
 		if dto.MaxPoints <= 0 {
-			dto.MaxPoints = 100
+			dto.MaxPoints = DefaultHandinMaxPoints
 		}
 	}
 	return dto

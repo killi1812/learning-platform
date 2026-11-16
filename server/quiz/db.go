@@ -537,7 +537,7 @@ func (s *QuizService) ListAssignments(courseUuid, userUuid uuid.UUID, isTeacher 
 		if cnt.Assignment.Type == content.AssignmentHandIn {
 			maxPts := cnt.Assignment.MaxPoints
 			if maxPts <= 0 {
-				maxPts = 100
+				maxPts = content.DefaultHandinMaxPoints
 			}
 			dto := AssignmentDto{
 				Uuid:                   cnt.Uuid.String(),

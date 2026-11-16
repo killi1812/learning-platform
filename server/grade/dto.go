@@ -40,6 +40,9 @@ type PendingSubmissionDto struct {
 	AssignmentTitle string     `json:"assignmentTitle"`
 	UserEmail       string     `json:"userEmail"`
 	UserName        string     `json:"userName,omitempty"`
+	IsGroup         bool       `json:"isGroup"`
+	GroupName       string     `json:"groupName,omitempty"`
+	MemberEmails    []string   `json:"memberEmails,omitempty"`
 	Attempt         int        `json:"attempt"`
 	IsLate          bool       `json:"isLate"`
 	SubmittedAt     time.Time  `json:"submittedAt"`
@@ -64,6 +67,8 @@ type StudentGradeDto struct {
 	CourseCode      string           `json:"courseCode"`
 	ModuleTitle     string           `json:"moduleTitle"`
 	AssignmentTitle string           `json:"assignmentTitle"`
+	IsGroup         bool             `json:"isGroup"`
+	GroupName       string           `json:"groupName,omitempty"`
 	Attempt         int              `json:"attempt"`
 	Score           float64          `json:"score"`
 	MaxPoints       float64          `json:"maxPoints"`

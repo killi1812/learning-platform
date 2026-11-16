@@ -7,7 +7,10 @@ import (
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/content"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/course"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/grade"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/notification"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/quiz"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/submission"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/testutil"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/util/authutils"
@@ -300,5 +303,67 @@ func TestSeedInsert(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Len(t, teachers, 3)
 		assert.Equal(t, "teacher1@example.com", teachers[0].Email)
+	})
+
+	t.Run("seedGrades seeds individual and group submissions idempotently", func(t *testing.T) {
+		db := testutil.NewSqliteTestDb(t,
+			&user.User{},
+			&course.Course{},
+			&course.Enrollment{},
+			&course.Group{},
+			&course.Module{},
+			&content.Content{},
+			&content.Assignment{},
+			&content.File{},
+			&quiz.Attempt{},
+			&submission.IndividualSubmission{},
+			&submission.GroupSubmission{},
+			&grade.Grade{},
+			&notification.Notification{},
+		)
+
+		app.Test()
+		app.Provide(func() *gorm.DB { return db })
+		app.Provide(zap.S)
+		app.Provide(func() storage.IStorageService { return storage.NewMemoryStorageService() })
+		app.Provide(notification.NewHub)
+		app.Provide(notification.NewNotificationService)
+		app.Provide(notification.NewNotifier)
+		app.Provide(user.NewUserCrudService)
+		app.Provide(course.NewCourseService)
+		app.Provide(course.NewGroupService)
+		app.Provide(content.NewContentService)
+
+		teachers, err := seedTeachers()
+		assert.NoError(t, err)
+		students, err := seedStudents()
+		assert.NoError(t, err)
+		courses, err := seedCourses(teachers)
+		assert.NoError(t, err)
+		_, err = seedEnrollments(courses, teachers, students)
+		assert.NoError(t, err)
+		_, err = seedGroups(courses, students)
+		assert.NoError(t, err)
+		modules, err := seedModules(courses)
+		assert.NoError(t, err)
+		assignments, err := seedAssignments(modules)
+		assert.NoError(t, err)
+
+		err = seedGrades(assignments, teachers, students)
+		assert.NoError(t, err)
+
+		var indCount, grpCount, gradeCount int64
+		db.Model(&submission.IndividualSubmission{}).Count(&indCount)
+		db.Model(&submission.GroupSubmission{}).Count(&grpCount)
+		db.Model(&grade.Grade{}).Count(&gradeCount)
+		assert.Equal(t, int64(2), indCount)
+		assert.Equal(t, int64(1), grpCount)
+		assert.Equal(t, int64(1), gradeCount)
+
+		// Second call is idempotent
+		err = seedGrades(assignments, teachers, students)
+		assert.NoError(t, err)
+		db.Model(&submission.GroupSubmission{}).Count(&grpCount)
+		assert.Equal(t, int64(1), grpCount)
 	})
 }

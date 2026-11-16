@@ -30,8 +30,9 @@
 
     <v-card-actions class="pa-4 bg-surface-variant d-flex justify-space-between">
       <slot name="actions">
-        <span class="text-caption text-medium-emphasis"> {{ course.term }} {{ course.year }} </span>
-
+        <span class="text-caption text-on-surface-variant">
+          {{ course.term }} {{ course.year }}
+        </span>
         <span class="text-button text-primary font-weight-medium">Open Course</span>
       </slot>
     </v-card-actions>

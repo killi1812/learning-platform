@@ -6,12 +6,7 @@
         <p class="text-body-2 text-medium-emphasis mt-1">Your active courses overview</p>
       </div>
 
-      <v-btn
-        color="primary"
-        prepend-icon="mdi-compass-outline"
-        to="/courses/catalog"
-        variant="tonal"
-      >
+      <v-btn color="primary" prepend-icon="mdi-compass-outline" to="/catalog" variant="tonal">
         Browse Catalog
       </v-btn>
     </div>

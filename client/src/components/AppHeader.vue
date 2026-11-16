@@ -8,16 +8,12 @@
         @click="theme.cycle()"
       />
 
-      <template v-if="isAuthenticated">
-        <NotificationBell />
+      <NotificationBell />
 
-        <v-chip class="mr-2 font-weight-medium" variant="tonal">
-          <v-icon icon="mdi-account" start />
-          {{ currentUser?.username || 'User' }}
-        </v-chip>
-      </template>
-
-      <v-btn v-else prepend-icon="mdi-login" to="/login" variant="tonal">Sign In</v-btn>
+      <v-chip class="mr-2 font-weight-medium" variant="tonal">
+        <v-icon icon="mdi-account" start />
+        {{ currentUser?.username }}
+      </v-chip>
     </template>
   </v-app-bar>
 </template>
@@ -28,5 +24,5 @@ import NotificationBell from '@/components/NotificationBell.vue'
 import { useAuth } from '@/composables/useAuth'
 
 const theme = useTheme()
-const { isAuthenticated, currentUser } = useAuth()
+const { currentUser } = useAuth()
 </script>

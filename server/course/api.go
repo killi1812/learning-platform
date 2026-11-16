@@ -32,14 +32,10 @@ func NewCourseCtn(courseService ICourseService, logger *zap.SugaredLogger, userS
 }
 
 func (ctn *CourseCtn) RegisterEndpoints(api *gin.RouterGroup) {
-	courses := api.Group("/course")
-	courses.Use(authutils.Protect())
-
 	group := api.Group("/group")
 	group.Use(authutils.Protect())
 
 	// Group routes
-	courses.GET("/:uuid/group", ctn.listCourseGroups)
 	group.POST("", ctn.CreateGroup)
 	group.POST("/bulk", ctn.BulkCreateGroups)
 	group.GET("/:uuid", ctn.GetGroup)
@@ -48,16 +44,17 @@ func (ctn *CourseCtn) RegisterEndpoints(api *gin.RouterGroup) {
 	group.POST("/join/:uuid", ctn.AddStudentToGroup)
 	group.PATCH("/leave/:uuid", ctn.StudentLeavesGroup)
 
-	// Course catalog routes (match both /course and /course/)
+	courses := api.Group("/course")
+	courses.Use(authutils.Protect())
+
 	courses.GET("", ctn.list)
-	courses.GET("/", ctn.list)
 	courses.GET("/:uuid", ctn.get)
 	courses.GET("/:uuid/module", ctn.listModules)
 	courses.GET("/:uuid/module/:moduleUuid", ctn.getModule)
+	courses.GET("/:uuid/group", ctn.listCourseGroups)
 
 	courses.GET("/my-course", ctn.getMyCourses)
 	courses.POST("", ctn.create)
-	courses.POST("/", ctn.create)
 	courses.PUT("/:uuid", ctn.update)
 	courses.DELETE("/:uuid", ctn.delete)
 

@@ -33,7 +33,7 @@
           <tr>
             <th class="text-left font-weight-bold">Course</th>
             <th class="text-left font-weight-bold">Assignment</th>
-            <th class="text-left font-weight-bold">Student</th>
+            <th class="text-left font-weight-bold">Student / Group</th>
             <th class="text-center font-weight-bold">Attempt</th>
             <th class="text-left font-weight-bold">Submitted</th>
             <th class="text-center font-weight-bold">Timing</th>
@@ -50,11 +50,28 @@
               <div class="font-weight-medium">{{ item.assignmentTitle }}</div>
               <div class="text-caption text-medium-emphasis">Max: {{ item.maxPoints }} pts</div>
             </td>
-            <td>
-              <div class="text-body-2">{{ item.userEmail }}</div>
-              <div v-if="item.userName" class="text-caption text-medium-emphasis">
-                {{ item.userName }}
-              </div>
+            <td class="py-2">
+              <template v-if="item.isGroup">
+                <div class="d-flex align-center ga-1">
+                  <v-chip color="info" size="x-small" variant="tonal">
+                    <v-icon icon="mdi-account-group" size="x-small" start />
+                    {{ item.groupName || 'Group' }}
+                  </v-chip>
+                  <span class="text-caption text-medium-emphasis">by {{ item.userEmail }}</span>
+                </div>
+                <div
+                  v-if="item.memberEmails?.length"
+                  class="text-caption text-medium-emphasis mt-1"
+                >
+                  Members: {{ item.memberEmails.join(', ') }}
+                </div>
+              </template>
+              <template v-else>
+                <div class="text-body-2">{{ item.userEmail }}</div>
+                <div v-if="item.userName" class="text-caption text-medium-emphasis">
+                  {{ item.userName }}
+                </div>
+              </template>
             </td>
             <td class="text-center">
               <v-chip color="primary" size="x-small" variant="flat"> #{{ item.attempt }} </v-chip>
@@ -89,7 +106,9 @@
       :attempt="gradingItem?.attempt"
       :content-uuid="gradingItem?.contentUuid || ''"
       :course-uuid="gradingItem?.courseUuid || ''"
-      :max-points="gradingItem?.maxPoints || 100"
+      :group-name="gradingItem?.groupName"
+      :max-points="gradingItem?.maxPoints || DEFAULT_HANDIN_MAX_POINTS"
+      :member-emails="gradingItem?.memberEmails"
       :student-email="gradingItem?.userEmail"
       :submission-uuid="gradingItem?.submissionUuid || ''"
       @saved="onGradeSaved"
@@ -103,6 +122,7 @@ import type { PendingSubmissionDto } from '@/types/grade'
 import { computed, ref } from 'vue'
 import GradeDialog from '@/components/GradeDialog.vue'
 import { formatDateTime } from '@/util/dateTime'
+import { DEFAULT_HANDIN_MAX_POINTS } from '@/util/grading'
 
 interface Props {
   gradingCourses: readonly Course[]

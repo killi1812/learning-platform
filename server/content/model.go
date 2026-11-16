@@ -73,6 +73,9 @@ type File struct {
 	RichText    string   `json:"richText,omitempty" gorm:"type:text"`
 }
 
+// DefaultHandinMaxPoints is the default maximum score for a hand-in assignment.
+const DefaultHandinMaxPoints = 5.0
+
 // Assignment is the base for every submittable content item (hand-ins, quizzes, coding exercises).
 type Assignment struct {
 	ContentID              uint           `json:"contentId" gorm:"primaryKey;autoIncrement:false"`
@@ -81,7 +84,7 @@ type Assignment struct {
 	Deadline               *time.Time     `json:"deadline,omitempty"`
 	AllowsGroupSubmission  bool           `json:"allowsGroupSubmission" gorm:"not null;default:false"`
 	AcceptsLateSubmissions bool           `json:"acceptsLateSubmissions" gorm:"not null;default:false"`
-	MaxPoints              float64        `json:"maxPoints" gorm:"type:decimal(5,2);not null;default:100"`
+	MaxPoints              float64        `json:"maxPoints" gorm:"type:decimal(5,2);not null;default:5"`
 
 	// 1-to-1 extension relations for Class Table Inheritance (HANDIN has no subtype extension table)
 	Quiz           *Quiz           `json:"quiz,omitempty" gorm:"foreignKey:ContentID;references:ContentID;constraint:OnDelete:CASCADE;"`

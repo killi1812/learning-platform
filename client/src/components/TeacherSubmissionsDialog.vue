@@ -18,7 +18,7 @@
         <span>{{ submissions.length }} total submissions recorded</span>
         <div class="d-flex align-center ga-2">
           <v-btn
-            v-if="!isGroupAssignment && submissions.length > 0"
+            v-if="submissions.length > 0"
             color="primary"
             density="compact"
             :loading="releasing"
@@ -126,21 +126,12 @@
                   </v-chip>
                 </td>
                 <td class="text-center py-2">
-                  <template v-if="sub.isGroup">
-                    <v-chip
-                      color="secondary"
-                      size="x-small"
-                      title="Group grading coming in a future update"
-                      variant="outlined"
-                    >
-                      Group (Ungraded)
-                    </v-chip>
-                  </template>
-                  <template v-else-if="sub.grade">
+                  <template v-if="sub.grade">
                     <div class="d-flex flex-column align-center ga-1">
                       <div class="d-flex align-center ga-1">
                         <v-chip color="primary" size="x-small" variant="flat">
-                          {{ sub.grade.score }} / {{ assignment?.maxPoints || 100 }}
+                          {{ sub.grade.score }} /
+                          {{ assignment?.maxPoints || DEFAULT_HANDIN_MAX_POINTS }}
                         </v-chip>
                         <v-chip
                           :color="sub.grade.isVisibleToStudent ? 'success' : 'warning'"
@@ -223,10 +214,12 @@
       :attempt="selectedSubForGrading?.attempt"
       :content-uuid="assignment?.uuid || ''"
       :course-uuid="courseUuid"
+      :group-name="selectedSubForGrading?.groupName"
       :initial-feedback="selectedSubForGrading?.grade?.feedback"
       :initial-score="selectedSubForGrading?.grade?.score"
       :initial-visible="selectedSubForGrading?.grade?.isVisibleToStudent ?? true"
-      :max-points="assignment?.maxPoints || 100"
+      :max-points="assignment?.maxPoints || DEFAULT_HANDIN_MAX_POINTS"
+      :member-emails="selectedSubForGrading?.memberEmails"
       :student-email="selectedSubForGrading?.userEmail"
       :submission-uuid="selectedSubForGrading?.uuid || ''"
       @saved="onGradeSaved"
@@ -246,6 +239,7 @@ import GradeDialog from '@/components/GradeDialog.vue'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
 import { formatDateTime } from '@/util/dateTime'
+import { DEFAULT_HANDIN_MAX_POINTS } from '@/util/grading'
 import { isSafeHttpUrl } from '@/util/url'
 
 const open = defineModel<boolean>({ required: true })

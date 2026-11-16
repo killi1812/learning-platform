@@ -126,7 +126,7 @@ func (s *ContentService) CreateAssignment(moduleUuid uuid.UUID, cnt *Content, as
 	cnt.ModuleID = m.ID
 	cnt.Type = TypeAssignment
 	if asgn.MaxPoints == 0 {
-		asgn.MaxPoints = 100
+		asgn.MaxPoints = DefaultHandinMaxPoints
 	} else if err := validateMaxPoints(asgn.MaxPoints); err != nil {
 		return nil, err
 	}
@@ -520,7 +520,7 @@ func (s *ContentService) CreateHandin(courseUuid, moduleUuid uuid.UUID, title st
 		Type:     TypeAssignment,
 	}
 
-	mp := 100.0
+	mp := DefaultHandinMaxPoints
 	if maxPoints != nil {
 		if err := validateMaxPoints(*maxPoints); err != nil {
 			return nil, err
@@ -607,15 +607,20 @@ func (s *ContentService) UpdateHandin(courseUuid, moduleUuid, assignmentUuid uui
 			}
 
 			if maxPoints != nil {
-				var highestGradeScore float64
-				row := tx.Table("grades").
+				var highestIndScore, highestGrpScore float64
+				if err := tx.Table("grades").
 					Joins("JOIN individual_submissions ON individual_submissions.id = grades.individual_submission_id").
 					Where("individual_submissions.content_id = ? AND grades.deleted_at IS NULL AND individual_submissions.deleted_at IS NULL", cnt.ID).
-					Select("COALESCE(MAX(grades.score), 0)").Row()
-				if err := row.Scan(&highestGradeScore); err != nil {
+					Select("COALESCE(MAX(grades.score), 0)").Row().Scan(&highestIndScore); err != nil {
 					return err
 				}
-				if highestGradeScore > *maxPoints {
+				if err := tx.Table("grades").
+					Joins("JOIN group_submissions ON group_submissions.id = grades.group_submission_id").
+					Where("group_submissions.content_id = ? AND grades.deleted_at IS NULL AND group_submissions.deleted_at IS NULL", cnt.ID).
+					Select("COALESCE(MAX(grades.score), 0)").Row().Scan(&highestGrpScore); err != nil {
+					return err
+				}
+				if math.Max(highestIndScore, highestGrpScore) > *maxPoints {
 					return ErrMaxPointsBelowExistingGrade
 				}
 				cnt.Assignment.MaxPoints = *maxPoints

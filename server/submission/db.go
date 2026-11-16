@@ -51,6 +51,11 @@ type SubmissionTarget struct {
 	Members      []GroupMember
 }
 
+// IGradeLookup resolves grade summaries for submissions without importing the grade package.
+type IGradeLookup interface {
+	GetSubmissionGrades(submissionIDs []uint, isGroup bool, visibleOnly bool) (map[uint]*SubmissionGradeDto, error)
+}
+
 // ISubmissionService provides domain validation and database persistence for submissions.
 type ISubmissionService interface {
 	ResolveTarget(courseUuid, contentUuid, userUuid uuid.UUID, submittedAt time.Time) (*SubmissionTarget, error)
@@ -71,14 +76,16 @@ type ISubmissionService interface {
 type SubmissionService struct {
 	db            *gorm.DB
 	notifications notification.INotifier
+	gradeLookup   IGradeLookup
 	logger        *zap.SugaredLogger
 }
 
 // NewSubmissionService constructs a new SubmissionService.
-func NewSubmissionService(db *gorm.DB, notifications notification.INotifier, logger *zap.SugaredLogger) ISubmissionService {
+func NewSubmissionService(db *gorm.DB, notifications notification.INotifier, gradeLookup IGradeLookup, logger *zap.SugaredLogger) ISubmissionService {
 	return &SubmissionService{
 		db:            db,
 		notifications: notifications,
+		gradeLookup:   gradeLookup,
 		logger:        logger,
 	}
 }
@@ -606,6 +613,83 @@ func (s *SubmissionService) NotifySubmissionFailed(userUuid, courseUuid uuid.UUI
 	}
 }
 
+func (s *SubmissionService) groupSubmissionsToDtos(grpSubs []GroupSubmission, visibleOnly bool) ([]SubmissionDto, error) {
+	if len(grpSubs) == 0 {
+		return []SubmissionDto{}, nil
+	}
+
+	subIDs := make([]uint, 0, len(grpSubs))
+	for _, sub := range grpSubs {
+		subIDs = append(subIDs, sub.ID)
+	}
+	gradesBySubID, err := s.gradeLookup.GetSubmissionGrades(subIDs, true, visibleOnly)
+	if err != nil {
+		return nil, err
+	}
+
+	dtos := make([]SubmissionDto, 0, len(grpSubs))
+	for _, sub := range grpSubs {
+		var memberEmails []string
+		for _, m := range sub.Members {
+			memberEmails = append(memberEmails, m.Email)
+		}
+		groupName := ""
+		if sub.Group != nil {
+			groupName = sub.Group.Name
+		}
+		dtos = append(dtos, SubmissionDto{
+			Uuid:         sub.Uuid,
+			Attempt:      sub.Attempt,
+			IsLate:       sub.IsLate,
+			PayloadType:  sub.PayloadType,
+			PayloadURL:   sub.PayloadURL,
+			FileName:     sub.FileName,
+			FileSize:     sub.FileSize,
+			ContentType:  sub.ContentType,
+			SubmittedAt:  sub.SubmittedAt,
+			UserEmail:    sub.UserEmail,
+			IsGroup:      true,
+			GroupName:    groupName,
+			MemberEmails: memberEmails,
+			Grade:        gradesBySubID[sub.ID],
+		})
+	}
+	return dtos, nil
+}
+
+func (s *SubmissionService) individualSubmissionsToDtos(subs []IndividualSubmission, visibleOnly bool) ([]SubmissionDto, error) {
+	if len(subs) == 0 {
+		return []SubmissionDto{}, nil
+	}
+
+	subIDs := make([]uint, 0, len(subs))
+	for _, sub := range subs {
+		subIDs = append(subIDs, sub.ID)
+	}
+	gradesBySubID, err := s.gradeLookup.GetSubmissionGrades(subIDs, false, visibleOnly)
+	if err != nil {
+		return nil, err
+	}
+
+	dtos := make([]SubmissionDto, 0, len(subs))
+	for _, sub := range subs {
+		dtos = append(dtos, SubmissionDto{
+			Uuid:        sub.Uuid,
+			Attempt:     sub.Attempt,
+			IsLate:      sub.IsLate,
+			PayloadType: sub.PayloadType,
+			PayloadURL:  sub.PayloadURL,
+			FileName:    sub.FileName,
+			FileSize:    sub.FileSize,
+			ContentType: sub.ContentType,
+			SubmittedAt: sub.SubmittedAt,
+			UserEmail:   sub.UserEmail,
+			Grade:       gradesBySubID[sub.ID],
+		})
+	}
+	return dtos, nil
+}
+
 // ListMySubmissions returns all submissions for a student on a specific assignment.
 func (s *SubmissionService) ListMySubmissions(courseUuid, contentUuid, userUuid uuid.UUID) ([]SubmissionDto, error) {
 	var u user.User
@@ -641,73 +725,18 @@ func (s *SubmissionService) ListMySubmissions(courseUuid, contentUuid, userUuid 
 		if err != nil {
 			return nil, err
 		}
-
-		dtos := make([]SubmissionDto, 0, len(grpSubs))
-		for _, sub := range grpSubs {
-			var memberEmails []string
-			for _, m := range sub.Members {
-				memberEmails = append(memberEmails, m.Email)
-			}
-			groupName := ""
-			if sub.Group != nil {
-				groupName = sub.Group.Name
-			}
-			dtos = append(dtos, SubmissionDto{
-				Uuid:         sub.Uuid,
-				Attempt:      sub.Attempt,
-				IsLate:       sub.IsLate,
-				PayloadType:  sub.PayloadType,
-				PayloadURL:   sub.PayloadURL,
-				FileName:     sub.FileName,
-				FileSize:     sub.FileSize,
-				ContentType:  sub.ContentType,
-				SubmittedAt:  sub.SubmittedAt,
-				UserEmail:    sub.UserEmail,
-				IsGroup:      true,
-				GroupName:    groupName,
-				MemberEmails: memberEmails,
-			})
-		}
-		return dtos, nil
+		return s.groupSubmissionsToDtos(grpSubs, true)
 	}
 
 	var subs []IndividualSubmission
 	err = s.db.
-		Preload("Grade", "is_visible_to_student = ?", true).
 		Where("content_id = ? AND user_id = ?", cnt.ID, u.ID).
 		Order("attempt DESC").
 		Find(&subs).Error
 	if err != nil {
 		return nil, err
 	}
-
-	dtos := make([]SubmissionDto, 0, len(subs))
-	for _, sub := range subs {
-		var gradeDto *SubmissionGradeDto
-		if sub.Grade != nil {
-			gradeDto = &SubmissionGradeDto{
-				Score:              sub.Grade.Score,
-				Feedback:           sub.Grade.Feedback,
-				IsVisibleToStudent: sub.Grade.IsVisibleToStudent,
-				GradedAt:           sub.Grade.UpdatedAt,
-				ReleasedAt:         sub.Grade.ReleasedAt,
-			}
-		}
-		dtos = append(dtos, SubmissionDto{
-			Uuid:        sub.Uuid,
-			Attempt:     sub.Attempt,
-			IsLate:      sub.IsLate,
-			PayloadType: sub.PayloadType,
-			PayloadURL:  sub.PayloadURL,
-			FileName:    sub.FileName,
-			FileSize:    sub.FileSize,
-			ContentType: sub.ContentType,
-			SubmittedAt: sub.SubmittedAt,
-			UserEmail:   sub.UserEmail,
-			Grade:       gradeDto,
-		})
-	}
-	return dtos, nil
+	return s.individualSubmissionsToDtos(subs, true)
 }
 
 // ListCourseAssignmentSubmissions returns all submissions for an assignment (for instructors).
@@ -737,73 +766,18 @@ func (s *SubmissionService) ListCourseAssignmentSubmissions(courseUuid, contentU
 		if err != nil {
 			return nil, err
 		}
-
-		dtos := make([]SubmissionDto, 0, len(grpSubs))
-		for _, sub := range grpSubs {
-			var memberEmails []string
-			for _, m := range sub.Members {
-				memberEmails = append(memberEmails, m.Email)
-			}
-			groupName := ""
-			if sub.Group != nil {
-				groupName = sub.Group.Name
-			}
-			dtos = append(dtos, SubmissionDto{
-				Uuid:         sub.Uuid,
-				Attempt:      sub.Attempt,
-				IsLate:       sub.IsLate,
-				PayloadType:  sub.PayloadType,
-				PayloadURL:   sub.PayloadURL,
-				FileName:     sub.FileName,
-				FileSize:     sub.FileSize,
-				ContentType:  sub.ContentType,
-				SubmittedAt:  sub.SubmittedAt,
-				UserEmail:    sub.UserEmail,
-				IsGroup:      true,
-				GroupName:    groupName,
-				MemberEmails: memberEmails,
-			})
-		}
-		return dtos, nil
+		return s.groupSubmissionsToDtos(grpSubs, false)
 	}
 
 	var subs []IndividualSubmission
 	err = s.db.
-		Preload("Grade").
 		Where("content_id = ?", cnt.ID).
 		Order("submitted_at DESC").
 		Find(&subs).Error
 	if err != nil {
 		return nil, err
 	}
-
-	dtos := make([]SubmissionDto, 0, len(subs))
-	for _, sub := range subs {
-		var gradeDto *SubmissionGradeDto
-		if sub.Grade != nil {
-			gradeDto = &SubmissionGradeDto{
-				Score:              sub.Grade.Score,
-				Feedback:           sub.Grade.Feedback,
-				IsVisibleToStudent: sub.Grade.IsVisibleToStudent,
-				GradedAt:           sub.Grade.UpdatedAt,
-				ReleasedAt:         sub.Grade.ReleasedAt,
-			}
-		}
-		dtos = append(dtos, SubmissionDto{
-			Uuid:        sub.Uuid,
-			Attempt:     sub.Attempt,
-			IsLate:      sub.IsLate,
-			PayloadType: sub.PayloadType,
-			PayloadURL:  sub.PayloadURL,
-			FileName:    sub.FileName,
-			FileSize:    sub.FileSize,
-			ContentType: sub.ContentType,
-			SubmittedAt: sub.SubmittedAt,
-			UserEmail:   sub.UserEmail,
-			Grade:       gradeDto,
-		})
-	}
-	return dtos, nil
+	return s.individualSubmissionsToDtos(subs, false)
 }
 
 // GetSubmissionForDownload retrieves a submission and verifies download access authorization.

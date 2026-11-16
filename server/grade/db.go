@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"sort"
 	"time"
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/content"
@@ -20,14 +21,13 @@ import (
 )
 
 var (
-	ErrSubmissionNotFound       = errors.New("submission not found")
-	ErrScoreOutOfRange          = errors.New("score exceeds assignment max points")
-	ErrNotHandin                = errors.New("only hand-in assignments can be graded manually")
-	ErrGroupGradingNotSupported = errors.New("group assignment grading is not supported yet")
-	ErrContentNotFound          = errors.New("assignment not found")
-	ErrGraderNotFound           = errors.New("grader user not found")
-	ErrUserNotFound             = errors.New("user not found")
-	ErrNotTeacher               = errors.New("user is not a teacher")
+	ErrSubmissionNotFound = errors.New("submission not found")
+	ErrScoreOutOfRange    = errors.New("score exceeds assignment max points")
+	ErrNotHandin          = errors.New("only hand-in assignments can be graded manually")
+	ErrContentNotFound    = errors.New("assignment not found")
+	ErrGraderNotFound     = errors.New("grader user not found")
+	ErrUserNotFound       = errors.New("user not found")
+	ErrNotTeacher         = errors.New("user is not a teacher")
 )
 
 type userContentKey struct {
@@ -35,10 +35,16 @@ type userContentKey struct {
 	contentID uint
 }
 
+type submissionEntry struct {
+	sub   submission.Submission
+	grade *Grade
+}
+
 type courseScoreLookup struct {
 	quizBest         map[userContentKey]quiz.Attempt
 	quizAttemptCount map[userContentKey]int
-	handinSubs       map[userContentKey][]submission.IndividualSubmission
+	handinSubs       map[userContentKey][]submissionEntry
+	groupHandinSubs  map[userContentKey][]submissionEntry
 }
 
 func roundPercent2(pct float64) float64 {
@@ -66,25 +72,68 @@ func (s *GradeService) findUserByUUID(userUuid uuid.UUID) (*user.User, error) {
 	return &u, nil
 }
 
+func (s *GradeService) loadGradesBySubmissionID(subIDs []uint, isGroup bool, preloadGrader bool) (map[uint]*Grade, error) {
+	result := make(map[uint]*Grade, len(subIDs))
+	if len(subIDs) == 0 {
+		return result, nil
+	}
+
+	col := "individual_submission_id"
+	if isGroup {
+		col = "group_submission_id"
+	}
+
+	query := s.db.Where(col+" IN ?", subIDs)
+	if preloadGrader {
+		query = query.Preload("GradedBy")
+	}
+
+	var grades []Grade
+	if err := query.Find(&grades).Error; err != nil {
+		return nil, err
+	}
+	for i := range grades {
+		var key uint
+		if isGroup && grades[i].GroupSubmissionID != nil {
+			key = *grades[i].GroupSubmissionID
+		} else if !isGroup && grades[i].IndividualSubmissionID != nil {
+			key = *grades[i].IndividualSubmissionID
+		}
+		if key != 0 {
+			result[key] = &grades[i]
+		}
+	}
+	return result, nil
+}
+
 func (s *GradeService) buildCourseScoreLookup(studentIDs []uint, contents []content.Content, preloadGrader bool) (*courseScoreLookup, error) {
 	lookup := &courseScoreLookup{
 		quizBest:         make(map[userContentKey]quiz.Attempt),
 		quizAttemptCount: make(map[userContentKey]int),
-		handinSubs:       make(map[userContentKey][]submission.IndividualSubmission),
+		handinSubs:       make(map[userContentKey][]submissionEntry),
+		groupHandinSubs:  make(map[userContentKey][]submissionEntry),
 	}
 	if len(studentIDs) == 0 || len(contents) == 0 {
 		return lookup, nil
 	}
 
+	studentIDSet := make(map[uint]bool, len(studentIDs))
+	for _, id := range studentIDs {
+		studentIDSet[id] = true
+	}
+
 	var quizIDs []uint
 	var handinIDs []uint
+	var groupHandinIDs []uint
 	for _, cnt := range contents {
 		if !isCountedAssignment(cnt) {
 			continue
 		}
 		if cnt.Assignment.Type == content.AssignmentQuiz {
 			quizIDs = append(quizIDs, cnt.ID)
-		} else if !cnt.Assignment.AllowsGroupSubmission {
+		} else if cnt.Assignment.AllowsGroupSubmission {
+			groupHandinIDs = append(groupHandinIDs, cnt.ID)
+		} else {
 			handinIDs = append(handinIDs, cnt.ID)
 		}
 	}
@@ -106,15 +155,19 @@ func (s *GradeService) buildCourseScoreLookup(studentIDs []uint, contents []cont
 	}
 
 	if len(handinIDs) > 0 {
-		query := s.db.Preload("Grade")
-		if preloadGrader {
-			query = query.Preload("Grade.GradedBy")
-		}
 		var subs []submission.IndividualSubmission
-		if err := query.
+		if err := s.db.
 			Where("user_id IN ? AND content_id IN ?", studentIDs, handinIDs).
 			Order("attempt DESC").
 			Find(&subs).Error; err != nil {
+			return nil, err
+		}
+		indIDs := make([]uint, 0, len(subs))
+		for _, sub := range subs {
+			indIDs = append(indIDs, sub.ID)
+		}
+		gradesBySubID, err := s.loadGradesBySubmissionID(indIDs, false, preloadGrader)
+		if err != nil {
 			return nil, err
 		}
 		for _, sub := range subs {
@@ -122,11 +175,103 @@ func (s *GradeService) buildCourseScoreLookup(studentIDs []uint, contents []cont
 				continue
 			}
 			key := userContentKey{userID: *sub.UserID, contentID: sub.ContentID}
-			lookup.handinSubs[key] = append(lookup.handinSubs[key], sub)
+			lookup.handinSubs[key] = append(lookup.handinSubs[key], submissionEntry{
+				sub:   sub.Submission,
+				grade: gradesBySubID[sub.ID],
+			})
+		}
+	}
+
+	if len(groupHandinIDs) > 0 {
+		var grpSubs []submission.GroupSubmission
+		if err := s.db.Preload("Members").
+			Where("content_id IN ?", groupHandinIDs).
+			Order("attempt DESC").
+			Find(&grpSubs).Error; err != nil {
+			return nil, err
+		}
+		grpIDs := make([]uint, 0, len(grpSubs))
+		for _, sub := range grpSubs {
+			grpIDs = append(grpIDs, sub.ID)
+		}
+		gradesBySubID, err := s.loadGradesBySubmissionID(grpIDs, true, preloadGrader)
+		if err != nil {
+			return nil, err
+		}
+		for _, sub := range grpSubs {
+			entry := submissionEntry{
+				sub:   sub.Submission,
+				grade: gradesBySubID[sub.ID],
+			}
+			seen := make(map[uint]bool, len(sub.Members)+1)
+			for _, m := range sub.Members {
+				if studentIDSet[m.ID] && !seen[m.ID] {
+					seen[m.ID] = true
+					key := userContentKey{userID: m.ID, contentID: sub.ContentID}
+					lookup.groupHandinSubs[key] = append(lookup.groupHandinSubs[key], entry)
+				}
+			}
+			if sub.UserID != nil && studentIDSet[*sub.UserID] && !seen[*sub.UserID] {
+				key := userContentKey{userID: *sub.UserID, contentID: sub.ContentID}
+				lookup.groupHandinSubs[key] = append(lookup.groupHandinSubs[key], entry)
+			}
 		}
 	}
 
 	return lookup, nil
+}
+
+// GradeLookup implements submission.IGradeLookup so submission can hydrate grades without importing grade.
+type GradeLookup struct {
+	db *gorm.DB
+}
+
+// NewGradeLookup constructs a submission.IGradeLookup backed by GORM.
+func NewGradeLookup(db *gorm.DB) submission.IGradeLookup {
+	return &GradeLookup{db: db}
+}
+
+// GetSubmissionGrades resolves grade summaries keyed by individual or group submission ID.
+func (l *GradeLookup) GetSubmissionGrades(submissionIDs []uint, isGroup bool, visibleOnly bool) (map[uint]*submission.SubmissionGradeDto, error) {
+	result := make(map[uint]*submission.SubmissionGradeDto, len(submissionIDs))
+	if len(submissionIDs) == 0 {
+		return result, nil
+	}
+
+	col := "individual_submission_id"
+	if isGroup {
+		col = "group_submission_id"
+	}
+
+	query := l.db.Where(col+" IN ?", submissionIDs)
+	if visibleOnly {
+		query = query.Where("is_visible_to_student = ?", true)
+	}
+
+	var grades []Grade
+	if err := query.Find(&grades).Error; err != nil {
+		return nil, err
+	}
+
+	for i := range grades {
+		g := &grades[i]
+		var key uint
+		if isGroup && g.GroupSubmissionID != nil {
+			key = *g.GroupSubmissionID
+		} else if !isGroup && g.IndividualSubmissionID != nil {
+			key = *g.IndividualSubmissionID
+		}
+		if key != 0 {
+			result[key] = &submission.SubmissionGradeDto{
+				Score:              g.Score,
+				Feedback:           g.Feedback,
+				IsVisibleToStudent: g.IsVisibleToStudent,
+				GradedAt:           g.UpdatedAt,
+				ReleasedAt:         g.ReleasedAt,
+			}
+		}
+	}
+	return result, nil
 }
 
 type IGradeService interface {
@@ -153,7 +298,7 @@ func NewGradeService(db *gorm.DB, notifications notification.INotifier, logger *
 	}
 }
 
-// UpsertGrade creates or updates a manual grade for an individual submission.
+// UpsertGrade creates or updates a manual grade for an individual or group submission.
 func (s *GradeService) UpsertGrade(courseUuid, contentUuid, submissionUuid, graderUuid uuid.UUID, dto UpsertGradeDto) (*GradeDto, error) {
 	var grader user.User
 	if err := s.db.Where("uuid = ?", graderUuid).First(&grader).Error; err != nil {
@@ -180,37 +325,69 @@ func (s *GradeService) UpsertGrade(courseUuid, contentUuid, submissionUuid, grad
 	if cnt.Assignment == nil || cnt.Assignment.Type != content.AssignmentHandIn {
 		return nil, ErrNotHandin
 	}
-	if cnt.Assignment.AllowsGroupSubmission {
-		return nil, ErrGroupGradingNotSupported
-	}
 
-	var indSub submission.IndividualSubmission
-	err = s.db.
-		Where("uuid = ? AND content_id = ?", submissionUuid, cnt.ID).
-		First(&indSub).Error
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			// Check if target is a group submission to return precise error
-			var grpSub submission.GroupSubmission
-			if gErr := s.db.Where("uuid = ? AND content_id = ?", submissionUuid, cnt.ID).First(&grpSub).Error; gErr == nil {
-				return nil, ErrGroupGradingNotSupported
+	isGroup := cnt.Assignment.AllowsGroupSubmission
+	var targetSubID uint
+	var filterCol string
+	var recipientUuids []uuid.UUID
+
+	if isGroup {
+		var grpSub submission.GroupSubmission
+		err = s.db.
+			Preload("Members").
+			Where("uuid = ? AND content_id = ?", submissionUuid, cnt.ID).
+			First(&grpSub).Error
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, ErrSubmissionNotFound
 			}
-			return nil, ErrSubmissionNotFound
+			return nil, err
 		}
-		return nil, err
-	}
+		targetSubID = grpSub.ID
+		filterCol = "group_submission_id"
 
-	var studentUuid uuid.UUID
-	if indSub.UserID != nil {
-		var student user.User
-		if err := s.db.Select("uuid").Where("id = ?", *indSub.UserID).First(&student).Error; err == nil {
-			studentUuid = student.Uuid
+		seen := make(map[uuid.UUID]bool, len(grpSub.Members)+1)
+		for _, m := range grpSub.Members {
+			if m.Uuid != uuid.Nil && !seen[m.Uuid] {
+				seen[m.Uuid] = true
+				recipientUuids = append(recipientUuids, m.Uuid)
+			}
+		}
+		if grpSub.UserID != nil {
+			var submitter user.User
+			if err := s.db.Select("uuid").Where("id = ?", *grpSub.UserID).First(&submitter).Error; err == nil {
+				if submitter.Uuid != uuid.Nil && !seen[submitter.Uuid] {
+					recipientUuids = append(recipientUuids, submitter.Uuid)
+				}
+			}
+		}
+	} else {
+		var indSub submission.IndividualSubmission
+		err = s.db.
+			Where("uuid = ? AND content_id = ?", submissionUuid, cnt.ID).
+			First(&indSub).Error
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, ErrSubmissionNotFound
+			}
+			return nil, err
+		}
+		targetSubID = indSub.ID
+		filterCol = "individual_submission_id"
+
+		if indSub.UserID != nil {
+			var student user.User
+			if err := s.db.Select("uuid").Where("id = ?", *indSub.UserID).First(&student).Error; err == nil {
+				if student.Uuid != uuid.Nil {
+					recipientUuids = append(recipientUuids, student.Uuid)
+				}
+			}
 		}
 	}
 
 	now := time.Now()
 	var shouldNotify bool
-	var savedGrade submission.Grade
+	var savedGrade Grade
 	var maxPoints float64
 
 	err = s.db.Transaction(func(tx *gorm.DB) error {
@@ -221,15 +398,15 @@ func (s *GradeService) UpsertGrade(courseUuid, contentUuid, submissionUuid, grad
 		}
 		maxPoints = lockedAsgn.MaxPoints
 		if maxPoints <= 0 {
-			maxPoints = 100
+			maxPoints = content.DefaultHandinMaxPoints
 		}
 		if math.IsNaN(*dto.Score) || *dto.Score < 0 || *dto.Score > maxPoints {
 			return ErrScoreOutOfRange
 		}
 
-		var existing submission.Grade
+		var existing Grade
 		findErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("individual_submission_id = ?", indSub.ID).
+			Where(filterCol+" = ?", targetSubID).
 			First(&existing).Error
 
 		if findErr == nil {
@@ -257,13 +434,17 @@ func (s *GradeService) UpsertGrade(courseUuid, contentUuid, submissionUuid, grad
 				relAt = &now
 				shouldNotify = true
 			}
-			newGrade := submission.Grade{
-				IndividualSubmissionID: &indSub.ID,
-				Score:                  *dto.Score,
-				Feedback:               dto.Feedback,
-				IsVisibleToStudent:     dto.IsVisibleToStudent,
-				ReleasedAt:             relAt,
-				GradedByID:             &grader.ID,
+			newGrade := Grade{
+				Score:              *dto.Score,
+				Feedback:           dto.Feedback,
+				IsVisibleToStudent: dto.IsVisibleToStudent,
+				ReleasedAt:         relAt,
+				GradedByID:         &grader.ID,
+			}
+			if isGroup {
+				newGrade.GroupSubmissionID = &targetSubID
+			} else {
+				newGrade.IndividualSubmissionID = &targetSubID
 			}
 			if err := tx.Create(&newGrade).Error; err != nil {
 				return err
@@ -273,20 +454,26 @@ func (s *GradeService) UpsertGrade(courseUuid, contentUuid, submissionUuid, grad
 		}
 		return findErr
 	})
-
 	if err != nil {
 		s.logger.Errorf("Failed to save grade for submission %s: %v", submissionUuid, err)
 		return nil, err
 	}
 
-	if shouldNotify && studentUuid != uuid.Nil {
-		_, nErr := s.notifications.NotifySystem(studentUuid, notification.NotificationContent{
+	if shouldNotify && len(recipientUuids) > 0 {
+		msg := notification.NotificationContent{
 			Title: fmt.Sprintf("Grade Published: %s", cnt.Title),
 			Body:  fmt.Sprintf("Your submission for %q has been graded (%g/%g).", cnt.Title, savedGrade.Score, maxPoints),
 			URL:   "/grades",
-		})
-		if nErr != nil {
-			s.logger.Warnf("Failed to notify student %s of grade release: %v", studentUuid, nErr)
+		}
+		if isGroup {
+			msg.Body = fmt.Sprintf("Your group submission for %q has been graded (%g/%g).", cnt.Title, savedGrade.Score, maxPoints)
+			if _, nErr := s.notifications.NotifySystemMany(recipientUuids, msg); nErr != nil {
+				s.logger.Warnf("Failed to notify group members of grade release: %v", nErr)
+			}
+		} else {
+			if _, nErr := s.notifications.NotifySystem(recipientUuids[0], msg); nErr != nil {
+				s.logger.Warnf("Failed to notify student %s of grade release: %v", recipientUuids[0], nErr)
+			}
 		}
 	}
 
@@ -301,7 +488,7 @@ func (s *GradeService) UpsertGrade(courseUuid, contentUuid, submissionUuid, grad
 	}, nil
 }
 
-// ReleaseAssignmentGrades releases all unreleased grades for an individual assignment.
+// ReleaseAssignmentGrades releases all unreleased grades for an individual or group assignment.
 func (s *GradeService) ReleaseAssignmentGrades(courseUuid, contentUuid uuid.UUID) (int, error) {
 	var cnt content.Content
 	err := s.db.
@@ -320,42 +507,92 @@ func (s *GradeService) ReleaseAssignmentGrades(courseUuid, contentUuid uuid.UUID
 	if cnt.Assignment == nil || cnt.Assignment.Type != content.AssignmentHandIn {
 		return 0, ErrNotHandin
 	}
+
+	var gradeIDs []uint
+	userUuidMap := make(map[uuid.UUID]bool)
+
 	if cnt.Assignment.AllowsGroupSubmission {
-		return 0, ErrGroupGradingNotSupported
-	}
+		type groupGradeRow struct {
+			GradeID           uint `gorm:"column:grade_id"`
+			GroupSubmissionID uint `gorm:"column:group_submission_id"`
+		}
+		var rows []groupGradeRow
+		err = s.db.Table("grades").
+			Select("grades.id as grade_id, group_submissions.id as group_submission_id").
+			Joins("JOIN group_submissions ON group_submissions.id = grades.group_submission_id AND group_submissions.deleted_at IS NULL").
+			Where("group_submissions.content_id = ? AND grades.is_visible_to_student = ? AND grades.deleted_at IS NULL", cnt.ID, false).
+			Scan(&rows).Error
+		if err != nil {
+			return 0, err
+		}
+		if len(rows) == 0 {
+			return 0, nil
+		}
 
-	type unreleasedRow struct {
-		GradeID uint      `gorm:"column:grade_id"`
-		UserID  uint      `gorm:"column:user_id"`
-		UserUid uuid.UUID `gorm:"column:user_uuid"`
-	}
+		subIDs := make([]uint, 0, len(rows))
+		gradeIDs = make([]uint, 0, len(rows))
+		for _, r := range rows {
+			gradeIDs = append(gradeIDs, r.GradeID)
+			subIDs = append(subIDs, r.GroupSubmissionID)
+		}
 
-	var rows []unreleasedRow
-	err = s.db.Table("grades").
-		Select("grades.id as grade_id, users.id as user_id, users.uuid as user_uuid").
-		Joins("JOIN individual_submissions ON individual_submissions.id = grades.individual_submission_id AND individual_submissions.deleted_at IS NULL").
-		Joins("JOIN users ON users.id = individual_submissions.user_id AND users.deleted_at IS NULL").
-		Where("individual_submissions.content_id = ? AND grades.is_visible_to_student = ? AND grades.deleted_at IS NULL", cnt.ID, false).
-		Scan(&rows).Error
-	if err != nil {
-		return 0, err
-	}
+		var memberUuids []uuid.UUID
+		if err := s.db.Table("group_submission_members gsm").
+			Joins("JOIN users ON users.id = gsm.user_id AND users.deleted_at IS NULL").
+			Where("gsm.group_submission_id IN ?", subIDs).
+			Pluck("users.uuid", &memberUuids).Error; err != nil {
+			return 0, err
+		}
+		for _, u := range memberUuids {
+			if u != uuid.Nil {
+				userUuidMap[u] = true
+			}
+		}
 
-	if len(rows) == 0 {
-		return 0, nil
-	}
+		var submitterUuids []uuid.UUID
+		if err := s.db.Table("group_submissions gs").
+			Joins("JOIN users ON users.id = gs.user_id AND users.deleted_at IS NULL").
+			Where("gs.id IN ?", subIDs).
+			Pluck("users.uuid", &submitterUuids).Error; err != nil {
+			return 0, err
+		}
+		for _, u := range submitterUuids {
+			if u != uuid.Nil {
+				userUuidMap[u] = true
+			}
+		}
+	} else {
+		type unreleasedRow struct {
+			GradeID uint      `gorm:"column:grade_id"`
+			UserID  uint      `gorm:"column:user_id"`
+			UserUid uuid.UUID `gorm:"column:user_uuid"`
+		}
 
-	gradeIDs := make([]uint, 0, len(rows))
-	userUuidMap := make(map[uuid.UUID]bool, len(rows))
-	for _, r := range rows {
-		gradeIDs = append(gradeIDs, r.GradeID)
-		if r.UserUid != uuid.Nil {
-			userUuidMap[r.UserUid] = true
+		var rows []unreleasedRow
+		err = s.db.Table("grades").
+			Select("grades.id as grade_id, users.id as user_id, users.uuid as user_uuid").
+			Joins("JOIN individual_submissions ON individual_submissions.id = grades.individual_submission_id AND individual_submissions.deleted_at IS NULL").
+			Joins("JOIN users ON users.id = individual_submissions.user_id AND users.deleted_at IS NULL").
+			Where("individual_submissions.content_id = ? AND grades.is_visible_to_student = ? AND grades.deleted_at IS NULL", cnt.ID, false).
+			Scan(&rows).Error
+		if err != nil {
+			return 0, err
+		}
+		if len(rows) == 0 {
+			return 0, nil
+		}
+
+		gradeIDs = make([]uint, 0, len(rows))
+		for _, r := range rows {
+			gradeIDs = append(gradeIDs, r.GradeID)
+			if r.UserUid != uuid.Nil {
+				userUuidMap[r.UserUid] = true
+			}
 		}
 	}
 
 	now := time.Now()
-	err = s.db.Model(&submission.Grade{}).
+	err = s.db.Model(&Grade{}).
 		Where("id IN ?", gradeIDs).
 		Updates(map[string]any{
 			"is_visible_to_student": true,
@@ -384,7 +621,7 @@ func (s *GradeService) ReleaseAssignmentGrades(courseUuid, contentUuid uuid.UUID
 	return len(gradeIDs), nil
 }
 
-// ListPending returns latest ungraded individual submissions across courses taught by the user.
+// ListPending returns latest ungraded individual and group submissions across courses taught by the user.
 func (s *GradeService) ListPending(userUuid uuid.UUID, isAdmin bool, courseUuid *uuid.UUID) ([]PendingSubmissionDto, error) {
 	u, err := s.findUserByUUID(userUuid)
 	if err != nil {
@@ -422,6 +659,7 @@ func (s *GradeService) ListPending(userUuid uuid.UUID, isAdmin bool, courseUuid 
 	}
 
 	type queryResult struct {
+		SubmissionID    uint       `gorm:"column:submission_id"`
 		SubmissionUuid  uuid.UUID  `gorm:"column:submission_uuid"`
 		CourseUuid      uuid.UUID  `gorm:"column:course_uuid"`
 		ContentUuid     uuid.UUID  `gorm:"column:content_uuid"`
@@ -431,6 +669,7 @@ func (s *GradeService) ListPending(userUuid uuid.UUID, isAdmin bool, courseUuid 
 		AssignmentTitle string     `gorm:"column:assignment_title"`
 		UserEmail       string     `gorm:"column:user_email"`
 		UserName        string     `gorm:"column:user_name"`
+		GroupName       string     `gorm:"column:group_name"`
 		Attempt         int        `gorm:"column:attempt"`
 		IsLate          bool       `gorm:"column:is_late"`
 		SubmittedAt     time.Time  `gorm:"column:submitted_at"`
@@ -438,8 +677,9 @@ func (s *GradeService) ListPending(userUuid uuid.UUID, isAdmin bool, courseUuid 
 		MaxPoints       float64    `gorm:"column:max_points"`
 	}
 
-	query := s.db.Table("individual_submissions s").
-		Select(`s.uuid as submission_uuid,
+	indQuery := s.db.Table("individual_submissions s").
+		Select(`s.id as submission_id,
+			s.uuid as submission_uuid,
 			crs.uuid as course_uuid,
 			cnt.uuid as content_uuid,
 			crs.title as course_title,
@@ -448,11 +688,12 @@ func (s *GradeService) ListPending(userUuid uuid.UUID, isAdmin bool, courseUuid 
 			cnt.title as assignment_title,
 			s.user_email as user_email,
 			COALESCE(u.username, '') as user_name,
+			'' as group_name,
 			s.attempt as attempt,
 			s.is_late as is_late,
 			s.submitted_at as submitted_at,
 			asgn.deadline as deadline,
-			COALESCE(asgn.max_points, 100) as max_points`).
+			COALESCE(asgn.max_points, 5) as max_points`).
 		Joins("JOIN contents cnt ON cnt.id = s.content_id AND cnt.deleted_at IS NULL").
 		Joins("JOIN assignments asgn ON asgn.content_id = cnt.id").
 		Joins("JOIN modules mod ON mod.id = cnt.module_id AND mod.deleted_at IS NULL").
@@ -464,41 +705,128 @@ func (s *GradeService) ListPending(userUuid uuid.UUID, isAdmin bool, courseUuid 
 		Where("s.deleted_at IS NULL").
 		Where("NOT EXISTS (SELECT 1 FROM individual_submissions s2 WHERE s2.user_id = s.user_id AND s2.content_id = s.content_id AND s2.attempt > s.attempt AND s2.deleted_at IS NULL)")
 
+	grpQuery := s.db.Table("group_submissions s").
+		Select(`s.id as submission_id,
+			s.uuid as submission_uuid,
+			crs.uuid as course_uuid,
+			cnt.uuid as content_uuid,
+			crs.title as course_title,
+			crs.term as course_term,
+			crs.year as course_year,
+			cnt.title as assignment_title,
+			s.user_email as user_email,
+			COALESCE(u.username, '') as user_name,
+			COALESCE(grp.name, '') as group_name,
+			s.attempt as attempt,
+			s.is_late as is_late,
+			s.submitted_at as submitted_at,
+			asgn.deadline as deadline,
+			COALESCE(asgn.max_points, 5) as max_points`).
+		Joins("JOIN contents cnt ON cnt.id = s.content_id AND cnt.deleted_at IS NULL").
+		Joins("JOIN assignments asgn ON asgn.content_id = cnt.id").
+		Joins("JOIN modules mod ON mod.id = cnt.module_id AND mod.deleted_at IS NULL").
+		Joins("JOIN courses crs ON crs.id = mod.course_id AND crs.deleted_at IS NULL").
+		Joins("LEFT JOIN groups grp ON grp.id = s.group_id").
+		Joins("LEFT JOIN users u ON u.id = s.user_id AND u.deleted_at IS NULL").
+		Joins("LEFT JOIN grades g ON g.group_submission_id = s.id AND g.deleted_at IS NULL").
+		Where("asgn.type = ? AND asgn.allows_group_submission = ?", content.AssignmentHandIn, true).
+		Where("g.id IS NULL").
+		Where("s.deleted_at IS NULL").
+		Where(`NOT EXISTS (
+			SELECT 1 FROM group_submissions s2
+			WHERE s2.content_id = s.content_id
+			  AND ((s.group_id IS NOT NULL AND s2.group_id = s.group_id) OR (s.group_id IS NULL AND s2.group_id IS NULL AND s2.user_id = s.user_id))
+			  AND s2.attempt > s.attempt AND s2.deleted_at IS NULL
+		)`)
+
 	if !isAdmin {
-		query = query.Where("crs.id IN ?", courseIDs)
+		indQuery = indQuery.Where("crs.id IN ?", courseIDs)
+		grpQuery = grpQuery.Where("crs.id IN ?", courseIDs)
 	}
 	if courseUuid != nil {
-		query = query.Where("crs.uuid = ?", *courseUuid)
+		indQuery = indQuery.Where("crs.uuid = ?", *courseUuid)
+		grpQuery = grpQuery.Where("crs.uuid = ?", *courseUuid)
 	}
 
-	var results []queryResult
-	err = query.Order("s.submitted_at ASC").Limit(500).Scan(&results).Error
-	if err != nil {
+	var indResults []queryResult
+	if err := indQuery.Order("s.submitted_at ASC").Limit(500).Scan(&indResults).Error; err != nil {
 		return nil, err
 	}
 
-	dtos := make([]PendingSubmissionDto, 0, len(results))
-	for _, r := range results {
-		courseCode := fmt.Sprintf("%s %d", r.CourseTerm, r.CourseYear)
+	var grpResults []queryResult
+	if err := grpQuery.Order("s.submitted_at ASC").Limit(500).Scan(&grpResults).Error; err != nil {
+		return nil, err
+	}
+
+	memberEmailsBySubID := make(map[uint][]string, len(grpResults))
+	if len(grpResults) > 0 {
+		grpSubIDs := make([]uint, 0, len(grpResults))
+		for _, r := range grpResults {
+			grpSubIDs = append(grpSubIDs, r.SubmissionID)
+		}
+		type memberEmailRow struct {
+			GroupSubmissionID uint   `gorm:"column:group_submission_id"`
+			Email             string `gorm:"column:email"`
+		}
+		var memberRows []memberEmailRow
+		if err := s.db.Table("group_submission_members gsm").
+			Select("gsm.group_submission_id, u.email").
+			Joins("JOIN users u ON u.id = gsm.user_id AND u.deleted_at IS NULL").
+			Where("gsm.group_submission_id IN ?", grpSubIDs).
+			Order("u.email ASC").
+			Scan(&memberRows).Error; err != nil {
+			return nil, err
+		}
+		for _, mr := range memberRows {
+			memberEmailsBySubID[mr.GroupSubmissionID] = append(memberEmailsBySubID[mr.GroupSubmissionID], mr.Email)
+		}
+	}
+
+	toPendingDto := func(r queryResult, isGroup bool) PendingSubmissionDto {
 		maxPts := r.MaxPoints
 		if maxPts <= 0 {
-			maxPts = 100
+			maxPts = content.DefaultHandinMaxPoints
 		}
-		dtos = append(dtos, PendingSubmissionDto{
+		var memberEmails []string
+		if isGroup {
+			memberEmails = memberEmailsBySubID[r.SubmissionID]
+		}
+		return PendingSubmissionDto{
 			SubmissionUuid:  r.SubmissionUuid,
 			CourseUuid:      r.CourseUuid,
 			ContentUuid:     r.ContentUuid,
-			CourseCode:      courseCode,
+			CourseCode:      fmt.Sprintf("%s %d", r.CourseTerm, r.CourseYear),
 			CourseName:      r.CourseTitle,
 			AssignmentTitle: r.AssignmentTitle,
 			UserEmail:       r.UserEmail,
 			UserName:        r.UserName,
+			IsGroup:         isGroup,
+			GroupName:       r.GroupName,
+			MemberEmails:    memberEmails,
 			Attempt:         r.Attempt,
 			IsLate:          r.IsLate,
 			SubmittedAt:     r.SubmittedAt,
 			Deadline:        r.Deadline,
 			MaxPoints:       maxPts,
-		})
+		}
+	}
+
+	dtos := make([]PendingSubmissionDto, 0, len(indResults)+len(grpResults))
+	for _, r := range indResults {
+		dtos = append(dtos, toPendingDto(r, false))
+	}
+	for _, r := range grpResults {
+		dtos = append(dtos, toPendingDto(r, true))
+	}
+
+	sort.Slice(dtos, func(i, j int) bool {
+		if !dtos[i].SubmittedAt.Equal(dtos[j].SubmittedAt) {
+			return dtos[i].SubmittedAt.Before(dtos[j].SubmittedAt)
+		}
+		return dtos[i].SubmissionUuid.String() < dtos[j].SubmissionUuid.String()
+	})
+	if len(dtos) > 500 {
+		dtos = dtos[:500]
 	}
 
 	return dtos, nil
@@ -511,7 +839,7 @@ func (s *GradeService) ListMyGrades(userUuid uuid.UUID, courseUuid *uuid.UUID) (
 		return nil, err
 	}
 
-	// 1. Fetch latest released hand-in grade per assignment
+	// 1. Fetch latest released hand-in grade per assignment (individual + group)
 	type handinGradeRow struct {
 		CourseUuid      uuid.UUID `gorm:"column:course_uuid"`
 		ContentUuid     uuid.UUID `gorm:"column:content_uuid"`
@@ -520,14 +848,18 @@ func (s *GradeService) ListMyGrades(userUuid uuid.UUID, courseUuid *uuid.UUID) (
 		CourseYear      int       `gorm:"column:course_year"`
 		ModuleTitle     string    `gorm:"column:module_title"`
 		AssignmentTitle string    `gorm:"column:assignment_title"`
+		GroupName       string    `gorm:"column:group_name"`
+		ModPosition     int       `gorm:"column:mod_position"`
+		CntPosition     int       `gorm:"column:cnt_position"`
 		Attempt         int       `gorm:"column:attempt"`
 		Score           float64   `gorm:"column:score"`
 		MaxPoints       float64   `gorm:"column:max_points"`
 		Feedback        string    `gorm:"column:feedback"`
 		GradedAt        time.Time `gorm:"column:graded_at"`
+		IsGroup         bool      `gorm:"-"`
 	}
 
-	hQuery := s.db.Table("grades g").
+	indQuery := s.db.Table("grades g").
 		Select(`crs.uuid as course_uuid,
 			cnt.uuid as content_uuid,
 			crs.title as course_title,
@@ -535,9 +867,12 @@ func (s *GradeService) ListMyGrades(userUuid uuid.UUID, courseUuid *uuid.UUID) (
 			crs.year as course_year,
 			mod.title as module_title,
 			cnt.title as assignment_title,
+			'' as group_name,
+			mod.position as mod_position,
+			cnt.position as cnt_position,
 			ind.attempt as attempt,
 			g.score as score,
-			COALESCE(asgn.max_points, 100) as max_points,
+			COALESCE(asgn.max_points, 5) as max_points,
 			g.feedback as feedback,
 			g.updated_at as graded_at`).
 		Joins("JOIN individual_submissions ind ON ind.id = g.individual_submission_id AND ind.deleted_at IS NULL").
@@ -554,20 +889,72 @@ func (s *GradeService) ListMyGrades(userUuid uuid.UUID, courseUuid *uuid.UUID) (
 			  AND g2.is_visible_to_student = ?
 		)`, true)
 
+	grpQuery := s.db.Table("grades g").
+		Select(`crs.uuid as course_uuid,
+			cnt.uuid as content_uuid,
+			crs.title as course_title,
+			crs.term as course_term,
+			crs.year as course_year,
+			mod.title as module_title,
+			cnt.title as assignment_title,
+			COALESCE(grp.name, '') as group_name,
+			mod.position as mod_position,
+			cnt.position as cnt_position,
+			gs.attempt as attempt,
+			g.score as score,
+			COALESCE(asgn.max_points, 5) as max_points,
+			g.feedback as feedback,
+			g.updated_at as graded_at`).
+		Joins("JOIN group_submissions gs ON gs.id = g.group_submission_id AND gs.deleted_at IS NULL").
+		Joins("LEFT JOIN groups grp ON grp.id = gs.group_id").
+		Joins("JOIN contents cnt ON cnt.id = gs.content_id AND cnt.deleted_at IS NULL").
+		Joins("JOIN assignments asgn ON asgn.content_id = cnt.id").
+		Joins("JOIN modules mod ON mod.id = cnt.module_id AND mod.deleted_at IS NULL").
+		Joins("JOIN courses crs ON crs.id = mod.course_id AND crs.deleted_at IS NULL").
+		Where("(gs.user_id = ? OR gs.id IN (SELECT group_submission_id FROM group_submission_members WHERE user_id = ?)) AND g.is_visible_to_student = ? AND g.deleted_at IS NULL", u.ID, u.ID, true).
+		Where(`NOT EXISTS (
+			SELECT 1 FROM group_submissions gs2
+			JOIN grades g2 ON g2.group_submission_id = gs2.id AND g2.deleted_at IS NULL
+			WHERE gs2.content_id = gs.content_id
+			  AND (gs2.user_id = ? OR gs2.id IN (SELECT group_submission_id FROM group_submission_members WHERE user_id = ?))
+			  AND gs2.attempt > gs.attempt AND gs2.deleted_at IS NULL
+			  AND g2.is_visible_to_student = ?
+		)`, u.ID, u.ID, true)
+
 	if courseUuid != nil {
-		hQuery = hQuery.Where("crs.uuid = ?", *courseUuid)
+		indQuery = indQuery.Where("crs.uuid = ?", *courseUuid)
+		grpQuery = grpQuery.Where("crs.uuid = ?", *courseUuid)
 	}
 
-	var hRows []handinGradeRow
-	if err := hQuery.Order("crs.title ASC, mod.position ASC, cnt.position ASC").Scan(&hRows).Error; err != nil {
+	var indRows []handinGradeRow
+	if err := indQuery.Order("crs.title ASC, mod.position ASC, cnt.position ASC").Scan(&indRows).Error; err != nil {
 		return nil, err
 	}
 
-	dtos := make([]StudentGradeDto, 0, len(hRows))
-	for _, r := range hRows {
+	var grpRows []handinGradeRow
+	if err := grpQuery.Order("crs.title ASC, mod.position ASC, cnt.position ASC").Scan(&grpRows).Error; err != nil {
+		return nil, err
+	}
+	for i := range grpRows {
+		grpRows[i].IsGroup = true
+	}
+
+	allHandins := append(indRows, grpRows...)
+	sort.SliceStable(allHandins, func(i, j int) bool {
+		if allHandins[i].CourseTitle != allHandins[j].CourseTitle {
+			return allHandins[i].CourseTitle < allHandins[j].CourseTitle
+		}
+		if allHandins[i].ModPosition != allHandins[j].ModPosition {
+			return allHandins[i].ModPosition < allHandins[j].ModPosition
+		}
+		return allHandins[i].CntPosition < allHandins[j].CntPosition
+	})
+
+	dtos := make([]StudentGradeDto, 0, len(allHandins))
+	for _, r := range allHandins {
 		maxPts := r.MaxPoints
 		if maxPts <= 0 {
-			maxPts = 100
+			maxPts = content.DefaultHandinMaxPoints
 		}
 		pct := 0.0
 		if maxPts > 0 {
@@ -581,6 +968,8 @@ func (s *GradeService) ListMyGrades(userUuid uuid.UUID, courseUuid *uuid.UUID) (
 			CourseCode:      fmt.Sprintf("%s %d", r.CourseTerm, r.CourseYear),
 			ModuleTitle:     r.ModuleTitle,
 			AssignmentTitle: r.AssignmentTitle,
+			IsGroup:         r.IsGroup,
+			GroupName:       r.GroupName,
 			Attempt:         r.Attempt,
 			Score:           r.Score,
 			MaxPoints:       maxPts,
@@ -782,63 +1171,34 @@ func (s *GradeService) ExportCourseCSV(courseUuid uuid.UUID, w io.Writer) error 
 				continue
 			}
 
-			if asgn.AllowsGroupSubmission {
-				rec.AssignmentType = "HANDIN (GROUP)"
-				rec.Score = "N/A (Group)"
-				rec.MaxPoints = fmt.Sprintf("%.2f", asgn.MaxPoints)
-				rec.Percent = "N/A"
-				rec.IsVisibleToStudent = "false"
-				records = append(records, rec)
-				continue
-			}
-
-			rec.AssignmentType = "HANDIN"
 			maxPts := asgn.MaxPoints
 			if maxPts <= 0 {
-				maxPts = 100
+				maxPts = content.DefaultHandinMaxPoints
 			}
 			rec.MaxPoints = fmt.Sprintf("%.2f", maxPts)
 
-			subs := lookup.handinSubs[key]
-			if len(subs) > 0 {
-				var targetSub *submission.IndividualSubmission
-				for i := range subs {
-					if subs[i].Grade != nil {
-						targetSub = &subs[i]
+			if asgn.AllowsGroupSubmission {
+				rec.AssignmentType = "HANDIN (GROUP)"
+			} else {
+				rec.AssignmentType = "HANDIN"
+			}
+
+			entries := lookup.handinSubs[key]
+			if asgn.AllowsGroupSubmission {
+				entries = lookup.groupHandinSubs[key]
+			}
+			if len(entries) > 0 {
+				var targetEntry *submissionEntry
+				for i := range entries {
+					if entries[i].grade != nil {
+						targetEntry = &entries[i]
 						break
 					}
 				}
-				if targetSub == nil {
-					targetSub = &subs[0]
+				if targetEntry == nil {
+					targetEntry = &entries[0]
 				}
-
-				rec.Attempt = fmt.Sprintf("%d", targetSub.Attempt)
-				rec.SubmittedAt = targetSub.SubmittedAt.Format(time.RFC3339)
-				if targetSub.IsLate {
-					rec.IsLate = "true"
-				} else {
-					rec.IsLate = "false"
-				}
-
-				if targetSub.Grade != nil {
-					gr := targetSub.Grade
-					rec.Score = fmt.Sprintf("%.2f", gr.Score)
-					pct := 0.0
-					if maxPts > 0 {
-						pct = (gr.Score / maxPts) * 100.0
-					}
-					rec.Percent = fmt.Sprintf("%.2f%%", pct)
-					if gr.IsVisibleToStudent {
-						rec.IsVisibleToStudent = "true"
-					} else {
-						rec.IsVisibleToStudent = "false"
-					}
-					if gr.GradedBy != nil {
-						rec.GradedByEmail = gr.GradedBy.Email
-					}
-					rec.GradedAt = gr.UpdatedAt.Format(time.RFC3339)
-					rec.Feedback = gr.Feedback
-				}
+				populateHandinCSVRecord(&rec, targetEntry.sub, targetEntry.grade, maxPts)
 			}
 
 			records = append(records, rec)
@@ -846,6 +1206,35 @@ func (s *GradeService) ExportCourseCSV(courseUuid uuid.UUID, w io.Writer) error 
 	}
 
 	return WriteGradebookCSV(w, records)
+}
+
+func populateHandinCSVRecord(rec *GradebookRecord, sub submission.Submission, gr *Grade, maxPts float64) {
+	rec.Attempt = fmt.Sprintf("%d", sub.Attempt)
+	rec.SubmittedAt = sub.SubmittedAt.Format(time.RFC3339)
+	if sub.IsLate {
+		rec.IsLate = "true"
+	} else {
+		rec.IsLate = "false"
+	}
+
+	if gr != nil {
+		rec.Score = fmt.Sprintf("%.2f", gr.Score)
+		pct := 0.0
+		if maxPts > 0 {
+			pct = (gr.Score / maxPts) * 100.0
+		}
+		rec.Percent = fmt.Sprintf("%.2f%%", pct)
+		if gr.IsVisibleToStudent {
+			rec.IsVisibleToStudent = "true"
+		} else {
+			rec.IsVisibleToStudent = "false"
+		}
+		if gr.GradedBy != nil {
+			rec.GradedByEmail = gr.GradedBy.Email
+		}
+		rec.GradedAt = gr.UpdatedAt.Format(time.RFC3339)
+		rec.Feedback = gr.Feedback
+	}
 }
 
 // computeStudentCourseTotal calculates the earned score and total possible score for a student across all published assignments in a course.
@@ -858,7 +1247,7 @@ func computeStudentCourseTotal(studentID uint, contents []content.Content, looku
 
 		maxPts := asgn.MaxPoints
 		if maxPts <= 0 {
-			maxPts = 100
+			maxPts = content.DefaultHandinMaxPoints
 		}
 
 		key := userContentKey{userID: studentID, contentID: cnt.ID}
@@ -871,15 +1260,15 @@ func computeStudentCourseTotal(studentID uint, contents []content.Content, looku
 			continue
 		}
 
-		if asgn.AllowsGroupSubmission {
-			continue // group grading not supported yet
-		}
-
 		totalMax += maxPts
 
-		for _, sub := range lookup.handinSubs[key] {
-			if sub.Grade != nil && (!studentViewOnly || sub.Grade.IsVisibleToStudent) {
-				earned += sub.Grade.Score
+		entries := lookup.handinSubs[key]
+		if asgn.AllowsGroupSubmission {
+			entries = lookup.groupHandinSubs[key]
+		}
+		for _, entry := range entries {
+			if entry.grade != nil && (!studentViewOnly || entry.grade.IsVisibleToStudent) {
+				earned += entry.grade.Score
 				break
 			}
 		}

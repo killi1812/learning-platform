@@ -1,5 +1,7 @@
 import type { GradingScale } from '@/types/course'
 
+export const DEFAULT_HANDIN_MAX_POINTS = 5
+
 export const DEFAULT_GRADING_SCALE: Readonly<GradingScale> = {
   scaleA: 90,
   scaleB: 80,
