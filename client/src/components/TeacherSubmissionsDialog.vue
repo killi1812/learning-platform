@@ -130,7 +130,8 @@
                     <div class="d-flex flex-column align-center ga-1">
                       <div class="d-flex align-center ga-1">
                         <v-chip color="primary" size="x-small" variant="flat">
-                          {{ sub.grade.score }} / {{ assignment?.maxPoints || 100 }}
+                          {{ sub.grade.score }} /
+                          {{ assignment?.maxPoints || DEFAULT_HANDIN_MAX_POINTS }}
                         </v-chip>
                         <v-chip
                           :color="sub.grade.isVisibleToStudent ? 'success' : 'warning'"
@@ -217,7 +218,7 @@
       :initial-feedback="selectedSubForGrading?.grade?.feedback"
       :initial-score="selectedSubForGrading?.grade?.score"
       :initial-visible="selectedSubForGrading?.grade?.isVisibleToStudent ?? true"
-      :max-points="assignment?.maxPoints || 100"
+      :max-points="assignment?.maxPoints || DEFAULT_HANDIN_MAX_POINTS"
       :member-emails="selectedSubForGrading?.memberEmails"
       :student-email="selectedSubForGrading?.userEmail"
       :submission-uuid="selectedSubForGrading?.uuid || ''"
@@ -238,6 +239,7 @@ import GradeDialog from '@/components/GradeDialog.vue'
 import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
 import { formatDateTime } from '@/util/dateTime'
+import { DEFAULT_HANDIN_MAX_POINTS } from '@/util/grading'
 import { isSafeHttpUrl } from '@/util/url'
 
 const open = defineModel<boolean>({ required: true })

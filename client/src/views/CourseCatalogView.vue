@@ -108,9 +108,7 @@
           :to="`/courses/${course.uuid}`"
         >
           <template #actions>
-            <span class="text-caption text-medium-emphasis">
-              {{ course.term }} {{ course.year }}
-            </span>
+            <span class="text-caption"> {{ course.term }} {{ course.year }} </span>
 
             <div class="d-flex align-center ga-2">
               <v-btn color="primary" size="small" :to="`/courses/${course.uuid}`" variant="text">

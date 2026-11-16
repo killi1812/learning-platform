@@ -398,7 +398,7 @@ func (s *GradeService) UpsertGrade(courseUuid, contentUuid, submissionUuid, grad
 		}
 		maxPoints = lockedAsgn.MaxPoints
 		if maxPoints <= 0 {
-			maxPoints = 100
+			maxPoints = content.DefaultHandinMaxPoints
 		}
 		if math.IsNaN(*dto.Score) || *dto.Score < 0 || *dto.Score > maxPoints {
 			return ErrScoreOutOfRange
@@ -693,7 +693,7 @@ func (s *GradeService) ListPending(userUuid uuid.UUID, isAdmin bool, courseUuid 
 			s.is_late as is_late,
 			s.submitted_at as submitted_at,
 			asgn.deadline as deadline,
-			COALESCE(asgn.max_points, 100) as max_points`).
+			COALESCE(asgn.max_points, 5) as max_points`).
 		Joins("JOIN contents cnt ON cnt.id = s.content_id AND cnt.deleted_at IS NULL").
 		Joins("JOIN assignments asgn ON asgn.content_id = cnt.id").
 		Joins("JOIN modules mod ON mod.id = cnt.module_id AND mod.deleted_at IS NULL").
@@ -721,7 +721,7 @@ func (s *GradeService) ListPending(userUuid uuid.UUID, isAdmin bool, courseUuid 
 			s.is_late as is_late,
 			s.submitted_at as submitted_at,
 			asgn.deadline as deadline,
-			COALESCE(asgn.max_points, 100) as max_points`).
+			COALESCE(asgn.max_points, 5) as max_points`).
 		Joins("JOIN contents cnt ON cnt.id = s.content_id AND cnt.deleted_at IS NULL").
 		Joins("JOIN assignments asgn ON asgn.content_id = cnt.id").
 		Joins("JOIN modules mod ON mod.id = cnt.module_id AND mod.deleted_at IS NULL").
@@ -785,7 +785,7 @@ func (s *GradeService) ListPending(userUuid uuid.UUID, isAdmin bool, courseUuid 
 	toPendingDto := func(r queryResult, isGroup bool) PendingSubmissionDto {
 		maxPts := r.MaxPoints
 		if maxPts <= 0 {
-			maxPts = 100
+			maxPts = content.DefaultHandinMaxPoints
 		}
 		var memberEmails []string
 		if isGroup {
@@ -872,7 +872,7 @@ func (s *GradeService) ListMyGrades(userUuid uuid.UUID, courseUuid *uuid.UUID) (
 			cnt.position as cnt_position,
 			ind.attempt as attempt,
 			g.score as score,
-			COALESCE(asgn.max_points, 100) as max_points,
+			COALESCE(asgn.max_points, 5) as max_points,
 			g.feedback as feedback,
 			g.updated_at as graded_at`).
 		Joins("JOIN individual_submissions ind ON ind.id = g.individual_submission_id AND ind.deleted_at IS NULL").
@@ -902,7 +902,7 @@ func (s *GradeService) ListMyGrades(userUuid uuid.UUID, courseUuid *uuid.UUID) (
 			cnt.position as cnt_position,
 			gs.attempt as attempt,
 			g.score as score,
-			COALESCE(asgn.max_points, 100) as max_points,
+			COALESCE(asgn.max_points, 5) as max_points,
 			g.feedback as feedback,
 			g.updated_at as graded_at`).
 		Joins("JOIN group_submissions gs ON gs.id = g.group_submission_id AND gs.deleted_at IS NULL").
@@ -954,7 +954,7 @@ func (s *GradeService) ListMyGrades(userUuid uuid.UUID, courseUuid *uuid.UUID) (
 	for _, r := range allHandins {
 		maxPts := r.MaxPoints
 		if maxPts <= 0 {
-			maxPts = 100
+			maxPts = content.DefaultHandinMaxPoints
 		}
 		pct := 0.0
 		if maxPts > 0 {
@@ -1173,7 +1173,7 @@ func (s *GradeService) ExportCourseCSV(courseUuid uuid.UUID, w io.Writer) error 
 
 			maxPts := asgn.MaxPoints
 			if maxPts <= 0 {
-				maxPts = 100
+				maxPts = content.DefaultHandinMaxPoints
 			}
 			rec.MaxPoints = fmt.Sprintf("%.2f", maxPts)
 
@@ -1247,7 +1247,7 @@ func computeStudentCourseTotal(studentID uint, contents []content.Content, looku
 
 		maxPts := asgn.MaxPoints
 		if maxPts <= 0 {
-			maxPts = 100
+			maxPts = content.DefaultHandinMaxPoints
 		}
 
 		key := userContentKey{userID: studentID, contentID: cnt.ID}

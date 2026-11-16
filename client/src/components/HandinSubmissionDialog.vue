@@ -253,7 +253,8 @@
                     Grade & Feedback
                   </span>
                   <v-chip color="primary" size="x-small" variant="flat">
-                    {{ sub.grade.score }} / {{ assignment?.maxPoints || 100 }} pts
+                    {{ sub.grade.score }} /
+                    {{ assignment?.maxPoints || DEFAULT_HANDIN_MAX_POINTS }} pts
                   </v-chip>
                 </div>
                 <MarkdownView
@@ -312,6 +313,7 @@ import { useAuth } from '@/composables/useAuth'
 import { useToast } from '@/composables/useToast'
 import { formatDateTime } from '@/util/dateTime'
 import { formatBytes } from '@/util/file'
+import { DEFAULT_HANDIN_MAX_POINTS } from '@/util/grading'
 import { findUserGroup } from '@/util/group'
 import { isSafeHttpUrl } from '@/util/url'
 

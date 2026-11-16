@@ -55,17 +55,6 @@
                   </v-avatar>
                 </div>
               </div>
-
-              <v-divider class="my-3" />
-
-              <div class="d-flex align-center text-caption text-medium-emphasis">
-                <v-icon class="mr-1" icon="mdi-scale-balance" size="16" />
-                <span>
-                  Scale: A &ge; {{ fg.gradingScale.scaleA }}%, B &ge; {{ fg.gradingScale.scaleB }}%,
-                  C &ge; {{ fg.gradingScale.scaleC }}%, D &ge; {{ fg.gradingScale.scaleD }}%, E &ge;
-                  {{ fg.gradingScale.scaleE }}% (F &lt; {{ fg.gradingScale.scaleE }}%)
-                </span>
-              </div>
             </v-card>
           </v-col>
         </v-row>

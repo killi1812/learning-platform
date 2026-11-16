@@ -73,7 +73,7 @@ func seedGrades(assignments []*content.Content, teachers []*user.User, students 
 			feedback := "### Review Summary\n\n- **Architecture**: Clean modular structure.\n- **Tests**: High coverage across modules.\n\n```go\n// Minor suggestion: wrap errors with %w\nreturn fmt.Errorf(\"failed: %w\", err)\n```\n\nWell done!"
 			grd := grade.Grade{
 				IndividualSubmissionID: &existingSub1.ID,
-				Score:                  92.5,
+				Score:                  4.5,
 				Feedback:               feedback,
 				IsVisibleToStudent:     true,
 				ReleasedAt:             &releasedAt,

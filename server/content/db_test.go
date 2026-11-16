@@ -665,7 +665,7 @@ func TestContentService_HandinAssignment(t *testing.T) {
 	assert.Equal(t, content.AssignmentHandIn, created.Assignment.Type)
 	assert.True(t, created.Assignment.AcceptsLateSubmissions)
 	assert.False(t, created.Assignment.AllowsGroupSubmission)
-	assert.Equal(t, 100.0, created.Assignment.MaxPoints)
+	assert.Equal(t, content.DefaultHandinMaxPoints, created.Assignment.MaxPoints)
 
 	var notifs []notification.Notification
 	assert.NoError(t, db.Where("user_id = ?", student.ID).Find(&notifs).Error)

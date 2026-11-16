@@ -107,7 +107,7 @@
       :content-uuid="gradingItem?.contentUuid || ''"
       :course-uuid="gradingItem?.courseUuid || ''"
       :group-name="gradingItem?.groupName"
-      :max-points="gradingItem?.maxPoints || 100"
+      :max-points="gradingItem?.maxPoints || DEFAULT_HANDIN_MAX_POINTS"
       :member-emails="gradingItem?.memberEmails"
       :student-email="gradingItem?.userEmail"
       :submission-uuid="gradingItem?.submissionUuid || ''"
@@ -122,6 +122,7 @@ import type { PendingSubmissionDto } from '@/types/grade'
 import { computed, ref } from 'vue'
 import GradeDialog from '@/components/GradeDialog.vue'
 import { formatDateTime } from '@/util/dateTime'
+import { DEFAULT_HANDIN_MAX_POINTS } from '@/util/grading'
 
 interface Props {
   gradingCourses: readonly Course[]

@@ -1,7 +1,12 @@
 <template>
   <v-app-bar class="app-header" color="primary" elevation="2" title="DAT250 Learning Platform">
     <template #append>
-      <v-btn aria-label="Toggle color theme" class="mr-2" icon="mdi-theme-light-dark" @click="theme.cycle()" />
+      <v-btn
+        aria-label="Toggle color theme"
+        class="mr-2"
+        icon="mdi-theme-light-dark"
+        @click="theme.cycle()"
+      />
 
       <NotificationBell />
 
@@ -9,7 +14,6 @@
         <v-icon icon="mdi-account" start />
         {{ currentUser?.username }}
       </v-chip>
-
     </template>
   </v-app-bar>
 </template>

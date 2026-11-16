@@ -144,6 +144,7 @@ import { getApiErrorMessage } from '@/api/client'
 import { upsertGrade } from '@/api/grade'
 import MarkdownView from '@/components/MarkdownView.vue'
 import { useToast } from '@/composables/useToast'
+import { DEFAULT_HANDIN_MAX_POINTS } from '@/util/grading'
 
 const open = defineModel<boolean>({ required: true })
 
@@ -168,7 +169,7 @@ const props = withDefaults(
     groupName: '',
     memberEmails: undefined,
     attempt: 1,
-    maxPoints: 100,
+    maxPoints: DEFAULT_HANDIN_MAX_POINTS,
     initialScore: undefined,
     initialFeedback: '',
     initialVisible: true,
@@ -189,7 +190,7 @@ const feedbackTab = ref<'write' | 'preview'>('write')
 const saving = ref(false)
 
 const effectiveMaxPoints = computed(() =>
-  props.maxPoints && props.maxPoints > 0 ? props.maxPoints : 100,
+  props.maxPoints && props.maxPoints > 0 ? props.maxPoints : DEFAULT_HANDIN_MAX_POINTS,
 )
 
 const percent = computed(() => {

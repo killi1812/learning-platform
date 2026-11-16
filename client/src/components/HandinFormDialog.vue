@@ -37,9 +37,9 @@
             class="mb-3"
             label="Max Points"
             max="999"
-            messages="Total points possible for this assignment (1 - 999, default 100)"
+            :messages="`Total points possible for this assignment (1 - 999, default ${DEFAULT_HANDIN_MAX_POINTS})`"
             min="1"
-            placeholder="100"
+            :placeholder="String(DEFAULT_HANDIN_MAX_POINTS)"
             :rules="[
               v =>
                 v === undefined ||
@@ -93,6 +93,7 @@ import { getApiErrorMessage } from '@/api/client'
 import { createHandin, updateHandin } from '@/api/submission'
 import { useToast } from '@/composables/useToast'
 import { fromLocalDateTimeInput, toLocalDateTimeInput } from '@/util/dateTime'
+import { DEFAULT_HANDIN_MAX_POINTS } from '@/util/grading'
 
 const open = defineModel<boolean>({ required: true })
 
@@ -111,7 +112,7 @@ const toast = useToast()
 const formRef = ref<InstanceType<typeof VForm> | undefined>(undefined)
 const title = ref('')
 const deadline = ref('')
-const maxPoints = ref<number | undefined>(100)
+const maxPoints = ref<number | undefined>(DEFAULT_HANDIN_MAX_POINTS)
 const acceptsLateSubmissions = ref(false)
 const allowsGroupSubmission = ref(false)
 const saving = ref(false)
@@ -123,13 +124,13 @@ watch(open, isOpen => {
   if (props.assignment) {
     title.value = props.assignment.title
     deadline.value = toLocalDateTimeInput(props.assignment.deadline)
-    maxPoints.value = props.assignment.maxPoints || 100
+    maxPoints.value = props.assignment.maxPoints || DEFAULT_HANDIN_MAX_POINTS
     acceptsLateSubmissions.value = props.assignment.acceptsLateSubmissions || false
     allowsGroupSubmission.value = props.assignment.allowsGroupSubmission || false
   } else {
     title.value = ''
     deadline.value = ''
-    maxPoints.value = 100
+    maxPoints.value = DEFAULT_HANDIN_MAX_POINTS
     acceptsLateSubmissions.value = false
     allowsGroupSubmission.value = false
   }
@@ -146,7 +147,8 @@ async function handleSave(): Promise<void> {
 
   saving.value = true
   try {
-    const resolvedMaxPoints = maxPoints.value && maxPoints.value > 0 ? maxPoints.value : 100
+    const resolvedMaxPoints =
+      maxPoints.value && maxPoints.value > 0 ? maxPoints.value : DEFAULT_HANDIN_MAX_POINTS
     const payload = {
       title: title.value.trim(),
       deadline: fromLocalDateTimeInput(deadline.value),
