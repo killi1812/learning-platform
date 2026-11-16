@@ -1,23 +1,11 @@
 <template>
-  <v-card
-    class="bg-surface d-flex flex-column h-100"
-    elevation="2"
-    hover
-    rounded="lg"
-    :to="to"
-    @click="emit('click')"
-  >
+  <v-card class="bg-surface d-flex flex-column h-100" elevation="2" hover rounded="lg" :to="to" @click="emit('click')">
     <div class="pa-4 pb-2">
       <h3 class="course-card__title text-h6 font-weight-bold text-high-emphasis my-0 mb-2">
         {{ course.title }}
       </h3>
 
-      <v-chip
-        v-if="role"
-        :color="role === 'TEACHER' ? 'primary' : 'secondary'"
-        size="small"
-        variant="flat"
-      >
+      <v-chip v-if="role" :color="role === 'TEACHER' ? 'primary' : 'secondary'" size="small" variant="flat">
         {{ role }}
       </v-chip>
     </div>
@@ -30,8 +18,9 @@
 
     <v-card-actions class="pa-4 bg-surface-variant d-flex justify-space-between">
       <slot name="actions">
-        <span class="text-caption text-medium-emphasis"> {{ course.term }} {{ course.year }} </span>
-
+        <span class="text-caption text-on-surface-variant">
+          {{ course.term }} {{ course.year }}
+        </span>
         <span class="text-button text-primary font-weight-medium">Open Course</span>
       </slot>
     </v-card-actions>

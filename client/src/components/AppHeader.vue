@@ -1,12 +1,7 @@
 <template>
   <v-app-bar class="app-header" color="primary" elevation="2" title="DAT250 Learning Platform">
     <template #append>
-      <v-btn
-        aria-label="Toggle color theme"
-        class="mr-2"
-        icon="mdi-theme-light-dark"
-        @click="theme.cycle()"
-      />
+      <v-btn aria-label="Toggle color theme" class="mr-2" icon="mdi-theme-light-dark" @click="theme.cycle()" />
 
       <template v-if="isAuthenticated">
         <NotificationBell />
@@ -17,7 +12,6 @@
         </v-chip>
       </template>
 
-      <v-btn v-else prepend-icon="mdi-login" to="/login" variant="tonal">Sign In</v-btn>
     </template>
   </v-app-bar>
 </template>
