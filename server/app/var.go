@@ -26,4 +26,5 @@ var (
 	SeaweedFSEndpoint string
 	RunMigrate        bool
 	RabbitMqConn      string
+	LogQuery          bool
 )

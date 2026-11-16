@@ -5,7 +5,7 @@
     rounded="md"
   >
     <div class="d-flex align-center ga-3 overflow-hidden flex-grow-1">
-      <v-avatar size="32" color="primary" variant="tonal">
+      <v-avatar color="primary" size="32" variant="tonal">
         <v-icon icon="mdi-help-circle-outline" size="small" />
       </v-avatar>
       <div class="d-flex flex-column overflow-hidden">
@@ -25,6 +25,7 @@
       <template v-if="isTeacher">
         <v-btn
           v-if="assignment.published"
+          aria-label="Quiz results"
           color="primary"
           icon="mdi-account-check-outline"
           size="small"
@@ -33,6 +34,7 @@
           @click="emit('results')"
         />
         <v-btn
+          aria-label="Edit quiz"
           color="primary"
           icon="mdi-pencil-outline"
           size="small"
@@ -41,6 +43,7 @@
           @click="emit('edit')"
         />
         <v-btn
+          aria-label="Delete quiz"
           color="error"
           icon="mdi-delete-outline"
           size="small"
@@ -53,14 +56,19 @@
       <template v-else>
         <span
           v-if="assignment.myResult"
-          class="text-body-2 font-weight-bold text-high-emphasis mr-2"
+          class="d-inline-flex align-center ga-1 text-body-2 font-weight-bold text-high-emphasis mr-2"
         >
-          {{ assignment.myResult.passed ? '✅' : '❌' }}
-          {{ Math.round(assignment.myResult.percent) }}%
+          <v-icon
+            :aria-label="assignment.myResult.passed ? 'Passed' : 'Not passed'"
+            :color="assignment.myResult.passed ? 'success' : 'error'"
+            :icon="assignment.myResult.passed ? 'mdi-check-circle' : 'mdi-close-circle'"
+            size="small"
+          />
+          <span>{{ Math.round(assignment.myResult.percent) }}%</span>
         </span>
         <v-btn
-          :disabled="!canStart"
           color="primary"
+          :disabled="!canStart"
           size="small"
           variant="tonal"
           @click="emit('take')"
@@ -73,8 +81,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
 import type { Assignment } from '@/types/quiz'
+import { computed } from 'vue'
+import { formatMonthDay, parseValidDate } from '@/util/dateTime'
 
 const props = defineProps<{
   assignment: Assignment
@@ -83,29 +92,28 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'edit'): void
-  (e: 'results'): void
-  (e: 'delete'): void
-  (e: 'take'): void
+  edit: []
+  results: []
+  delete: []
+  take: []
 }>()
-
-function formatDay(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
-}
 
 const windowText = computed(() => {
   const { visibleFrom, visibleUntil } = props.assignment
-  if (visibleFrom && visibleUntil) return `${formatDay(visibleFrom)} – ${formatDay(visibleUntil)}`
-  if (visibleFrom) return `from ${formatDay(visibleFrom)}`
-  if (visibleUntil) return `until ${formatDay(visibleUntil)}`
+  const from = formatMonthDay(visibleFrom)
+  const until = formatMonthDay(visibleUntil)
+  if (from && until) return `${from} – ${until}`
+  if (from) return `from ${from}`
+  if (until) return `until ${until}`
   return 'always open'
 })
 
 const isOpen = computed(() => {
   const now = Date.now()
-  const { visibleFrom, visibleUntil } = props.assignment
-  if (visibleFrom && now < new Date(visibleFrom).getTime()) return false
-  if (visibleUntil && now > new Date(visibleUntil).getTime()) return false
+  const from = parseValidDate(props.assignment.visibleFrom)
+  const until = parseValidDate(props.assignment.visibleUntil)
+  if (from && now < from.getTime()) return false
+  if (until && now > until.getTime()) return false
   return true
 })
 

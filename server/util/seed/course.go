@@ -41,10 +41,11 @@ func seedCourses(teachers []*user.User) ([]*course.Course, error) {
 		courses[0] = c
 	} else {
 		c1 := &course.Course{
-			Title:       "DAT250 Software Technology",
-			Description: "Study of advanced software engineering principles, microservices, and messaging.",
-			Term:        course.TermAutumn,
-			Year:        2026,
+			Title:        "DAT250 Software Technology",
+			Description:  "Study of advanced software engineering principles, microservices, and messaging.",
+			Term:         course.TermAutumn,
+			Year:         2026,
+			GradingScale: course.DefaultGradingScale(),
 		}
 		created, err := courseService.CreateCourse(c1, teachers[0].Uuid)
 		if err != nil {
@@ -64,10 +65,11 @@ func seedCourses(teachers []*user.User) ([]*course.Course, error) {
 		courses[1] = c
 	} else {
 		c2 := &course.Course{
-			Title:       "DAT251 Modern Software Development",
-			Description: "Applied software engineering, agile practices, and automated pipelines.",
-			Term:        course.TermSpring,
-			Year:        2027,
+			Title:        "DAT251 Modern Software Development",
+			Description:  "Applied software engineering, agile practices, and automated pipelines.",
+			Term:         course.TermSpring,
+			Year:         2027,
+			GradingScale: course.DefaultGradingScale(),
 		}
 		created, err := courseService.CreateCourse(c2, teachers[2].Uuid)
 		if err != nil {

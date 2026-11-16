@@ -56,6 +56,9 @@ definitions:
         type: boolean
       deadline:
         type: string
+      maxPoints:
+        maximum: 999
+        type: number
       title:
         maxLength: 255
         minLength: 2
@@ -98,6 +101,8 @@ definitions:
         type: string
       deadline:
         type: string
+      maxPoints:
+        type: number
       moduleUuid:
         type: string
       position:
@@ -142,6 +147,9 @@ definitions:
         type: boolean
       deadline:
         type: string
+      maxPoints:
+        maximum: 999
+        type: number
       title:
         maxLength: 255
         minLength: 2
@@ -188,6 +196,8 @@ definitions:
         type: string
       description:
         type: string
+      gradingScale:
+        $ref: '#/definitions/course.GradingScaleDto'
       teachers:
         items:
           type: string
@@ -215,6 +225,8 @@ definitions:
     properties:
       description:
         type: string
+      gradingScale:
+        $ref: '#/definitions/course.GradingScaleDto'
       term:
         enum:
         - SPRING
@@ -278,6 +290,35 @@ definitions:
       username:
         type: string
     type: object
+  course.GradingScaleDto:
+    properties:
+      scaleA:
+        example: 90
+        maximum: 100
+        type: number
+      scaleB:
+        example: 80
+        maximum: 100
+        type: number
+      scaleC:
+        example: 60
+        maximum: 100
+        type: number
+      scaleD:
+        example: 50
+        maximum: 100
+        type: number
+      scaleE:
+        example: 40
+        maximum: 100
+        type: number
+    required:
+    - scaleA
+    - scaleB
+    - scaleC
+    - scaleD
+    - scaleE
+    type: object
   course.GroupDto:
     properties:
       courseUuid:
@@ -340,6 +381,8 @@ definitions:
     properties:
       description:
         type: string
+      gradingScale:
+        $ref: '#/definitions/course.GradingScaleDto'
       term:
         enum:
         - SPRING
@@ -390,6 +433,147 @@ definitions:
       error:
         example: Example error, something went wrong
         type: string
+    type: object
+  grade.CourseFinalGradeDto:
+    properties:
+      courseCode:
+        type: string
+      courseName:
+        type: string
+      courseUuid:
+        type: string
+      finalGrade:
+        description: '"A", "B", "C", "D", "E", "F"'
+        type: string
+      gradingScale:
+        $ref: '#/definitions/course.GradingScaleDto'
+      percent:
+        type: number
+      totalMaxScore:
+        type: number
+      totalScore:
+        type: number
+    type: object
+  grade.GradeDto:
+    properties:
+      feedback:
+        type: string
+      gradedAt:
+        type: string
+      gradedByEmail:
+        type: string
+      isVisibleToStudent:
+        type: boolean
+      maxPoints:
+        type: number
+      releasedAt:
+        type: string
+      score:
+        type: number
+    type: object
+  grade.PendingSubmissionDto:
+    properties:
+      assignmentTitle:
+        type: string
+      attempt:
+        type: integer
+      contentUuid:
+        type: string
+      courseCode:
+        type: string
+      courseName:
+        type: string
+      courseUuid:
+        type: string
+      deadline:
+        type: string
+      isLate:
+        type: boolean
+      maxPoints:
+        type: number
+      submissionUuid:
+        type: string
+      submittedAt:
+        type: string
+      userEmail:
+        type: string
+      userName:
+        type: string
+    type: object
+  grade.ReleaseResultDto:
+    properties:
+      released:
+        type: integer
+    type: object
+  grade.StudentFinalGradeRowDto:
+    properties:
+      finalGrade:
+        type: string
+      percent:
+        type: number
+      totalMaxScore:
+        type: number
+      totalScore:
+        type: number
+      userEmail:
+        type: string
+      userName:
+        type: string
+      userUuid:
+        type: string
+    type: object
+  grade.StudentGradeDto:
+    properties:
+      assignmentTitle:
+        type: string
+      attempt:
+        type: integer
+      contentUuid:
+        type: string
+      courseCode:
+        type: string
+      courseName:
+        type: string
+      courseUuid:
+        type: string
+      feedback:
+        type: string
+      gradedAt:
+        type: string
+      maxPoints:
+        type: number
+      moduleTitle:
+        type: string
+      percent:
+        type: number
+      score:
+        type: number
+      type:
+        $ref: '#/definitions/grade.StudentGradeType'
+    type: object
+  grade.StudentGradeType:
+    enum:
+    - HANDIN
+    - QUIZ
+    type: string
+    x-enum-varnames:
+    - GradeTypeHandin
+    - GradeTypeQuiz
+  grade.UpsertGradeDto:
+    properties:
+      feedback:
+        example: Good overall structure, minor edge-case bug.
+        maxLength: 10000
+        type: string
+      isVisibleToStudent:
+        example: true
+        type: boolean
+      score:
+        example: 85.5
+        minimum: 0
+        type: number
+    required:
+    - score
     type: object
   info.ServerInfoDto:
     properties:
@@ -465,6 +649,8 @@ definitions:
         type: string
       maxAttempts:
         type: integer
+      maxPoints:
+        type: number
       moduleTitle:
         type: string
       moduleUuid:
@@ -701,6 +887,8 @@ definitions:
         type: string
       fileSize:
         type: integer
+      grade:
+        $ref: '#/definitions/submission.SubmissionGradeDto'
       groupName:
         type: string
       isGroup:
@@ -721,6 +909,19 @@ definitions:
         type: string
       uuid:
         type: string
+    type: object
+  submission.SubmissionGradeDto:
+    properties:
+      feedback:
+        type: string
+      gradedAt:
+        type: string
+      isVisibleToStudent:
+        type: boolean
+      releasedAt:
+        type: string
+      score:
+        type: number
     type: object
   submission.SubmissionStatus:
     enum:
@@ -1190,6 +1391,61 @@ paths:
       summary: List course assignments
       tags:
       - quiz
+  /course/{uuid}/content/{contentUuid}/grade/release:
+    post:
+      description: Teacher or Admin only. Transitions all unreleased individual grades
+        to visible and notifies students.
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Content UUID
+        in: path
+        name: contentUuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/grade.ReleaseResultDto'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Release all unreleased grades for an assignment
+      tags:
+      - grade
   /course/{uuid}/content/{contentUuid}/submission:
     get:
       description: Teacher or Admin only. Returns all student submissions for an assignment.
@@ -1343,6 +1599,74 @@ paths:
       summary: Download submitted deliverable file
       tags:
       - submission
+  /course/{uuid}/content/{contentUuid}/submission/{submissionUuid}/grade:
+    put:
+      consumes:
+      - application/json
+      description: Teacher or Admin only. Sets evaluation score, Markdown feedback,
+        and student visibility.
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Content UUID
+        in: path
+        name: contentUuid
+        required: true
+        type: string
+      - description: Submission UUID
+        in: path
+        name: submissionUuid
+        required: true
+        type: string
+      - description: Grade and feedback payload
+        in: body
+        name: grade
+        required: true
+        schema:
+          $ref: '#/definitions/grade.UpsertGradeDto'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/grade.GradeDto'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Grade or update an individual submission
+      tags:
+      - grade
   /course/{uuid}/content/{contentUuid}/submission/file/init:
     post:
       description: Stamps receipt time, verifies eligibility, and issues an upload
@@ -1717,6 +2041,90 @@ paths:
       summary: Remove user from course
       tags:
       - course
+  /course/{uuid}/grade/export:
+    get:
+      description: Teacher or Admin only. Streams CSV containing all student grades
+        across all assignments in course.
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - text/csv
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Export course gradebook as CSV
+      tags:
+      - grade
+  /course/{uuid}/grade/roster:
+    get:
+      description: Teacher or Admin only. Returns all enrolled students with their
+        cumulative earned scores, percentages, and final letter grades (A-F).
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/grade.StudentFinalGradeRowDto'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get course grade roster with final letter grades
+      tags:
+      - grade
   /course/{uuid}/group:
     get:
       description: Returns all groups formed for the specified course. Requires student
@@ -3159,6 +3567,119 @@ paths:
       summary: Get current user's courses
       tags:
       - course
+  /grade/my:
+    get:
+      description: Student view. Returns released hand-in grades and quiz best-attempt
+        scores for authenticated student.
+      parameters:
+      - description: Filter by course UUID
+        in: query
+        name: courseUuid
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/grade.StudentGradeDto'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List student's own grades
+      tags:
+      - grade
+  /grade/my/final:
+    get:
+      description: Calculates and returns cumulative final subject letter grades (A-F),
+        earned points, and overall percentage across enrolled courses.
+      parameters:
+      - description: Filter by course UUID
+        in: query
+        name: courseUuid
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/grade.CourseFinalGradeDto'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get student's final course grades
+      tags:
+      - grade
+  /grade/pending:
+    get:
+      description: Teacher or Admin only. Returns latest ungraded individual submissions
+        across courses taught by caller.
+      parameters:
+      - description: Filter by course UUID
+        in: query
+        name: courseUuid
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/grade.PendingSubmissionDto'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List pending ungraded submissions
+      tags:
+      - grade
   /group:
     post:
       consumes:

@@ -114,3 +114,45 @@ func TestCourseAggregate_CRUDAndAssociations(t *testing.T) {
 	enrDto := course.EnrollmentDto{}.FromModel(&retrieved.Enrollments[0])
 	assert.Equal(t, "teacher_anna", enrDto.Username)
 }
+
+func TestGradingScale_ValidationAndCalculation(t *testing.T) {
+	def := course.DefaultGradingScale()
+	assert.Equal(t, 90.0, def.ScaleA)
+	assert.Equal(t, 80.0, def.ScaleB)
+	assert.Equal(t, 60.0, def.ScaleC)
+	assert.Equal(t, 50.0, def.ScaleD)
+	assert.Equal(t, 40.0, def.ScaleE)
+	assert.NoError(t, def.Validate())
+
+	// Valid calculations
+	assert.Equal(t, "A", def.CalculateGrade(100.0))
+	assert.Equal(t, "A", def.CalculateGrade(90.0))
+	assert.Equal(t, "B", def.CalculateGrade(89.9))
+	assert.Equal(t, "B", def.CalculateGrade(80.0))
+	assert.Equal(t, "C", def.CalculateGrade(79.9))
+	assert.Equal(t, "C", def.CalculateGrade(60.0))
+	assert.Equal(t, "D", def.CalculateGrade(59.9))
+	assert.Equal(t, "D", def.CalculateGrade(50.0))
+	assert.Equal(t, "E", def.CalculateGrade(49.9))
+	assert.Equal(t, "E", def.CalculateGrade(40.0))
+	assert.Equal(t, "F", def.CalculateGrade(39.9))
+	assert.Equal(t, "F", def.CalculateGrade(0.0))
+
+	// Invalid scales
+	invalidCases := []course.GradingScale{
+		{ScaleA: 105, ScaleB: 80, ScaleC: 60, ScaleD: 50, ScaleE: 40},
+		{ScaleA: 80, ScaleB: 80, ScaleC: 60, ScaleD: 50, ScaleE: 40},
+		{ScaleA: 90, ScaleB: 50, ScaleC: 60, ScaleD: 50, ScaleE: 40},
+		{ScaleA: 90, ScaleB: 80, ScaleC: 45, ScaleD: 50, ScaleE: 40},
+		{ScaleA: 90, ScaleB: 80, ScaleC: 60, ScaleD: 35, ScaleE: 40},
+		{ScaleA: 90, ScaleB: 80, ScaleC: 60, ScaleD: 50, ScaleE: 0},
+		{ScaleA: 90, ScaleB: 80, ScaleC: 60, ScaleD: 50, ScaleE: -5},
+	}
+	for _, tc := range invalidCases {
+		assert.ErrorIs(t, tc.Validate(), course.ErrInvalidGradingScale)
+	}
+
+	c := &course.Course{GradingScale: def}
+	assert.Equal(t, "A", c.CalculateGrade(95.0))
+	assert.Equal(t, "F", c.CalculateGrade(20.0))
+}

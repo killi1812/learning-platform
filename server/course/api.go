@@ -100,6 +100,7 @@ func (ctn *CourseCtn) handleError(c *gin.Context, err error, fallbackMsg string)
 		errors.Is(err, ErrCircularPrerequisite),
 		errors.Is(err, ErrInvalidReorderList),
 		errors.Is(err, ErrUserNotInGroup),
+		errors.Is(err, ErrInvalidGradingScale),
 		errors.Is(err, ErrGroupMaxMembersTooSmall):
 		ctn.logger.Errorf("%s (bad request): %v", fallbackMsg, err)
 		ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
@@ -594,6 +595,11 @@ func (ctn *CourseCtn) create(c *gin.Context) {
 			ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
 			return
 		}
+		if errors.Is(err, ErrInvalidGradingScale) {
+			ctn.logger.Errorf("Invalid grading scale when creating course: %v", err)
+			ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
+			return
+		}
 		ctn.logger.Errorf("Failed to create course: %v", err)
 		ginutil.RespondWithError(c, http.StatusInternalServerError, "Failed to create course")
 		return
@@ -646,6 +652,10 @@ func (ctn *CourseCtn) update(c *gin.Context) {
 	updated, err := ctn.CourseService.UpdateCourse(courseUuid, model)
 	if err != nil {
 		ctn.logger.Errorf("Failed to update course %s: %v", courseUuid, err)
+		if errors.Is(err, ErrInvalidGradingScale) {
+			ginutil.RespondWithError(c, http.StatusBadRequest, err.Error())
+			return
+		}
 		if ginutil.HandleServiceError(c, err, ErrCourseNotFound) {
 			return
 		}

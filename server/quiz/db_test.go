@@ -440,3 +440,41 @@ func TestDeleteQuiz_RemovesEverything(t *testing.T) {
 	f.db.Model(&quiz.Attempt{}).Count(&n)
 	assert.Zero(t, n)
 }
+
+func TestListAssignments_IncludesHandinMaxPoints(t *testing.T) {
+	f := setup(t)
+	_ = f.publishedQuiz(t, trueFalseQuestion)
+
+	require.NoError(t, f.db.Exec(`
+		CREATE TABLE IF NOT EXISTS individual_submissions (id INTEGER PRIMARY KEY, content_id INTEGER, user_id INTEGER, deleted_at DATETIME);
+		CREATE TABLE IF NOT EXISTS group_submissions (id INTEGER PRIMARY KEY, content_id INTEGER, deleted_at DATETIME);
+		CREATE TABLE IF NOT EXISTS group_submission_members (id INTEGER PRIMARY KEY, group_submission_id INTEGER, user_id INTEGER);
+	`).Error)
+
+	handin := &content.Content{
+		ModuleID: f.module.ID,
+		Type:     content.TypeAssignment,
+		Title:    "Hand-in Essay",
+		Position: 2,
+		Assignment: &content.Assignment{
+			Type:      content.AssignmentHandIn,
+			MaxPoints: 45,
+		},
+	}
+	require.NoError(t, f.db.Create(handin).Error)
+
+	// One active attempt and one soft-deleted attempt for the student.
+	require.NoError(t, f.db.Exec("INSERT INTO individual_submissions (id, content_id, user_id, deleted_at) VALUES (1, ?, ?, NULL), (2, ?, ?, CURRENT_TIMESTAMP)", handin.ID, f.student.ID, handin.ID, f.student.ID).Error)
+
+	items, err := f.svc.ListAssignments(f.course.Uuid, f.student.Uuid, false)
+	require.NoError(t, err)
+	require.Len(t, items, 2)
+
+	byTitle := map[string]quiz.AssignmentDto{}
+	for _, item := range items {
+		byTitle[item.Title] = item
+	}
+	assert.Equal(t, 45.0, byTitle["Hand-in Essay"].MaxPoints)
+	assert.Equal(t, 1, byTitle["Hand-in Essay"].AttemptsUsed)
+	assert.Equal(t, 100.0, byTitle["Quiz 1"].MaxPoints)
+}

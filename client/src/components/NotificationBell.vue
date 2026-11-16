@@ -1,30 +1,38 @@
 <template>
   <div class="notification-bell mr-2">
-    <v-menu location="bottom end" width="380" max-width="95vw">
+    <v-menu location="bottom end" max-width="95vw" width="380">
       <template #activator="{ props: menuProps }">
-        <v-btn v-bind="menuProps" icon aria-label="Notifications">
+        <v-btn v-bind="menuProps" aria-label="Notifications" icon>
           <v-icon icon="mdi-bell" />
         </v-btn>
       </template>
 
       <v-card>
-        <v-card-title
-          class="d-flex align-center justify-space-between text-subtitle-1 py-3"
-          @click="onOpenSend"
-        >
-          Notifications
-          <v-btn size="small" variant="text" :disabled="unreadCount === 0" @click="onMarkAllSeen">
+        <v-card-title class="d-flex align-center justify-space-between py-2">
+          <v-btn
+            class="px-1 text-subtitle-1 font-weight-medium text-none"
+            variant="text"
+            @click="onOpenSend"
+          >
+            Notifications
+          </v-btn>
+          <v-btn
+            :disabled="unreadCount === 0"
+            size="small"
+            variant="text"
+            @click.stop="onMarkAllSeen"
+          >
             Mark all read
           </v-btn>
         </v-card-title>
         <v-divider />
 
-        <v-list v-if="items.length > 0" density="compact" max-height="420" class="py-0">
+        <v-list v-if="items.length > 0" class="py-0" density="compact" max-height="420">
           <v-list-item
             v-for="item in items"
             :key="item.uuid"
-            class="notification-item"
             :active="!item.seenAt"
+            class="notification-item"
             @click="onOpen(item)"
           >
             <v-list-item-title :class="['text-wrap', { 'font-weight-bold': !item.seenAt }]">
@@ -38,10 +46,10 @@
                   <div>{{ formatShortTime(item.createdAt) }}</div>
                 </div>
                 <v-btn
+                  aria-label="Delete notification"
                   icon="mdi-delete-outline"
                   size="small"
                   variant="text"
-                  aria-label="Delete notification"
                   @click.stop="onRemove(item)"
                 />
               </div>
@@ -58,17 +66,19 @@
   </div>
 </template>
 
-<script lang="ts" setup>
+<script setup lang="ts">
+import type { AppNotification } from '@/types/notification'
 import { onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { getApiErrorMessage } from '@/api/client'
 import {
-  useNotifications,
   startNotificationSync,
   stopNotificationSync,
+  useNotifications,
 } from '@/composables/useNotifications'
 import { useToast } from '@/composables/useToast'
-import type { AppNotification } from '@/types/notification'
 import { formatShortDay, formatShortTime } from '@/util/dateTime'
+import { isInternalPath } from '@/util/url'
 
 const { items, unreadCount, markSeen, markAllSeen, remove } = useNotifications()
 const toast = useToast()
@@ -81,14 +91,9 @@ onUnmounted(() => stopNotificationSync())
 async function run(action: () => Promise<void>): Promise<void> {
   try {
     await action()
-  } catch (err: unknown) {
-    toast.error(err instanceof Error ? err.message : 'Something went wrong')
+  } catch (error: unknown) {
+    toast.error(getApiErrorMessage(error, 'Something went wrong'))
   }
-}
-
-// Only internal paths. Backend already rejects others; this guards against stale or foreign data.
-function isInternalPath(url: string): boolean {
-  return url.startsWith('/') && !url.startsWith('//')
 }
 
 function onOpen(item: AppNotification): Promise<void> {
@@ -140,9 +145,7 @@ function onRemove(item: AppNotification): Promise<void> {
 .stamp-date {
   font-size: 0.65em;
 }
-</style>
 
-<style scoped>
 .notification-bell {
   position: relative;
   display: inline-flex;

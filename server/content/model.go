@@ -81,6 +81,7 @@ type Assignment struct {
 	Deadline               *time.Time     `json:"deadline,omitempty"`
 	AllowsGroupSubmission  bool           `json:"allowsGroupSubmission" gorm:"not null;default:false"`
 	AcceptsLateSubmissions bool           `json:"acceptsLateSubmissions" gorm:"not null;default:false"`
+	MaxPoints              float64        `json:"maxPoints" gorm:"type:decimal(5,2);not null;default:100"`
 
 	// 1-to-1 extension relations for Class Table Inheritance (HANDIN has no subtype extension table)
 	Quiz           *Quiz           `json:"quiz,omitempty" gorm:"foreignKey:ContentID;references:ContentID;constraint:OnDelete:CASCADE;"`

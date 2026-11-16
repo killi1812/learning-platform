@@ -133,7 +133,11 @@ func (m *mockContentService) GetAssignmentByModule(moduleUuid uuid.UUID) (*conte
 	return nil, content.ErrContentNotFound
 }
 
-func (m *mockContentService) CreateHandin(courseUuid, moduleUuid uuid.UUID, title string, deadline *time.Time, lateAllowed, groupAllowed bool) (*content.Content, error) {
+func (m *mockContentService) CreateHandin(courseUuid, moduleUuid uuid.UUID, title string, deadline *time.Time, lateAllowed, groupAllowed bool, maxPoints *float64) (*content.Content, error) {
+	mp := 100.0
+	if maxPoints != nil && *maxPoints > 0 {
+		mp = *maxPoints
+	}
 	return &content.Content{
 		Uuid:  uuid.New(),
 		Title: title,
@@ -143,13 +147,18 @@ func (m *mockContentService) CreateHandin(courseUuid, moduleUuid uuid.UUID, titl
 			Deadline:               deadline,
 			AcceptsLateSubmissions: lateAllowed,
 			AllowsGroupSubmission:  groupAllowed,
+			MaxPoints:              mp,
 		},
 	}, nil
 }
 
-func (m *mockContentService) UpdateHandin(courseUuid, moduleUuid, assignmentUuid uuid.UUID, title string, deadline *time.Time, lateAllowed, groupAllowed bool) (*content.Content, error) {
+func (m *mockContentService) UpdateHandin(courseUuid, moduleUuid, assignmentUuid uuid.UUID, title string, deadline *time.Time, lateAllowed, groupAllowed bool, maxPoints *float64) (*content.Content, error) {
 	if m.updateHandinErr != nil {
 		return nil, m.updateHandinErr
+	}
+	mp := 100.0
+	if maxPoints != nil && *maxPoints > 0 {
+		mp = *maxPoints
 	}
 	return &content.Content{
 		Uuid:  assignmentUuid,
@@ -160,6 +169,7 @@ func (m *mockContentService) UpdateHandin(courseUuid, moduleUuid, assignmentUuid
 			Deadline:               deadline,
 			AcceptsLateSubmissions: lateAllowed,
 			AllowsGroupSubmission:  groupAllowed,
+			MaxPoints:              mp,
 		},
 	}, nil
 }
@@ -714,6 +724,10 @@ func TestContentCtn_Handin(t *testing.T) {
 		payload := content.CreateHandinDto{Title: ""}
 		w := doReq(r, http.MethodPost, basePath, auth, payload)
 		assert.Equal(t, http.StatusBadRequest, w.Code)
+
+		tooHigh := 1000.0
+		wHigh := doReq(r, http.MethodPost, basePath, auth, content.CreateHandinDto{Title: "Valid Title", MaxPoints: &tooHigh})
+		assert.Equal(t, http.StatusBadRequest, wHigh.Code)
 	})
 
 	t.Run("list handins success", func(t *testing.T) {

@@ -59,6 +59,7 @@ type CreateHandinDto struct {
 	Deadline               *time.Time `json:"deadline,omitempty"`
 	AcceptsLateSubmissions bool       `json:"acceptsLateSubmissions"`
 	AllowsGroupSubmission  bool       `json:"allowsGroupSubmission"`
+	MaxPoints              *float64   `json:"maxPoints,omitempty" binding:"omitempty,gt=0,lte=999"`
 }
 
 // UpdateHandinDto defines the payload for updating a hand-in assignment.
@@ -67,6 +68,7 @@ type UpdateHandinDto struct {
 	Deadline               *time.Time `json:"deadline,omitempty"`
 	AcceptsLateSubmissions bool       `json:"acceptsLateSubmissions"`
 	AllowsGroupSubmission  bool       `json:"allowsGroupSubmission"`
+	MaxPoints              *float64   `json:"maxPoints,omitempty" binding:"omitempty,gt=0,lte=999"`
 }
 
 // HandinDto represents the public view of a hand-in assignment.
@@ -78,6 +80,7 @@ type HandinDto struct {
 	Deadline               *time.Time `json:"deadline,omitempty"`
 	AcceptsLateSubmissions bool       `json:"acceptsLateSubmissions"`
 	AllowsGroupSubmission  bool       `json:"allowsGroupSubmission"`
+	MaxPoints              float64    `json:"maxPoints"`
 	CreatedAt              time.Time  `json:"createdAt"`
 	UpdatedAt              time.Time  `json:"updatedAt"`
 }
@@ -101,6 +104,10 @@ func (HandinDto) FromModel(cnt *Content) HandinDto {
 		dto.Deadline = cnt.Assignment.Deadline
 		dto.AcceptsLateSubmissions = cnt.Assignment.AcceptsLateSubmissions
 		dto.AllowsGroupSubmission = cnt.Assignment.AllowsGroupSubmission
+		dto.MaxPoints = cnt.Assignment.MaxPoints
+		if dto.MaxPoints <= 0 {
+			dto.MaxPoints = 100
+		}
 	}
 	return dto
 }

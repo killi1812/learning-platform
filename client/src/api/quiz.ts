@@ -1,4 +1,3 @@
-import { authApi, getApiErrorMessage } from './client'
 import type {
   Assignment,
   Attempt,
@@ -8,17 +7,12 @@ import type {
   StudentResultRow,
   UpdateQuizPayload,
 } from '@/types/quiz'
+import { authApi, request } from './client'
 
-async function wrapRequest<T>(promise: Promise<{ data: T }>): Promise<T> {
-  try {
-    const response = await promise
-    return response.data
-  } catch (err: unknown) {
-    throw new Error(getApiErrorMessage(err))
-  }
+const enc = encodeURIComponent
+function quizPath(courseUuid: string, quizUuid: string) {
+  return `/course/${enc(courseUuid)}/quiz/${enc(quizUuid)}`
 }
-
-const quizPath = (courseUuid: string, quizUuid: string) => `/course/${courseUuid}/quiz/${quizUuid}`
 
 // ---- teacher ----
 
@@ -27,13 +21,13 @@ export function createQuiz(
   moduleUuid: string,
   title: string,
 ): Promise<EditQuiz> {
-  return wrapRequest(
-    authApi.post<EditQuiz>(`/course/${courseUuid}/module/${moduleUuid}/quiz`, { title }),
+  return request(
+    authApi.post<EditQuiz>(`/course/${enc(courseUuid)}/module/${enc(moduleUuid)}/quiz`, { title }),
   )
 }
 
 export function getQuizForEdit(courseUuid: string, quizUuid: string): Promise<EditQuiz> {
-  return wrapRequest(authApi.get<EditQuiz>(quizPath(courseUuid, quizUuid)))
+  return request(authApi.get<EditQuiz>(quizPath(courseUuid, quizUuid)))
 }
 
 export function updateQuiz(
@@ -41,7 +35,7 @@ export function updateQuiz(
   quizUuid: string,
   payload: UpdateQuizPayload,
 ): Promise<EditQuiz> {
-  return wrapRequest(authApi.put<EditQuiz>(quizPath(courseUuid, quizUuid), payload))
+  return request(authApi.put<EditQuiz>(quizPath(courseUuid, quizUuid), payload))
 }
 
 export function replaceQuestions(
@@ -49,33 +43,33 @@ export function replaceQuestions(
   quizUuid: string,
   questions: QuestionPayload[],
 ): Promise<EditQuiz> {
-  return wrapRequest(
+  return request(
     authApi.put<EditQuiz>(`${quizPath(courseUuid, quizUuid)}/questions`, { questions }),
   )
 }
 
 export function publishQuiz(courseUuid: string, quizUuid: string): Promise<EditQuiz> {
-  return wrapRequest(authApi.post<EditQuiz>(`${quizPath(courseUuid, quizUuid)}/publish`))
+  return request(authApi.post<EditQuiz>(`${quizPath(courseUuid, quizUuid)}/publish`))
 }
 
 export function deleteQuiz(courseUuid: string, quizUuid: string): Promise<void> {
-  return wrapRequest(authApi.delete<void>(quizPath(courseUuid, quizUuid)))
+  return request(authApi.delete<void>(quizPath(courseUuid, quizUuid)))
 }
 
 export function getQuizResults(courseUuid: string, quizUuid: string): Promise<StudentResultRow[]> {
-  return wrapRequest(authApi.get<StudentResultRow[]>(`${quizPath(courseUuid, quizUuid)}/results`))
+  return request(authApi.get<StudentResultRow[]>(`${quizPath(courseUuid, quizUuid)}/results`))
 }
 
 // ---- everyone enrolled ----
 
 export function listAssignments(courseUuid: string): Promise<Assignment[]> {
-  return wrapRequest(authApi.get<Assignment[]>(`/course/${courseUuid}/assignment`))
+  return request(authApi.get<Assignment[]>(`/course/${enc(courseUuid)}/assignment`))
 }
 
 // ---- student ----
 
 export function startAttempt(courseUuid: string, quizUuid: string): Promise<Attempt> {
-  return wrapRequest(authApi.post<Attempt>(`${quizPath(courseUuid, quizUuid)}/attempt`))
+  return request(authApi.post<Attempt>(`${quizPath(courseUuid, quizUuid)}/attempt`))
 }
 
 export function saveAnswer(
@@ -84,13 +78,13 @@ export function saveAnswer(
   questionUuid: string,
   selected: number[],
 ): Promise<void> {
-  return wrapRequest(
-    authApi.put<void>(`${quizPath(courseUuid, quizUuid)}/attempt/answers/${questionUuid}`, {
+  return request(
+    authApi.put<void>(`${quizPath(courseUuid, quizUuid)}/attempt/answers/${enc(questionUuid)}`, {
       selected,
     }),
   )
 }
 
 export function submitAttempt(courseUuid: string, quizUuid: string): Promise<QuizResult> {
-  return wrapRequest(authApi.post<QuizResult>(`${quizPath(courseUuid, quizUuid)}/attempt/submit`))
+  return request(authApi.post<QuizResult>(`${quizPath(courseUuid, quizUuid)}/attempt/submit`))
 }

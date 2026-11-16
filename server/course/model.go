@@ -25,22 +25,78 @@ const (
 	TermAutumn Term = "AUTUMN"
 )
 
+// GradingScale defines the minimum percentage cutoffs for letter grades A through E.
+// Any percentage below ScaleE results in grade F (fail).
+type GradingScale struct {
+	ScaleA float64 `json:"scaleA" gorm:"column:scale_a;not null"`
+	ScaleB float64 `json:"scaleB" gorm:"column:scale_b;not null"`
+	ScaleC float64 `json:"scaleC" gorm:"column:scale_c;not null"`
+	ScaleD float64 `json:"scaleD" gorm:"column:scale_d;not null"`
+	ScaleE float64 `json:"scaleE" gorm:"column:scale_e;not null"`
+}
+
+// DefaultGradingScale returns standard Norwegian university scale cutoffs:
+// A >= 90%, B >= 80%, C >= 60%, D >= 50%, E >= 40%, F < 40%.
+func DefaultGradingScale() GradingScale {
+	return GradingScale{
+		ScaleA: 90,
+		ScaleB: 80,
+		ScaleC: 60,
+		ScaleD: 50,
+		ScaleE: 40,
+	}
+}
+
+// Validate checks that thresholds are strictly descending and within (0, 100].
+func (s GradingScale) Validate() error {
+	if s.ScaleA > 100 || s.ScaleA <= s.ScaleB ||
+		s.ScaleB <= s.ScaleC ||
+		s.ScaleC <= s.ScaleD ||
+		s.ScaleD <= s.ScaleE ||
+		s.ScaleE <= 0 {
+		return ErrInvalidGradingScale
+	}
+	return nil
+}
+
+// CalculateGrade maps a percentage (0-100) to a letter grade A-F according to the scale.
+func (s GradingScale) CalculateGrade(percent float64) string {
+	switch {
+	case percent >= s.ScaleA:
+		return "A"
+	case percent >= s.ScaleB:
+		return "B"
+	case percent >= s.ScaleC:
+		return "C"
+	case percent >= s.ScaleD:
+		return "D"
+	case percent >= s.ScaleE:
+		return "E"
+	default:
+		return "F"
+	}
+}
+
 // Course is the central entity of the learning management system.
 type Course struct {
 	gorm.Model
-	Uuid        uuid.UUID    `json:"uuid" gorm:"type:uuid;uniqueIndex;not null"`
-	Title       string       `json:"title" gorm:"type:varchar(255);not null"`
-	Description string       `json:"description" gorm:"type:text"`
-	Term        Term         `json:"term" gorm:"type:varchar(10);not null"`
-	Year        int          `json:"year" gorm:"not null"`
-	Modules     []Module     `json:"modules,omitempty" gorm:"foreignKey:CourseID;constraint:OnDelete:CASCADE;"`
-	Groups      []Group      `json:"groups,omitempty" gorm:"foreignKey:CourseID;constraint:OnDelete:CASCADE;"`
-	Enrollments []Enrollment `json:"enrollments,omitempty" gorm:"foreignKey:CourseID;constraint:OnDelete:CASCADE;"`
+	Uuid         uuid.UUID    `json:"uuid" gorm:"type:uuid;uniqueIndex;not null"`
+	Title        string       `json:"title" gorm:"type:varchar(255);not null"`
+	Description  string       `json:"description" gorm:"type:text"`
+	Term         Term         `json:"term" gorm:"type:varchar(10);not null"`
+	Year         int          `json:"year" gorm:"not null"`
+	GradingScale GradingScale `json:"gradingScale" gorm:"embedded"`
+	Modules      []Module     `json:"modules,omitempty" gorm:"foreignKey:CourseID;constraint:OnDelete:CASCADE;"`
+	Groups       []Group      `json:"groups,omitempty" gorm:"foreignKey:CourseID;constraint:OnDelete:CASCADE;"`
+	Enrollments  []Enrollment `json:"enrollments,omitempty" gorm:"foreignKey:CourseID;constraint:OnDelete:CASCADE;"`
 }
 
 func (c *Course) BeforeCreate(tx *gorm.DB) error {
 	if c.Uuid == uuid.Nil {
 		c.Uuid = uuid.New()
+	}
+	if c.GradingScale.ScaleA == 0 && c.GradingScale.ScaleB == 0 && c.GradingScale.ScaleC == 0 && c.GradingScale.ScaleD == 0 && c.GradingScale.ScaleE == 0 {
+		c.GradingScale = DefaultGradingScale()
 	}
 	return nil
 }
@@ -50,7 +106,14 @@ func (c *Course) Update(updated *Course) *Course {
 	c.Description = updated.Description
 	c.Term = updated.Term
 	c.Year = updated.Year
+	if updated.GradingScale != (GradingScale{}) {
+		c.GradingScale = updated.GradingScale
+	}
 	return c
+}
+
+func (c *Course) CalculateGrade(percent float64) string {
+	return c.GradingScale.CalculateGrade(percent)
 }
 
 // Enrollment records a user's participation in a course with their per-course role.

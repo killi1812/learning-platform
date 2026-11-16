@@ -1,16 +1,13 @@
 /**
  * plugins/vuetify.ts
  *
- * Framework documentation: https://vuetifyjs.com`
+ * Framework documentation: https://vuetifyjs.com
  */
 
-// Composables
 import { createVuetify } from 'vuetify'
-// Styles
 import '@mdi/font/css/materialdesignicons.css'
 import 'vuetify/styles'
 
-// https://vuetifyjs.com/en/introduction/why-vuetify/#feature-guides
 export default createVuetify({
   theme: {
     defaultTheme: 'system',
@@ -18,33 +15,33 @@ export default createVuetify({
       light: {
         colors: {
           primary: '#E85D75',
-          'on-primary': '#FFFFFF',
+          'on-primary': '#1A1A1A',
           secondary: '#6BAA5E',
-          'on-secondary': '#FFFFFF',
+          'on-secondary': '#1A1A1A',
           accent: '#6BAA5E',
-          'on-accent': '#FFFFFF',
+          'on-accent': '#1A1A1A',
           background: '#FFFFFF',
-          'on-background': '#1a1a1a',
+          'on-background': '#1A1A1A',
           surface: '#FFFFFF',
-          'on-surface': '#1a1a1a',
-          'surface-variant': '#f5f5f5',
-          'on-surface-variant': '#1a1a1a',
+          'on-surface': '#1A1A1A',
+          'surface-variant': '#F5F5F5',
+          'on-surface-variant': '#1A1A1A',
         },
       },
       dark: {
         colors: {
           primary: '#E85D75',
-          'on-primary': '#FFFFFF',
+          'on-primary': '#1A1A1A',
           secondary: '#6BAA5E',
-          'on-secondary': '#FFFFFF',
+          'on-secondary': '#1A1A1A',
           accent: '#6BAA5E',
-          'on-accent': '#FFFFFF',
-          background: '#0a0a0a',
-          'on-background': '#f5f5f5',
-          surface: '#1a1a1a',
-          'on-surface': '#f5f5f5',
-          'surface-variant': '#2a2a2a',
-          'on-surface-variant': '#f5f5f5',
+          'on-accent': '#1A1A1A',
+          background: '#0A0A0A',
+          'on-background': '#F5F5F5',
+          surface: '#1A1A1A',
+          'on-surface': '#F5F5F5',
+          'surface-variant': '#2A2A2A',
+          'on-surface-variant': '#F5F5F5',
         },
       },
     },

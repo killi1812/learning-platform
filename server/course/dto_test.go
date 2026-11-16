@@ -17,6 +17,13 @@ func TestCreateCourseDto_ToModel(t *testing.T) {
 			Description: "DAT250 advanced course",
 			Term:        "AUTUMN",
 			Year:        2026,
+			GradingScale: &GradingScaleDto{
+				ScaleA: 95,
+				ScaleB: 85,
+				ScaleC: 70,
+				ScaleD: 55,
+				ScaleE: 45,
+			},
 		}
 		model, err := dto.ToModel()
 		assert.NoError(t, err)
@@ -25,6 +32,26 @@ func TestCreateCourseDto_ToModel(t *testing.T) {
 		assert.Equal(t, "DAT250 advanced course", model.Description)
 		assert.Equal(t, TermAutumn, model.Term)
 		assert.Equal(t, 2026, model.Year)
+		assert.Equal(t, 95.0, model.GradingScale.ScaleA)
+		assert.Equal(t, 45.0, model.GradingScale.ScaleE)
+	})
+
+	t.Run("invalid grading scale returns ErrInvalidGradingScale", func(t *testing.T) {
+		dto := CreateCourseDto{
+			Title: "Test",
+			Term:  "AUTUMN",
+			Year:  2026,
+			GradingScale: &GradingScaleDto{
+				ScaleA: 80,
+				ScaleB: 85, // invalid: A <= B
+				ScaleC: 60,
+				ScaleD: 50,
+				ScaleE: 40,
+			},
+		}
+		model, err := dto.ToModel()
+		assert.ErrorIs(t, err, ErrInvalidGradingScale)
+		assert.Nil(t, model)
 	})
 
 	t.Run("invalid term returns ErrInvalidTerm", func(t *testing.T) {
@@ -57,6 +84,13 @@ func TestUpdateCourseDto_ToModel(t *testing.T) {
 			Description: "Updated Desc",
 			Term:        "SPRING",
 			Year:        2027,
+			GradingScale: &GradingScaleDto{
+				ScaleA: 92,
+				ScaleB: 82,
+				ScaleC: 65,
+				ScaleD: 52,
+				ScaleE: 42,
+			},
 		}
 		model, err := dto.ToModel()
 		assert.NoError(t, err)
@@ -64,6 +98,36 @@ func TestUpdateCourseDto_ToModel(t *testing.T) {
 		assert.Equal(t, "Updated Title", model.Title)
 		assert.Equal(t, TermSpring, model.Term)
 		assert.Equal(t, 2027, model.Year)
+		assert.Equal(t, 92.0, model.GradingScale.ScaleA)
+	})
+
+	t.Run("invalid grading scale in update returns ErrInvalidGradingScale", func(t *testing.T) {
+		dto := UpdateCourseDto{
+			Title: "Test",
+			Term:  "SPRING",
+			Year:  2027,
+			GradingScale: &GradingScaleDto{
+				ScaleA: 90,
+				ScaleB: 80,
+				ScaleC: 60,
+				ScaleD: 50,
+				ScaleE: -1, // invalid: <= 0
+			},
+		}
+		model, err := dto.ToModel()
+		assert.ErrorIs(t, err, ErrInvalidGradingScale)
+		assert.Nil(t, model)
+	})
+
+	t.Run("omitted grading scale leaves zero GradingScale on UpdateCourseDto", func(t *testing.T) {
+		dto := UpdateCourseDto{
+			Title: "Partial Update",
+			Term:  "SPRING",
+			Year:  2027,
+		}
+		model, err := dto.ToModel()
+		assert.NoError(t, err)
+		assert.Equal(t, GradingScale{}, model.GradingScale)
 	})
 
 	t.Run("invalid term returns ErrInvalidTerm", func(t *testing.T) {

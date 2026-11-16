@@ -11,13 +11,13 @@ import (
 )
 
 // NewPostgresDb initializes and returns a PostgreSQL connection via GORM.
-func NewPostgresDb(dsn string, isDev bool) *gorm.DB {
+func NewPostgresDb(dsn string, isDev, logQuery bool) *gorm.DB {
 	if dsn == "" {
 		// TODO: Log and return error
 	}
 
 	var gormLogLevel logger.LogLevel
-	if isDev {
+	if isDev && logQuery {
 		// Info level is debug when it comes to gorm
 		gormLogLevel = logger.Info
 	} else {
@@ -54,6 +54,6 @@ func NewPostgresDb(dsn string, isDev bool) *gorm.DB {
 }
 
 // NewGormDb is an alias for NewPostgresDb.
-func NewGormDb(dsn string, isDev bool) *gorm.DB {
-	return NewPostgresDb(dsn, isDev)
+func NewGormDb(dsn string, isDev, logQuery bool) *gorm.DB {
+	return NewPostgresDb(dsn, isDev, logQuery)
 }

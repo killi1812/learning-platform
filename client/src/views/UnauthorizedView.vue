@@ -1,13 +1,13 @@
 <template>
-  <div class="unauthorized-page d-flex align-center justify-center">
+  <div class="auth-page d-flex align-center justify-center">
     <v-container max-width="540">
       <v-card class="pa-6 pa-sm-8 text-center" elevation="8" rounded="xl">
-        <v-avatar color="warning" variant="tonal" size="80" class="mb-4">
+        <v-avatar class="mb-4" color="warning" size="80" variant="tonal">
           <v-icon color="warning" icon="mdi-shield-lock-outline" size="48" />
         </v-avatar>
 
         <div class="mb-2">
-          <v-chip color="warning" label size="small" class="font-weight-bold">
+          <v-chip class="font-weight-bold" color="warning" label size="small">
             401 / 403 ACCESS DENIED
           </v-chip>
         </div>
@@ -29,15 +29,14 @@
         <v-card
           v-if="attemptedPath"
           class="mb-6 pa-3 bg-surface-variant text-left"
-          variant="flat"
           rounded="lg"
+          variant="flat"
         >
           <div class="text-caption text-medium-emphasis">Attempted URL:</div>
           <code class="text-caption font-weight-bold text-primary">{{ attemptedPath }}</code>
         </v-card>
 
         <div class="d-flex justify-center">
-          <!-- When user is logged in: offer redirect to dashboard -->
           <v-btn
             v-if="isAuthenticated"
             class="text-capitalize font-weight-bold px-6"
@@ -51,7 +50,6 @@
             Return to Dashboard
           </v-btn>
 
-          <!-- When user is NOT logged in: only offer login -->
           <v-btn
             v-else
             class="text-capitalize font-weight-bold px-6"
@@ -72,7 +70,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { getSafeRedirect } from '@/util/redirect'
 
@@ -85,26 +83,15 @@ const attemptedPath = computed(() => {
   return redirect || undefined
 })
 
-function goToLogin() {
+function goToLogin(): void {
   if (attemptedPath.value) {
-    router.push({ path: '/login', query: { redirect: attemptedPath.value } })
+    void router.push({ path: '/login', query: { redirect: attemptedPath.value } })
   } else {
-    router.push('/login')
+    void router.push('/login')
   }
 }
 
-function goToDashboard() {
-  router.push('/dashboard')
+function goToDashboard(): void {
+  void router.push('/dashboard')
 }
 </script>
-
-<style scoped>
-.unauthorized-page {
-  min-height: 100vh;
-  background: radial-gradient(
-    circle at 50% 30%,
-    rgba(var(--v-theme-warning), 0.08),
-    transparent 70%
-  );
-}
-</style>

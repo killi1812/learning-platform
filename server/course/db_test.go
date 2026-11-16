@@ -236,17 +236,26 @@ func TestCourseService_CRUDAndEnrollment(t *testing.T) {
 		assert.Error(t, err)
 	})
 
-	t.Run("UpdateCourse modifies course attributes", func(t *testing.T) {
+	t.Run("UpdateCourse modifies course attributes and preserves existing custom grading scale when omitted", func(t *testing.T) {
+		customCourse, err := svc.CreateCourse(&Course{
+			Title:        "Custom Scale Course",
+			Term:         TermSpring,
+			Year:         2026,
+			GradingScale: GradingScale{ScaleA: 95, ScaleB: 85, ScaleC: 70, ScaleD: 55, ScaleE: 45},
+		}, teacher.Uuid)
+		assert.NoError(t, err)
+
 		updatedData := &Course{
-			Title:       "Distributed Systems v2",
+			Title:       "Custom Scale Course v2",
 			Description: "Updated desc",
 			Term:        TermAutumn,
-			Year:        2026,
+			Year:        2027,
 		}
-		updated, err := svc.UpdateCourse(createdCourse.Uuid, updatedData)
+		updated, err := svc.UpdateCourse(customCourse.Uuid, updatedData)
 		assert.NoError(t, err)
-		assert.Equal(t, "Distributed Systems v2", updated.Title)
+		assert.Equal(t, "Custom Scale Course v2", updated.Title)
 		assert.Equal(t, "Updated desc", updated.Description)
+		assert.Equal(t, GradingScale{ScaleA: 95, ScaleB: 85, ScaleC: 70, ScaleD: 55, ScaleE: 45}, updated.GradingScale)
 	})
 
 	t.Run("Withdraw removes student enrollment", func(t *testing.T) {

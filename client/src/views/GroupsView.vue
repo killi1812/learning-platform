@@ -11,17 +11,44 @@
         color="primary"
         prepend-icon="mdi-book-open-outline"
         size="large"
-        variant="elevated"
         to="/courses"
+        variant="elevated"
       >
         My Courses
       </v-btn>
     </div>
 
+    <!-- Partial Warning -->
+    <v-alert
+      v-if="partialWarning"
+      class="mb-4"
+      color="warning"
+      icon="mdi-alert-outline"
+      rounded="lg"
+      variant="tonal"
+    >
+      {{ partialWarning }}
+    </v-alert>
+
     <!-- Loading State -->
     <div v-if="loading" class="d-flex justify-center py-12">
       <v-progress-circular color="primary" indeterminate size="64" />
     </div>
+
+    <!-- Error State -->
+    <v-alert
+      v-else-if="loadError"
+      class="mb-4"
+      color="error"
+      icon="mdi-alert-circle"
+      rounded="lg"
+      variant="tonal"
+    >
+      <div class="d-flex flex-wrap align-center justify-space-between ga-3">
+        <span>{{ loadError }}</span>
+        <v-btn color="error" size="small" variant="outlined" @click="loadGroups"> Retry </v-btn>
+      </div>
+    </v-alert>
 
     <!-- Empty State -->
     <v-card
@@ -37,7 +64,7 @@
       <p class="text-body-2 text-medium-emphasis mb-6">
         Visit any of your enrolled courses to form or join a study group for exercises and hand-ins.
       </p>
-      <v-btn color="primary" prepend-icon="mdi-book-open-outline" variant="elevated" to="/courses">
+      <v-btn color="primary" prepend-icon="mdi-book-open-outline" to="/courses" variant="elevated">
         Go to My Courses
       </v-btn>
     </v-card>
@@ -48,10 +75,10 @@
         <v-col
           v-for="item in userGroups"
           :key="item.group.uuid"
-          cols="12"
-          md="6"
-          lg="4"
           class="d-flex"
+          cols="12"
+          lg="4"
+          md="6"
         >
           <v-card
             class="bg-surface w-100 d-flex flex-column justify-space-between"
@@ -72,7 +99,7 @@
                       size="small"
                       variant="tonal"
                     >
-                      <v-icon icon="mdi-account-multiple" start size="small" />
+                      <v-icon icon="mdi-account-multiple" size="small" start />
                       {{ item.group.members.length }} / {{ item.group.maxMembers }}
                     </v-chip>
                   </div>
@@ -123,20 +150,20 @@
               >
                 <v-btn
                   color="error"
+                  :loading="leavingUuid === item.group.uuid"
+                  prepend-icon="mdi-account-remove-outline"
                   size="small"
                   variant="text"
-                  prepend-icon="mdi-account-remove-outline"
-                  :loading="leavingUuid === item.group.uuid"
                   @click="handleLeaveGroup(item.group)"
                 >
                   Leave
                 </v-btn>
                 <v-btn
                   color="primary"
-                  size="small"
-                  variant="elevated"
                   prepend-icon="mdi-open-in-new"
+                  size="small"
                   :to="`/courses/${item.course.uuid}?tab=groups`"
+                  variant="elevated"
                 >
                   View Course
                 </v-btn>
@@ -150,12 +177,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { getMyCourses, listCourseGroups, leaveGroup } from '@/api/course'
-import { useAuth } from '@/composables/useAuth'
-import { useToast } from '@/composables/useToast'
-import { useConfirm } from '@/composables/useConfirm'
 import type { Course, Group, GroupMember } from '@/types/course'
+import { onMounted, ref } from 'vue'
+import { getApiErrorMessage } from '@/api/client'
+import { getMyCourses, leaveGroup, listCourseGroups } from '@/api/course'
+import { useAuth } from '@/composables/useAuth'
+import { useConfirm } from '@/composables/useConfirm'
+import { useToast } from '@/composables/useToast'
+import { findUserGroup, isCurrentUserGroupMember } from '@/util/group'
 
 interface UserGroupItem {
   course: Course
@@ -167,59 +196,67 @@ const toast = useToast()
 const { confirm } = useConfirm()
 
 const loading = ref(false)
+const loadError = ref<string | undefined>(undefined)
+const partialWarning = ref<string | undefined>(undefined)
 const userGroups = ref<UserGroupItem[]>([])
-const leavingUuid = ref<string | null>(null)
+const leavingUuid = ref<string | undefined>(undefined)
+let fetchCounter = 0
 
 function isMe(member: GroupMember): boolean {
-  if (!currentUser.value) return false
-  const userUuid = currentUser.value.userUuid
-  const userEmail = currentUser.value.email
-  if (userUuid && member.uuid === userUuid) return true
-  if (userEmail && member.email.toLowerCase() === userEmail.toLowerCase()) return true
-  return false
+  return isCurrentUserGroupMember(member, currentUser.value)
 }
 
-async function loadGroups() {
+async function loadGroups(): Promise<void> {
+  const requestId = ++fetchCounter
   loading.value = true
+  loadError.value = undefined
+  partialWarning.value = undefined
+
   try {
     const enrollments = await getMyCourses()
+    if (requestId !== fetchCounter) {
+      return
+    }
     const results: UserGroupItem[] = []
-    const userUuid = currentUser.value?.userUuid
-    const userEmail = currentUser.value?.email
+    const failedCourses: string[] = []
 
-    // Fetch groups for each enrolled course in parallel
-    const groupPromises = enrollments.map(async enrollment => {
-      try {
-        const groups = await listCourseGroups(enrollment.course.uuid)
-        const myGroup = groups.find(g =>
-          g.members.some(m => {
-            if (userUuid && m.uuid === userUuid) return true
-            if (userEmail && m.email.toLowerCase() === userEmail.toLowerCase()) return true
-            return false
-          }),
-        )
-        if (myGroup) {
-          results.push({
-            course: enrollment.course,
-            group: myGroup,
-          })
+    await Promise.all(
+      enrollments.map(async enrollment => {
+        try {
+          const groups = await listCourseGroups(enrollment.course.uuid)
+          const myGroup = findUserGroup(groups, currentUser.value)
+          if (myGroup) {
+            results.push({
+              course: enrollment.course,
+              group: myGroup,
+            })
+          }
+        } catch {
+          failedCourses.push(enrollment.course.title)
         }
-      } catch {
-        // If groups fail to load for one course, keep other courses intact
-      }
-    })
+      }),
+    )
 
-    await Promise.all(groupPromises)
+    if (requestId !== fetchCounter) {
+      return
+    }
     userGroups.value = results
-  } catch (err: unknown) {
-    userGroups.value = []
-    toast.error(err instanceof Error ? err.message : 'Failed to load your groups.')
+    if (failedCourses.length > 0) {
+      partialWarning.value = `Could not load groups for: ${failedCourses.join(', ')}`
+    }
+  } catch (error: unknown) {
+    if (requestId === fetchCounter) {
+      userGroups.value = []
+      loadError.value = getApiErrorMessage(error, 'Failed to load your groups.')
+    }
   } finally {
-    loading.value = false
+    if (requestId === fetchCounter) {
+      loading.value = false
+    }
   }
 }
 
-async function handleLeaveGroup(group: Group) {
+async function handleLeaveGroup(group: Group): Promise<void> {
   if (
     !(await confirm({
       title: 'Leave Group',
@@ -235,14 +272,14 @@ async function handleLeaveGroup(group: Group) {
     await leaveGroup(group.uuid)
     toast.success(`You have left ${group.name}.`)
     await loadGroups()
-  } catch (err: unknown) {
-    toast.error(err instanceof Error ? err.message : 'Failed to leave group.')
+  } catch (error: unknown) {
+    toast.error(getApiErrorMessage(error, 'Failed to leave group.'))
   } finally {
-    leavingUuid.value = null
+    leavingUuid.value = undefined
   }
 }
 
 onMounted(() => {
-  loadGroups()
+  void loadGroups()
 })
 </script>

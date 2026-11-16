@@ -21,13 +21,16 @@ const (
 // Grade represents the evaluation score and instructor feedback for a submission.
 type Grade struct {
 	gorm.Model
-	SubmissionID       uint        `json:"submissionId" gorm:"not null;uniqueIndex"`
-	Submission         *Submission `json:"submission,omitempty" gorm:"foreignKey:SubmissionID"`
-	Score              float64     `json:"score" gorm:"type:decimal(5,2);not null"`
-	Feedback           string      `json:"feedback,omitempty" gorm:"type:text"`
-	IsVisibleToStudent bool        `json:"isVisibleToStudent" gorm:"not null;default:false"`
-	GradedByID         *uint       `json:"gradedById,omitempty" gorm:"index"`
-	GradedBy           *user.User  `json:"gradedBy,omitempty" gorm:"foreignKey:GradedByID;constraint:OnDelete:SET NULL;"`
+	IndividualSubmissionID *uint                 `json:"individualSubmissionId,omitempty" gorm:"uniqueIndex"`
+	IndividualSubmission   *IndividualSubmission `json:"individualSubmission,omitempty" gorm:"foreignKey:IndividualSubmissionID;constraint:OnDelete:CASCADE;"`
+	GroupSubmissionID      *uint                 `json:"groupSubmissionId,omitempty" gorm:"uniqueIndex"`
+	GroupSubmission        *GroupSubmission      `json:"groupSubmission,omitempty" gorm:"foreignKey:GroupSubmissionID;constraint:OnDelete:CASCADE;"`
+	Score                  float64               `json:"score" gorm:"type:decimal(5,2);not null"`
+	Feedback               string                `json:"feedback,omitempty" gorm:"type:text"`
+	IsVisibleToStudent     bool                  `json:"isVisibleToStudent" gorm:"not null;default:false"`
+	ReleasedAt             *time.Time            `json:"releasedAt,omitempty"`
+	GradedByID             *uint                 `json:"gradedById,omitempty" gorm:"index"`
+	GradedBy               *user.User            `json:"gradedBy,omitempty" gorm:"foreignKey:GradedByID;constraint:OnDelete:SET NULL;"`
 }
 
 // Submission records student responses or deliverables for quizzes, coding exercises, and assignments.
@@ -45,7 +48,6 @@ type Submission struct {
 	ContentType string           `json:"contentType,omitempty" gorm:"type:varchar(100)"`
 	StorageKey  string           `json:"storageKey,omitempty" gorm:"type:varchar(512)"`
 	SubmittedAt time.Time        `json:"submittedAt" gorm:"not null;index"`
-	Grade       *Grade           `json:"grade,omitempty" gorm:"foreignKey:SubmissionID;constraint:OnDelete:CASCADE;"`
 }
 
 func (s *Submission) BeforeCreate(tx *gorm.DB) error {
@@ -64,6 +66,7 @@ type GroupSubmission struct {
 	User      *user.User    `json:"user,omitempty" gorm:"foreignKey:UserID;constraint:OnDelete:SET NULL;"`
 	UserEmail string        `json:"userEmail,omitempty" gorm:"type:varchar(255)"`
 	Members   []user.User   `json:"members,omitempty" gorm:"many2many:group_submission_members;"`
+	Grade     *Grade        `json:"grade,omitempty" gorm:"foreignKey:GroupSubmissionID;constraint:OnDelete:CASCADE;"`
 }
 
 // IndividualSubmission
@@ -72,6 +75,7 @@ type IndividualSubmission struct {
 	UserID    *uint      `json:"userId,omitempty" gorm:"index"`
 	User      *user.User `json:"user,omitempty" gorm:"foreignKey:UserID;constraint:OnDelete:SET NULL;"`
 	UserEmail string     `json:"userEmail,omitempty" gorm:"type:varchar(255);index"`
+	Grade     *Grade     `json:"grade,omitempty" gorm:"foreignKey:IndividualSubmissionID;constraint:OnDelete:CASCADE;"`
 }
 
 type ReminderType string

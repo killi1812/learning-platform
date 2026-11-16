@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"path/filepath"
 	"strings"
 	"time"
@@ -15,16 +16,28 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var (
-	ErrContentNotFound     = errors.New("content not found")
-	ErrModuleNotFound      = errors.New("module not found")
-	ErrCourseNotFound      = errors.New("course not found")
-	ErrModuleLocked        = errors.New("prerequisite module is not completed")
-	ErrContentNotAvailable = errors.New("content is not currently visible")
-	ErrGroupModeLocked     = errors.New("cannot change group submission setting after submissions have been made")
+	ErrContentNotFound             = errors.New("content not found")
+	ErrModuleNotFound              = errors.New("module not found")
+	ErrCourseNotFound              = errors.New("course not found")
+	ErrModuleLocked                = errors.New("prerequisite module is not completed")
+	ErrContentNotAvailable         = errors.New("content is not currently visible")
+	ErrGroupModeLocked             = errors.New("cannot change group submission setting after submissions have been made")
+	ErrMaxPointsBelowExistingGrade = errors.New("cannot set max points lower than existing grades")
+	ErrInvalidMaxPoints            = errors.New("maxPoints must be greater than 0 and at most 999")
 )
+
+const maxAllowedPoints = 999.0
+
+func validateMaxPoints(val float64) error {
+	if math.IsNaN(val) || math.IsInf(val, 0) || val <= 0 || val > maxAllowedPoints {
+		return ErrInvalidMaxPoints
+	}
+	return nil
+}
 
 const maxCleanFilenameLen = 200
 
@@ -38,8 +51,8 @@ type IContentService interface {
 	CreateAssignment(moduleUuid uuid.UUID, cnt *Content, asgn *Assignment) (*Content, error)
 	GetContent(contentUuid uuid.UUID) (*Content, error)
 	GetAssignmentByModule(moduleUuid uuid.UUID) (*Content, error)
-	CreateHandin(courseUuid, moduleUuid uuid.UUID, title string, deadline *time.Time, lateAllowed, groupAllowed bool) (*Content, error)
-	UpdateHandin(courseUuid, moduleUuid, assignmentUuid uuid.UUID, title string, deadline *time.Time, lateAllowed, groupAllowed bool) (*Content, error)
+	CreateHandin(courseUuid, moduleUuid uuid.UUID, title string, deadline *time.Time, lateAllowed, groupAllowed bool, maxPoints *float64) (*Content, error)
+	UpdateHandin(courseUuid, moduleUuid, assignmentUuid uuid.UUID, title string, deadline *time.Time, lateAllowed, groupAllowed bool, maxPoints *float64) (*Content, error)
 	GetHandin(courseUuid, moduleUuid, assignmentUuid uuid.UUID) (*Content, error)
 	DeleteHandin(courseUuid, moduleUuid, assignmentUuid uuid.UUID) error
 	ListHandins(courseUuid, moduleUuid uuid.UUID) ([]Content, error)
@@ -112,6 +125,11 @@ func (s *ContentService) CreateAssignment(moduleUuid uuid.UUID, cnt *Content, as
 
 	cnt.ModuleID = m.ID
 	cnt.Type = TypeAssignment
+	if asgn.MaxPoints == 0 {
+		asgn.MaxPoints = 100
+	} else if err := validateMaxPoints(asgn.MaxPoints); err != nil {
+		return nil, err
+	}
 
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(cnt).Error; err != nil {
@@ -490,7 +508,7 @@ func (s *ContentService) GetAssignmentByModule(moduleUuid uuid.UUID) (*Content, 
 }
 
 // CreateHandin creates a new hand-in assignment in the specified module.
-func (s *ContentService) CreateHandin(courseUuid, moduleUuid uuid.UUID, title string, deadline *time.Time, lateAllowed, groupAllowed bool) (*Content, error) {
+func (s *ContentService) CreateHandin(courseUuid, moduleUuid uuid.UUID, title string, deadline *time.Time, lateAllowed, groupAllowed bool, maxPoints *float64) (*Content, error) {
 	_, module, err := s.findCourseAndModule(courseUuid, moduleUuid)
 	if err != nil {
 		return nil, err
@@ -502,11 +520,20 @@ func (s *ContentService) CreateHandin(courseUuid, moduleUuid uuid.UUID, title st
 		Type:     TypeAssignment,
 	}
 
+	mp := 100.0
+	if maxPoints != nil {
+		if err := validateMaxPoints(*maxPoints); err != nil {
+			return nil, err
+		}
+		mp = *maxPoints
+	}
+
 	asgn := &Assignment{
 		Type:                   AssignmentHandIn,
 		Deadline:               deadline,
 		AcceptsLateSubmissions: lateAllowed,
 		AllowsGroupSubmission:  groupAllowed,
+		MaxPoints:              mp,
 	}
 
 	err = s.db.Transaction(func(tx *gorm.DB) error {
@@ -545,34 +572,63 @@ func (s *ContentService) CreateHandin(courseUuid, moduleUuid uuid.UUID, title st
 	return cnt, nil
 }
 
-// UpdateHandin updates title, deadline, acceptsLateSubmissions, and allowsGroupSubmission for a hand-in assignment.
-func (s *ContentService) UpdateHandin(courseUuid, moduleUuid, assignmentUuid uuid.UUID, title string, deadline *time.Time, lateAllowed, groupAllowed bool) (*Content, error) {
+// UpdateHandin updates title, deadline, acceptsLateSubmissions, allowsGroupSubmission, and maxPoints for a hand-in assignment.
+func (s *ContentService) UpdateHandin(courseUuid, moduleUuid, assignmentUuid uuid.UUID, title string, deadline *time.Time, lateAllowed, groupAllowed bool, maxPoints *float64) (*Content, error) {
+	if maxPoints != nil {
+		if err := validateMaxPoints(*maxPoints); err != nil {
+			return nil, err
+		}
+	}
+
 	cnt, err := s.GetHandin(courseUuid, moduleUuid, assignmentUuid)
 	if err != nil {
 		return nil, err
 	}
 
-	if cnt.Assignment != nil && cnt.Assignment.AllowsGroupSubmission != groupAllowed {
-		var indCount, grpCount int64
-		if err := s.db.Table("individual_submissions").Where("content_id = ?", cnt.ID).Count(&indCount).Error; err != nil {
-			return nil, err
-		}
-		if err := s.db.Table("group_submissions").Where("content_id = ?", cnt.ID).Count(&grpCount).Error; err != nil {
-			return nil, err
-		}
-		if indCount > 0 || grpCount > 0 {
-			return nil, ErrGroupModeLocked
-		}
-	}
-
-	cnt.Title = title
-	if cnt.Assignment != nil {
-		cnt.Assignment.Deadline = deadline
-		cnt.Assignment.AcceptsLateSubmissions = lateAllowed
-		cnt.Assignment.AllowsGroupSubmission = groupAllowed
-	}
-
 	err = s.db.Transaction(func(tx *gorm.DB) error {
+		if cnt.Assignment != nil {
+			// Serialize concurrent maxPoints edits and UpsertGrade checks on the assignment row.
+			var lockedAsgn Assignment
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("content_id = ?", cnt.ID).First(&lockedAsgn).Error; err != nil {
+				return err
+			}
+
+			if lockedAsgn.AllowsGroupSubmission != groupAllowed {
+				var indCount, grpCount int64
+				if err := tx.Table("individual_submissions").Where("content_id = ? AND deleted_at IS NULL", cnt.ID).Count(&indCount).Error; err != nil {
+					return err
+				}
+				if err := tx.Table("group_submissions").Where("content_id = ? AND deleted_at IS NULL", cnt.ID).Count(&grpCount).Error; err != nil {
+					return err
+				}
+				if indCount > 0 || grpCount > 0 {
+					return ErrGroupModeLocked
+				}
+			}
+
+			if maxPoints != nil {
+				var highestGradeScore float64
+				row := tx.Table("grades").
+					Joins("JOIN individual_submissions ON individual_submissions.id = grades.individual_submission_id").
+					Where("individual_submissions.content_id = ? AND grades.deleted_at IS NULL AND individual_submissions.deleted_at IS NULL", cnt.ID).
+					Select("COALESCE(MAX(grades.score), 0)").Row()
+				if err := row.Scan(&highestGradeScore); err != nil {
+					return err
+				}
+				if highestGradeScore > *maxPoints {
+					return ErrMaxPointsBelowExistingGrade
+				}
+				cnt.Assignment.MaxPoints = *maxPoints
+			}
+		}
+
+		cnt.Title = title
+		if cnt.Assignment != nil {
+			cnt.Assignment.Deadline = deadline
+			cnt.Assignment.AcceptsLateSubmissions = lateAllowed
+			cnt.Assignment.AllowsGroupSubmission = groupAllowed
+		}
+
 		if err := tx.Save(cnt).Error; err != nil {
 			return err
 		}

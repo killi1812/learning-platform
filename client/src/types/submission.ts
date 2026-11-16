@@ -1,3 +1,5 @@
+import type { GradeDto } from './grade'
+
 export type PayloadType = 'URL' | 'FILE'
 export type SubmissionStatus = 'QUEUED'
 
@@ -13,6 +15,8 @@ export interface SubmissionAccepted {
   status: SubmissionStatus
 }
 
+export type SubmissionGrade = Omit<GradeDto, 'maxPoints' | 'gradedByEmail'>
+
 export interface Submission {
   uuid: string
   attempt: number
@@ -27,6 +31,7 @@ export interface Submission {
   isGroup?: boolean
   groupName?: string
   memberEmails?: string[]
+  grade?: SubmissionGrade
 }
 
 export interface CreateHandinPayload {
@@ -34,14 +39,10 @@ export interface CreateHandinPayload {
   deadline?: string
   acceptsLateSubmissions: boolean
   allowsGroupSubmission?: boolean
+  maxPoints?: number
 }
 
-export interface UpdateHandinPayload {
-  title: string
-  deadline?: string
-  acceptsLateSubmissions: boolean
-  allowsGroupSubmission?: boolean
-}
+export type UpdateHandinPayload = CreateHandinPayload
 
 export interface HandinAssignment {
   uuid: string
@@ -51,6 +52,7 @@ export interface HandinAssignment {
   deadline?: string
   acceptsLateSubmissions: boolean
   allowsGroupSubmission?: boolean
+  maxPoints?: number
   createdAt: string
   updatedAt: string
 }

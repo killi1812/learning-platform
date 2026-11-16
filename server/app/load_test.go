@@ -55,3 +55,24 @@ func TestValidateSecrets(t *testing.T) {
 		assert.Contains(t, err.Error(), "must be different")
 	})
 }
+
+func TestLoadBool(t *testing.T) {
+	t.Run("unset defaults to false", func(t *testing.T) {
+		t.Setenv("TEST_LOAD_BOOL", "")
+		assert.False(t, loadBool("TEST_LOAD_BOOL"))
+	})
+
+	for _, truthy := range []string{"true", "True", "TRUE", "1", " true "} {
+		t.Run("parses_"+truthy, func(t *testing.T) {
+			t.Setenv("TEST_LOAD_BOOL", truthy)
+			assert.True(t, loadBool("TEST_LOAD_BOOL"))
+		})
+	}
+
+	for _, falsy := range []string{"false", "FALSE", "0", "not-a-bool"} {
+		t.Run("falsy_"+falsy, func(t *testing.T) {
+			t.Setenv("TEST_LOAD_BOOL", falsy)
+			assert.False(t, loadBool("TEST_LOAD_BOOL"))
+		})
+	}
+}

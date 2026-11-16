@@ -38,6 +38,7 @@ func LoadConfig() {
 	DatabaseConn = loadString("DATABASE_CONN")
 	SeaweedFSEndpoint = loadString("SEAWEEDFS_ENDPOINT")
 	RabbitMqConn = loadString("RABBITMQ_CONN")
+	LogQuery = loadBool("LOG_QUERY")
 
 	zap.S().Debugf("Finished loading env variables")
 }
@@ -97,9 +98,16 @@ func loadString(name string) string {
 }
 
 func loadBool(name string) bool {
-	rez := os.Getenv(name)
+	rez := strings.TrimSpace(os.Getenv(name))
 	if rez == "" {
-		zap.S().Errorf("Env variable %s is empty", name)
+		zap.S().Debugf("Env variable %s is unset, defaulting to false", name)
+		return false
 	}
-	return rez == "true"
+	val, err := strconv.ParseBool(rez)
+	if err != nil {
+		zap.S().Warnf("Invalid boolean for env variable %s=%q, defaulting to false", name, rez)
+		return false
+	}
+	zap.S().Debugf("Loaded %s = %t", name, val)
+	return val
 }

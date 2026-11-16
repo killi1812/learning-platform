@@ -503,19 +503,23 @@ func (s *QuizService) ListAssignments(courseUuid, userUuid uuid.UUID, isTeacher 
 	}
 	var handinCounts []handinAttemptCount
 	if len(handinIDs) > 0 {
-		_ = s.db.Table("individual_submissions").
+		if err := s.db.Table("individual_submissions").
 			Select("content_id, count(*) as count").
-			Where("content_id IN ? AND user_id = ?", handinIDs, u.ID).
+			Where("content_id IN ? AND user_id = ? AND deleted_at IS NULL", handinIDs, u.ID).
 			Group("content_id").
-			Scan(&handinCounts).Error
+			Scan(&handinCounts).Error; err != nil {
+			return nil, err
+		}
 
 		var grpHandinCounts []handinAttemptCount
-		_ = s.db.Table("group_submissions").
+		if err := s.db.Table("group_submissions").
 			Select("group_submissions.content_id, count(*) as count").
 			Joins("JOIN group_submission_members ON group_submission_members.group_submission_id = group_submissions.id").
-			Where("group_submissions.content_id IN ? AND group_submission_members.user_id = ?", handinIDs, u.ID).
+			Where("group_submissions.content_id IN ? AND group_submission_members.user_id = ? AND group_submissions.deleted_at IS NULL", handinIDs, u.ID).
 			Group("group_submissions.content_id").
-			Scan(&grpHandinCounts).Error
+			Scan(&grpHandinCounts).Error; err != nil {
+			return nil, err
+		}
 
 		handinCounts = append(handinCounts, grpHandinCounts...)
 	}
@@ -531,6 +535,10 @@ func (s *QuizService) ListAssignments(courseUuid, userUuid uuid.UUID, isTeacher 
 		}
 
 		if cnt.Assignment.Type == content.AssignmentHandIn {
+			maxPts := cnt.Assignment.MaxPoints
+			if maxPts <= 0 {
+				maxPts = 100
+			}
 			dto := AssignmentDto{
 				Uuid:                   cnt.Uuid.String(),
 				Type:                   string(content.AssignmentHandIn),
@@ -541,6 +549,7 @@ func (s *QuizService) ListAssignments(courseUuid, userUuid uuid.UUID, isTeacher 
 				Deadline:               cnt.Assignment.Deadline,
 				AcceptsLateSubmissions: cnt.Assignment.AcceptsLateSubmissions,
 				AllowsGroupSubmission:  cnt.Assignment.AllowsGroupSubmission,
+				MaxPoints:              maxPts,
 				AttemptsUsed:           handinAttemptMap[cnt.ID],
 			}
 			if cnt.Module != nil {
@@ -565,6 +574,7 @@ func (s *QuizService) ListAssignments(courseUuid, userUuid uuid.UUID, isTeacher 
 			Published:    quiz.Published,
 			VisibleFrom:  cnt.VisibleFrom,
 			VisibleUntil: cnt.VisibleUntil,
+			MaxPoints:    100,
 			PassPercent:  quiz.PassPercent,
 			MaxAttempts:  quiz.MaxAttempts,
 		}

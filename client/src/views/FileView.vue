@@ -15,7 +15,7 @@
 
       <div class="d-flex align-center ga-2">
         <v-btn
-          v-if="previewBlobUrl || page?.sourceUrl"
+          v-if="previewBlobUrl || safeSourceUrl"
           color="primary"
           prepend-icon="mdi-open-in-new"
           variant="tonal"
@@ -47,34 +47,23 @@
       <!-- Embedded Preview Section -->
       <v-card class="bg-surface overflow-hidden" elevation="2" rounded="lg">
         <!-- 1. PDF Preview -->
-        <div v-if="isPdf && previewBlobUrl && !previewFailed" class="preview-container">
-          <iframe class="embedded-frame" :src="previewBlobUrl" title="PDF Document Preview" />
+        <div v-if="canRenderPdf && previewBlobUrl && !previewFailed" class="preview-container">
+          <iframe
+            class="embedded-frame"
+            sandbox="allow-same-origin"
+            :src="previewBlobUrl"
+            title="PDF Document Preview"
+          />
         </div>
 
         <!-- 2. Word (.docx) Document Preview -->
-        <div
-          v-else-if="isDocx && (previewData || previewBlobUrl) && !previewFailed"
-          class="preview-container"
-        >
-          <vue-office-docx
-            v-if="previewData"
-            class="office-frame"
-            :src="previewData"
-            @error="onDocxError"
-          />
+        <div v-else-if="isDocx && previewData && !previewFailed" class="preview-container">
+          <vue-office-docx class="office-frame" :src="previewData" @error="onDocxError" />
         </div>
 
         <!-- 3. PPTX Presentation Preview -->
-        <div
-          v-else-if="isPptx && (previewData || previewBlobUrl) && !previewFailed"
-          class="preview-container"
-        >
-          <vue-office-pptx
-            v-if="previewData"
-            class="office-frame"
-            :src="previewData"
-            @error="onPptxError"
-          />
+        <div v-else-if="isPptx && previewData && !previewFailed" class="preview-container">
+          <vue-office-pptx class="office-frame" :src="previewData" @error="onPptxError" />
         </div>
 
         <!-- 4. Image Preview -->
@@ -93,11 +82,11 @@
         </div>
 
         <!-- 6. External URL / Iframe Preview -->
-        <div v-else-if="page.sourceUrl && !previewFailed" class="preview-container">
+        <div v-else-if="safeSourceUrl && !previewFailed" class="preview-container">
           <iframe
             class="embedded-frame"
             sandbox="allow-scripts allow-forms allow-popups"
-            :src="page.sourceUrl"
+            :src="safeSourceUrl"
             title="External Resource"
           />
         </div>
@@ -109,8 +98,11 @@
             {{ page.fileName || page.title }}
           </h3>
           <p class="text-body-2 text-medium-emphasis mb-4">
-            This file type cannot be previewed directly in the browser. Click below to download or
-            view it.
+            {{
+              hasUnsafeSourceUrl
+                ? 'This external link uses an unsupported URL scheme and cannot be opened.'
+                : 'This file type cannot be previewed directly in the browser. Click below to download or view it.'
+            }}
           </p>
           <v-btn
             v-if="previewBlobUrl"
@@ -128,13 +120,23 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, onErrorCaptured } from 'vue'
-import { useRouter } from 'vue-router'
-import { useToast } from '@/composables/useToast'
-import VueOfficePptx from '@vue-office/pptx'
-import VueOfficeDocx from '@vue-office/docx'
-import { getFile, getFilePreviewBlob } from '@/api/content'
 import type { FileUpload } from '@/types/content'
+import VueOfficeDocx from '@vue-office/docx'
+import VueOfficePptx from '@vue-office/pptx'
+import { computed, onBeforeUnmount, onErrorCaptured, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import { ApiError, getApiErrorMessage } from '@/api/client'
+import { getFile, getFilePreviewBlob } from '@/api/content'
+import { useToast } from '@/composables/useToast'
+import {
+  getFileFormatIcon,
+  isImageMaterial,
+  isPdfMaterial,
+  isPresentationMaterial,
+  isTextMaterial,
+  isWordMaterial,
+} from '@/util/file'
+import { isSafeHttpUrl } from '@/util/url'
 
 const props = defineProps<{
   courseUuid: string
@@ -145,90 +147,82 @@ const props = defineProps<{
 const router = useRouter()
 const toast = useToast()
 
-let isMounted = false
-
 const loading = ref(true)
 const error = ref<string | undefined>(undefined)
 const page = ref<FileUpload | undefined>(undefined)
 const previewBlobUrl = ref<string | undefined>(undefined)
 const previewData = ref<Blob | ArrayBuffer | undefined>(undefined)
+const previewMimeType = ref('')
 const previewFailed = ref(false)
-const textContent = ref<string>('')
+const textContent = ref('')
 
-const fileNameLower = computed(() => page.value?.fileName?.toLowerCase() || '')
-const isFile = computed(() => !!page.value?.fileName)
+let isUnmounted = false
+let activeController: AbortController | undefined
 
-const isPdf = computed(() => {
-  return page.value?.contentType?.includes('pdf') || fileNameLower.value.endsWith('.pdf')
-})
+const fileNameLower = computed(() => page.value?.fileName?.toLowerCase() ?? '')
+const isFile = computed(() => Boolean(page.value?.fileName))
+const isPdf = computed(() => isPdfMaterial(page.value))
+const isDocx = computed(() => isWordMaterial(page.value) && !fileNameLower.value.endsWith('.doc'))
+const isPptx = computed(
+  () => isPresentationMaterial(page.value) && !fileNameLower.value.endsWith('.ppt'),
+)
+const isImage = computed(() => isImageMaterial(page.value))
+const isText = computed(() => isTextMaterial(page.value))
+const formatIcon = computed(() => getFileFormatIcon(page.value))
 
-const isDocx = computed(() => {
-  return page.value?.contentType?.includes('word') || fileNameLower.value.endsWith('.docx')
-})
-
-const isPptx = computed(() => {
+const canRenderPdf = computed(() => {
+  if (!isPdf.value) {
+    return false
+  }
+  if (previewMimeType.value.startsWith('application/pdf')) {
+    return true
+  }
   return (
-    page.value?.contentType?.includes('presentation') ||
-    page.value?.contentType?.includes('powerpoint') ||
-    fileNameLower.value.endsWith('.pptx')
+    previewMimeType.value === '' &&
+    Boolean(page.value?.contentType?.toLowerCase().startsWith('application/pdf'))
   )
 })
 
-const isImage = computed(() => {
-  return (
-    page.value?.contentType?.startsWith('image/') ||
-    ['.png', '.jpg', '.jpeg', '.gif', '.webp'].some(ext => fileNameLower.value.endsWith(ext))
-  )
+const safeSourceUrl = computed(() => {
+  const source = page.value?.sourceUrl
+  return isSafeHttpUrl(source) ? source : undefined
 })
 
-const isText = computed(() => {
-  return (
-    page.value?.contentType?.includes('text') ||
-    fileNameLower.value.endsWith('.txt') ||
-    fileNameLower.value.endsWith('.md') ||
-    fileNameLower.value.endsWith('.json') ||
-    fileNameLower.value.endsWith('.go') ||
-    fileNameLower.value.endsWith('.ts')
-  )
-})
+const hasUnsafeSourceUrl = computed(() => Boolean(page.value?.sourceUrl) && !safeSourceUrl.value)
 
-const formatIcon = computed(() => {
-  if (isPdf.value) return 'mdi-file-pdf-box'
-  if (isDocx.value) return 'mdi-file-word-box'
-  if (isPptx.value) return 'mdi-file-powerpoint-box'
-  if (isImage.value) return 'mdi-file-image'
-  if (fileNameLower.value.endsWith('.md')) return 'mdi-language-markdown'
-  if (isText.value) return 'mdi-file-document-outline'
-  if (page.value?.sourceUrl) return 'mdi-link-variant'
-  return 'mdi-file-outline'
-})
-
-function goBack() {
-  router.push(`/courses/${props.courseUuid}`)
+function clearPreviewState(): void {
+  if (previewBlobUrl.value) {
+    URL.revokeObjectURL(previewBlobUrl.value)
+    previewBlobUrl.value = undefined
+  }
+  previewData.value = undefined
+  previewMimeType.value = ''
+  textContent.value = ''
 }
 
-function openExternal() {
+function goBack(): void {
+  void router.push(`/courses/${props.courseUuid}`)
+}
+
+function openExternal(): void {
   if (previewBlobUrl.value) {
-    const a = document.createElement('a')
-    a.href = previewBlobUrl.value
-    a.download = page.value?.fileName || 'download'
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-  } else if (page.value?.sourceUrl) {
-    const url = page.value.sourceUrl
-    if (url.startsWith('https://') || url.startsWith('http://')) {
-      window.open(url, '_blank', 'noopener,noreferrer')
-    }
+    const anchor = document.createElement('a')
+    anchor.href = previewBlobUrl.value
+    anchor.download = page.value?.fileName || 'download'
+    document.body.append(anchor)
+    anchor.click()
+    anchor.remove()
+  } else if (safeSourceUrl.value) {
+    window.open(safeSourceUrl.value, '_blank', 'noopener,noreferrer')
   }
 }
 
-function onDocxError(err: unknown) {
+function onDocxError(err: unknown): void {
   console.warn('DOCX preview failed, switching to fallback:', err)
   previewFailed.value = true
 }
 
-function onPptxError(err: unknown) {
+function onPptxError(err: unknown): void {
   console.warn('PPTX preview failed, switching to fallback:', err)
   previewFailed.value = true
 }
@@ -239,77 +233,81 @@ onErrorCaptured(err => {
   return false
 })
 
-async function loadPage() {
+async function loadPage(): Promise<void> {
+  activeController?.abort()
+  const controller = new AbortController()
+  activeController = controller
+
+  clearPreviewState()
   loading.value = true
   error.value = undefined
   previewFailed.value = false
 
   try {
-    const fetchedPage = await getFile(props.courseUuid, props.moduleUuid, props.fileUuid)
-    if (!isMounted) return
+    const fetchedPage = await getFile(
+      props.courseUuid,
+      props.moduleUuid,
+      props.fileUuid,
+      controller.signal,
+    )
+    if (isUnmounted || controller.signal.aborted) {
+      return
+    }
     page.value = fetchedPage
 
     if (fetchedPage.fileName) {
-      const blob = await getFilePreviewBlob(props.courseUuid, props.moduleUuid, props.fileUuid)
-      if (!isMounted) return
-
-      if (previewBlobUrl.value) {
-        URL.revokeObjectURL(previewBlobUrl.value)
-        previewBlobUrl.value = undefined
+      const blob = await getFilePreviewBlob(
+        props.courseUuid,
+        props.moduleUuid,
+        props.fileUuid,
+        controller.signal,
+      )
+      if (isUnmounted || controller.signal.aborted) {
+        return
       }
 
+      previewMimeType.value = blob.type.toLowerCase()
       previewBlobUrl.value = URL.createObjectURL(blob)
 
-      if (isPptx.value || isDocx.value) {
-        previewData.value = await blob.arrayBuffer()
-      } else {
-        previewData.value = blob
-      }
+      previewData.value = isPptx.value || isDocx.value ? await blob.arrayBuffer() : blob
 
-      if (isText.value) {
+      if (isText.value && !controller.signal.aborted) {
         textContent.value = await blob.text()
       }
     }
-  } catch (err: unknown) {
-    if (!isMounted) return
-    const errorMsg = err instanceof Error ? err.message : 'Failed to load file material'
+  } catch (error_: unknown) {
+    if (isUnmounted || controller.signal.aborted) {
+      return
+    }
+    clearPreviewState()
+    const errorMsg = getApiErrorMessage(error_, 'Failed to load file material')
     error.value = errorMsg
-    if (
-      errorMsg.includes('Forbidden') ||
-      errorMsg.includes('insufficient permissions') ||
-      errorMsg.includes('403') ||
-      errorMsg.includes('prerequisite')
-    ) {
+    if (error_ instanceof ApiError && error_.status === 403) {
       toast.error('You must be enrolled and satisfy module prerequisites to access this material.')
-      router.push(`/courses/${props.courseUuid}`)
+      void router.push(`/courses/${props.courseUuid}`)
     }
   } finally {
-    if (isMounted) {
+    if (!isUnmounted && activeController === controller) {
       loading.value = false
     }
   }
 }
 
 onMounted(() => {
-  isMounted = true
-  loadPage()
+  void loadPage()
 })
 
 watch(
-  () => props.fileUuid,
-  (newUuid, oldUuid) => {
-    if (newUuid && newUuid !== oldUuid) {
-      loadPage()
-    }
+  () => [props.courseUuid, props.moduleUuid, props.fileUuid],
+  () => {
+    void loadPage()
   },
 )
 
-onUnmounted(() => {
-  isMounted = false
-  if (previewBlobUrl.value) {
-    URL.revokeObjectURL(previewBlobUrl.value)
-    previewBlobUrl.value = undefined
-  }
+onBeforeUnmount(() => {
+  isUnmounted = true
+  activeController?.abort()
+  clearPreviewState()
 })
 </script>
 

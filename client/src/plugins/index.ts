@@ -4,14 +4,11 @@
  * Automatically included in `./src/main.ts`
  */
 
-// Types
 import type { App } from 'vue'
-
-// Plugins
-import vuetify from './vuetify'
 import router from '@/router'
+import vuetify from './vuetify'
 
-export function registerPlugins(app: App) {
+export function registerPlugins(app: App): void {
   app.use(vuetify)
   app.use(router)
 }

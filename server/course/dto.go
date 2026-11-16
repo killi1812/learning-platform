@@ -8,64 +8,100 @@ import (
 )
 
 var (
-	ErrInvalidTerm = errors.New("term must be SPRING or AUTUMN")
-	ErrInvalidYear = errors.New("year must be between 2000 and 2100")
-	ErrInvalidRole = errors.New("role must be STUDENT or TEACHER")
+	ErrInvalidTerm         = errors.New("term must be SPRING or AUTUMN")
+	ErrInvalidYear         = errors.New("year must be between 2000 and 2100")
+	ErrInvalidRole         = errors.New("role must be STUDENT or TEACHER")
+	ErrInvalidGradingScale = errors.New("grading scale must satisfy 100 >= A > B > C > D > E > 0")
 )
 
+type GradingScaleDto struct {
+	ScaleA float64 `json:"scaleA" binding:"required,gt=0,lte=100" example:"90"`
+	ScaleB float64 `json:"scaleB" binding:"required,gt=0,lte=100" example:"80"`
+	ScaleC float64 `json:"scaleC" binding:"required,gt=0,lte=100" example:"60"`
+	ScaleD float64 `json:"scaleD" binding:"required,gt=0,lte=100" example:"50"`
+	ScaleE float64 `json:"scaleE" binding:"required,gt=0,lte=100" example:"40"`
+}
+
+func (d GradingScaleDto) ToModel() GradingScale {
+	return GradingScale{
+		ScaleA: d.ScaleA,
+		ScaleB: d.ScaleB,
+		ScaleC: d.ScaleC,
+		ScaleD: d.ScaleD,
+		ScaleE: d.ScaleE,
+	}
+}
+
+func (GradingScaleDto) FromModel(s GradingScale) GradingScaleDto {
+	return GradingScaleDto{
+		ScaleA: s.ScaleA,
+		ScaleB: s.ScaleB,
+		ScaleC: s.ScaleC,
+		ScaleD: s.ScaleD,
+		ScaleE: s.ScaleE,
+	}
+}
+
 type CreateCourseDto struct {
-	Title       string `json:"title" binding:"required,min=2,max=255"`
-	Description string `json:"description"`
-	Term        string `json:"term" binding:"required,oneof=SPRING AUTUMN"`
-	Year        int    `json:"year" binding:"required,min=2000,max=2100"`
+	Title        string           `json:"title" binding:"required,min=2,max=255"`
+	Description  string           `json:"description"`
+	Term         string           `json:"term" binding:"required,oneof=SPRING AUTUMN"`
+	Year         int              `json:"year" binding:"required,min=2000,max=2100"`
+	GradingScale *GradingScaleDto `json:"gradingScale,omitempty"`
+}
+
+func buildCourseModel(title, description, term string, year int, gradingScale *GradingScaleDto, useDefaultScale bool) (*Course, error) {
+	if term != string(TermSpring) && term != string(TermAutumn) {
+		return nil, ErrInvalidTerm
+	}
+	if year < 2000 || year > 2100 {
+		return nil, ErrInvalidYear
+	}
+	var scale GradingScale
+	if useDefaultScale {
+		scale = DefaultGradingScale()
+	}
+	if gradingScale != nil {
+		scale = gradingScale.ToModel()
+		if err := scale.Validate(); err != nil {
+			return nil, err
+		}
+	}
+	return &Course{
+		Title:        title,
+		Description:  description,
+		Term:         Term(term),
+		Year:         year,
+		GradingScale: scale,
+	}, nil
 }
 
 func (d CreateCourseDto) ToModel() (*Course, error) {
-	if d.Term != string(TermSpring) && d.Term != string(TermAutumn) {
-		return nil, ErrInvalidTerm
-	}
-	if d.Year < 2000 || d.Year > 2100 {
-		return nil, ErrInvalidYear
-	}
-	return &Course{
-		Title:       d.Title,
-		Description: d.Description,
-		Term:        Term(d.Term),
-		Year:        d.Year,
-	}, nil
+	return buildCourseModel(d.Title, d.Description, d.Term, d.Year, d.GradingScale, true)
 }
 
 type UpdateCourseDto struct {
-	Title       string `json:"title" binding:"required,min=2,max=255"`
-	Description string `json:"description"`
-	Term        string `json:"term" binding:"required,oneof=SPRING AUTUMN"`
-	Year        int    `json:"year" binding:"required,min=2000,max=2100"`
+	Title        string           `json:"title" binding:"required,min=2,max=255"`
+	Description  string           `json:"description"`
+	Term         string           `json:"term" binding:"required,oneof=SPRING AUTUMN"`
+	Year         int              `json:"year" binding:"required,min=2000,max=2100"`
+	GradingScale *GradingScaleDto `json:"gradingScale,omitempty"`
 }
 
 func (d UpdateCourseDto) ToModel() (*Course, error) {
-	if d.Term != string(TermSpring) && d.Term != string(TermAutumn) {
-		return nil, ErrInvalidTerm
-	}
-	if d.Year < 2000 || d.Year > 2100 {
-		return nil, ErrInvalidYear
-	}
-	return &Course{
-		Title:       d.Title,
-		Description: d.Description,
-		Term:        Term(d.Term),
-		Year:        d.Year,
-	}, nil
+	return buildCourseModel(d.Title, d.Description, d.Term, d.Year, d.GradingScale, false)
 }
 
 type CourseDto struct {
-	Uuid        string    `json:"uuid"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
-	Title       string    `json:"title"`
-	Description string    `json:"description"`
-	Term        string    `json:"term"`
-	Year        int       `json:"year"`
-	Teachers    []string  `json:"teachers"`
+	Uuid         string          `json:"uuid"`
+	CreatedAt    time.Time       `json:"createdAt"`
+	UpdatedAt    time.Time       `json:"updatedAt"`
+	Title        string          `json:"title"`
+	Description  string          `json:"description"`
+	Term         string          `json:"term"`
+	Year         int             `json:"year"`
+	GradingScale GradingScaleDto `json:"gradingScale"`
+	Teachers     []string        `json:"teachers"`
 }
 
 func (CourseDto) FromModel(c *Course) CourseDto {
@@ -83,14 +119,15 @@ func (CourseDto) FromModel(c *Course) CourseDto {
 		}
 	}
 	return CourseDto{
-		Uuid:        c.Uuid.String(),
-		CreatedAt:   c.CreatedAt,
-		UpdatedAt:   c.UpdatedAt,
-		Title:       c.Title,
-		Description: c.Description,
-		Term:        string(c.Term),
-		Year:        c.Year,
-		Teachers:    teachers,
+		Uuid:         c.Uuid.String(),
+		CreatedAt:    c.CreatedAt,
+		UpdatedAt:    c.UpdatedAt,
+		Title:        c.Title,
+		Description:  c.Description,
+		Term:         string(c.Term),
+		Year:         c.Year,
+		GradingScale: GradingScaleDto{}.FromModel(c.GradingScale),
+		Teachers:     teachers,
 	}
 }
 
