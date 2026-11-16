@@ -8,6 +8,7 @@ import (
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/content"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/course"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/grade"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/submission"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
 	"github.com/google/uuid"
@@ -65,12 +66,12 @@ func seedGrades(assignments []*content.Content, teachers []*user.User, students 
 	}
 
 	if existingSub1.ID != 0 {
-		var existingGrade submission.Grade
+		var existingGrade grade.Grade
 		err := db.Where("individual_submission_id = ?", existingSub1.ID).First(&existingGrade).Error
 		if err == gorm.ErrRecordNotFound {
 			releasedAt := now.Add(-1 * time.Hour)
 			feedback := "### Review Summary\n\n- **Architecture**: Clean modular structure.\n- **Tests**: High coverage across modules.\n\n```go\n// Minor suggestion: wrap errors with %w\nreturn fmt.Errorf(\"failed: %w\", err)\n```\n\nWell done!"
-			grade := submission.Grade{
+			grd := grade.Grade{
 				IndividualSubmissionID: &existingSub1.ID,
 				Score:                  92.5,
 				Feedback:               feedback,
@@ -78,7 +79,7 @@ func seedGrades(assignments []*content.Content, teachers []*user.User, students 
 				ReleasedAt:             &releasedAt,
 				GradedByID:             &teacher.ID,
 			}
-			if err := db.Create(&grade).Error; err != nil {
+			if err := db.Create(&grd).Error; err != nil {
 				return fmt.Errorf("failed to seed grade: %w", err)
 			}
 		}

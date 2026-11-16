@@ -7,6 +7,7 @@ import (
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/app"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/content"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/course"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/grade"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/notification"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/quiz"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/submission"
@@ -317,7 +318,7 @@ func TestSeedInsert(t *testing.T) {
 			&quiz.Attempt{},
 			&submission.IndividualSubmission{},
 			&submission.GroupSubmission{},
-			&submission.Grade{},
+			&grade.Grade{},
 			&notification.Notification{},
 		)
 
@@ -354,7 +355,7 @@ func TestSeedInsert(t *testing.T) {
 		var indCount, grpCount, gradeCount int64
 		db.Model(&submission.IndividualSubmission{}).Count(&indCount)
 		db.Model(&submission.GroupSubmission{}).Count(&grpCount)
-		db.Model(&submission.Grade{}).Count(&gradeCount)
+		db.Model(&grade.Grade{}).Count(&gradeCount)
 		assert.Equal(t, int64(2), indCount)
 		assert.Equal(t, int64(1), grpCount)
 		assert.Equal(t, int64(1), gradeCount)

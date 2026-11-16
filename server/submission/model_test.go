@@ -25,7 +25,6 @@ func TestSubmissionAggregate_IndividualGroupAndGrading(t *testing.T) {
 		&submission.Submission{},
 		&submission.GroupSubmission{},
 		&submission.IndividualSubmission{},
-		&submission.Grade{},
 	)
 
 	teacher := &user.User{
@@ -121,7 +120,7 @@ func TestSubmissionAggregate_IndividualGroupAndGrading(t *testing.T) {
 	assert.Equal(t, "student@hvl.no", foundIndivSub.User.Email)
 	assert.Equal(t, student.Email, foundIndivSub.UserEmail)
 
-	// Base Submission & Grade
+	// Base Submission
 	sub := &submission.Submission{
 		ContentID:   cnt.ID,
 		Attempt:     1,
@@ -131,28 +130,5 @@ func TestSubmissionAggregate_IndividualGroupAndGrading(t *testing.T) {
 		SubmittedAt: now,
 	}
 	assert.NoError(t, db.Create(sub).Error)
-
-	grd := &submission.Grade{
-		IndividualSubmissionID: &indivSub.ID,
-		Score:                  98.5,
-		Feedback:               "Excellent test cases and structure",
-		IsVisibleToStudent:     true,
-		GradedByID:             &teacher.ID,
-	}
-	assert.NoError(t, db.Create(grd).Error)
-
-	// Preload bidirectional for IndividualSubmission & Grade
-	var foundIndiv submission.IndividualSubmission
-	err = db.Preload("Grade.GradedBy").First(&foundIndiv, indivSub.ID).Error
-	assert.NoError(t, err)
-	assert.NotNil(t, foundIndiv.Grade)
-	assert.Equal(t, 98.5, foundIndiv.Grade.Score)
-	assert.NotNil(t, foundIndiv.Grade.GradedBy)
-	assert.Equal(t, "teacher@hvl.no", foundIndiv.Grade.GradedBy.Email)
-
-	var foundGrade submission.Grade
-	err = db.Preload("IndividualSubmission.Content").First(&foundGrade, grd.ID).Error
-	assert.NoError(t, err)
-	assert.NotNil(t, foundGrade.IndividualSubmission)
-	assert.Equal(t, "Exercise 1", foundGrade.IndividualSubmission.Content.Title)
+	assert.NotEqual(t, uuid.Nil, sub.Uuid)
 }

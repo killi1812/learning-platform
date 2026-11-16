@@ -6,6 +6,7 @@ import (
 
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/content"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/course"
+	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/grade"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/submission"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/testutil"
 	"git.app.uib.no/hvl-dat-250/26h/semester-project/group-8/learning-platform/user"
@@ -36,9 +37,10 @@ func TestAllLmsModels_EndToEndAutoMigrateAndWorkflow(t *testing.T) {
 		&submission.Submission{},
 		&submission.GroupSubmission{},
 		&submission.IndividualSubmission{},
-		&submission.Grade{},
 		&submission.DeadlineReminder{},
 		&submission.UploadTicket{},
+		// Grade aggregate
+		&grade.Grade{},
 	)
 
 	// 2. Create Users (Teacher and Student)
@@ -225,7 +227,7 @@ func TestAllLmsModels_EndToEndAutoMigrateAndWorkflow(t *testing.T) {
 	assert.NoError(t, db.Create(sub).Error)
 
 	// 10. Grade & Feedback
-	grd := &submission.Grade{
+	grd := &grade.Grade{
 		IndividualSubmissionID: &indivSub.ID,
 		Score:                  100.0,
 		Feedback:               "Flawless election logic under partitions.",
@@ -281,7 +283,7 @@ func TestAllLmsModels_EndToEndAutoMigrateAndWorkflow(t *testing.T) {
 	assert.Equal(t, "alice@hvl.no", loadedIndivSub.User.Email)
 	assert.Equal(t, "Readiness Quiz", loadedIndivSub.Content.Title)
 
-	var loadedGrade submission.Grade
+	var loadedGrade grade.Grade
 	err = db.
 		Preload("IndividualSubmission.Content.Module.Course").
 		Preload("GradedBy").

@@ -56,7 +56,7 @@ func setupGradeTestDb(t *testing.T) (*gorm.DB, *mockNotifier, IGradeService) {
 		&quiz.Attempt{},
 		&submission.IndividualSubmission{},
 		&submission.GroupSubmission{},
-		&submission.Grade{},
+		&Grade{},
 		&notification.Notification{},
 	)
 
@@ -351,8 +351,8 @@ func TestGradeService_ReleaseAssignmentGrades(t *testing.T) {
 	assert.NoError(t, db.Create(&sub1).Error)
 	assert.NoError(t, db.Create(&sub2).Error)
 
-	g1 := submission.Grade{IndividualSubmissionID: &sub1.ID, Score: 80, IsVisibleToStudent: false}
-	g2 := submission.Grade{IndividualSubmissionID: &sub2.ID, Score: 90, IsVisibleToStudent: false}
+	g1 := Grade{IndividualSubmissionID: &sub1.ID, Score: 80, IsVisibleToStudent: false}
+	g2 := Grade{IndividualSubmissionID: &sub2.ID, Score: 90, IsVisibleToStudent: false}
 	assert.NoError(t, db.Create(&g1).Error)
 	assert.NoError(t, db.Create(&g2).Error)
 
@@ -409,7 +409,7 @@ func TestGradeService_ReleaseAssignmentGrades(t *testing.T) {
 			Members:    []user.User{st1, st2},
 		}
 		assert.NoError(t, db.Create(&grpSub).Error)
-		assert.NoError(t, db.Create(&submission.Grade{GroupSubmissionID: &grpSub.ID, Score: 88, IsVisibleToStudent: false}).Error)
+		assert.NoError(t, db.Create(&Grade{GroupSubmissionID: &grpSub.ID, Score: 88, IsVisibleToStudent: false}).Error)
 
 		prevManyCalls := len(notifier.manyCalls)
 		rel, err := svc.ReleaseAssignmentGrades(crs.Uuid, grpCnt.Uuid)
@@ -551,7 +551,7 @@ func TestGradeService_ListMyGrades(t *testing.T) {
 	assert.NoError(t, db.Create(&sub).Error)
 
 	relAt := time.Now()
-	grd := submission.Grade{
+	grd := Grade{
 		IndividualSubmissionID: &sub.ID,
 		Score:                  92.0,
 		Feedback:               "Great work!",
@@ -614,7 +614,7 @@ func TestGradeService_ListMyGrades(t *testing.T) {
 			UserEmail:  st.Email,
 		}
 		assert.NoError(t, db.Create(&sub2).Error)
-		grd2 := submission.Grade{
+		grd2 := Grade{
 			IndividualSubmissionID: &sub2.ID,
 			Score:                  99.0,
 			IsVisibleToStudent:     false,
@@ -639,7 +639,7 @@ func TestGradeService_ListMyGrades(t *testing.T) {
 	})
 
 	t.Run("hiding grade excludes it from student view", func(t *testing.T) {
-		assert.NoError(t, db.Model(&submission.Grade{}).Where("1 = 1").Update("is_visible_to_student", false).Error)
+		assert.NoError(t, db.Model(&Grade{}).Where("1 = 1").Update("is_visible_to_student", false).Error)
 
 		grades, err := svc.ListMyGrades(st.Uuid, nil)
 		assert.NoError(t, err)
@@ -675,7 +675,7 @@ func TestGradeService_ExportCourseCSV(t *testing.T) {
 		UserEmail:  st.Email,
 	}
 	assert.NoError(t, db.Create(&sub).Error)
-	assert.NoError(t, db.Create(&submission.Grade{IndividualSubmissionID: &sub.ID, Score: 88, IsVisibleToStudent: true, GradedByID: &teacher.ID}).Error)
+	assert.NoError(t, db.Create(&Grade{IndividualSubmissionID: &sub.ID, Score: 88, IsVisibleToStudent: true, GradedByID: &teacher.ID}).Error)
 
 	// Second student with late ungraded submission
 	st2 := user.User{Uuid: uuid.New(), Username: "student2", Email: "student2@example.com"}
@@ -688,7 +688,7 @@ func TestGradeService_ExportCourseCSV(t *testing.T) {
 		UserEmail:  st2.Email,
 	}
 	assert.NoError(t, db.Create(&sub2).Error)
-	assert.NoError(t, db.Create(&submission.Grade{IndividualSubmissionID: &sub2.ID, Score: 70, IsVisibleToStudent: false, GradedByID: &teacher.ID}).Error)
+	assert.NoError(t, db.Create(&Grade{IndividualSubmissionID: &sub2.ID, Score: 70, IsVisibleToStudent: false, GradedByID: &teacher.ID}).Error)
 
 	// Quiz content with no attempts for st2
 	qCnt := content.Content{Uuid: uuid.New(), ModuleID: mod.ID, Title: "Quiz Export", Position: 3, Type: content.TypeAssignment}
@@ -717,7 +717,7 @@ func TestGradeService_ExportCourseCSV(t *testing.T) {
 		Members:    []user.User{st, st2},
 	}
 	assert.NoError(t, db.Create(&grpSub).Error)
-	assert.NoError(t, db.Create(&submission.Grade{GroupSubmissionID: &grpSub.ID, Score: 92, Feedback: "Strong team output", IsVisibleToStudent: true, GradedByID: &teacher.ID}).Error)
+	assert.NoError(t, db.Create(&Grade{GroupSubmissionID: &grpSub.ID, Score: 92, Feedback: "Strong team output", IsVisibleToStudent: true, GradedByID: &teacher.ID}).Error)
 
 	// File content without assignment
 	fileCnt := content.Content{Uuid: uuid.New(), ModuleID: mod.ID, Title: "Syllabus File", Position: 4, Type: content.TypeFile}
@@ -782,7 +782,7 @@ func TestGradeService_FinalGrades(t *testing.T) {
 		UserEmail:  st1.Email,
 	}
 	assert.NoError(t, db.Create(&sub1).Error)
-	assert.NoError(t, db.Create(&submission.Grade{IndividualSubmissionID: &sub1.ID, Score: 95.0, IsVisibleToStudent: true}).Error)
+	assert.NoError(t, db.Create(&Grade{IndividualSubmissionID: &sub1.ID, Score: 95.0, IsVisibleToStudent: true}).Error)
 
 	// Student 2: 75.0, hidden
 	sub2 := submission.IndividualSubmission{
@@ -791,7 +791,7 @@ func TestGradeService_FinalGrades(t *testing.T) {
 		UserEmail:  st2.Email,
 	}
 	assert.NoError(t, db.Create(&sub2).Error)
-	assert.NoError(t, db.Create(&submission.Grade{IndividualSubmissionID: &sub2.ID, Score: 75.0, IsVisibleToStudent: false}).Error)
+	assert.NoError(t, db.Create(&Grade{IndividualSubmissionID: &sub2.ID, Score: 75.0, IsVisibleToStudent: false}).Error)
 
 	// 2. Quiz assignment (100 pts)
 	qCnt := content.Content{Uuid: uuid.New(), ModuleID: mod.ID, Title: "Quiz 1", Position: 2, Type: content.TypeAssignment}
@@ -906,7 +906,7 @@ func TestGradeService_FinalGradeEdgeCases(t *testing.T) {
 		UserEmail:  st.Email,
 	}
 	assert.NoError(t, db.Create(&sub1).Error)
-	assert.NoError(t, db.Create(&submission.Grade{IndividualSubmissionID: &sub1.ID, Score: 2.8, IsVisibleToStudent: true}).Error)
+	assert.NoError(t, db.Create(&Grade{IndividualSubmissionID: &sub1.ID, Score: 2.8, IsVisibleToStudent: true}).Error)
 
 	sub2 := submission.IndividualSubmission{
 		Submission: submission.Submission{Uuid: uuid.New(), ContentID: hCnt.ID, Attempt: 2, SubmittedAt: time.Now()},
@@ -914,7 +914,7 @@ func TestGradeService_FinalGradeEdgeCases(t *testing.T) {
 		UserEmail:  st.Email,
 	}
 	assert.NoError(t, db.Create(&sub2).Error)
-	assert.NoError(t, db.Create(&submission.Grade{IndividualSubmissionID: &sub2.ID, Score: 5.6, IsVisibleToStudent: false}).Error)
+	assert.NoError(t, db.Create(&Grade{IndividualSubmissionID: &sub2.ID, Score: 5.6, IsVisibleToStudent: false}).Error)
 
 	// Student view uses attempt 1 (2.8 / 7.0 = 40.00% -> E, not F from float drift), ignores draft quiz and hidden attempt 2.
 	finals, err := svc.GetStudentFinalGrades(st.Uuid, nil)
@@ -1118,4 +1118,62 @@ func TestGradeService_GroupGradingEndToEnd(t *testing.T) {
 	assert.Contains(t, csvOut, "HANDIN (GROUP)")
 	assert.Contains(t, csvOut, "92.00")
 	assert.Contains(t, csvOut, st3.Email)
+}
+
+func TestGradeLookup_GetSubmissionGrades(t *testing.T) {
+	db, _, _ := setupGradeTestDb(t)
+	lookup := NewGradeLookup(db)
+
+	emptyMap, err := lookup.GetSubmissionGrades(nil, false, true)
+	assert.NoError(t, err)
+	assert.Empty(t, emptyMap)
+
+	indVisible := submission.IndividualSubmission{
+		Submission: submission.Submission{Uuid: uuid.New(), ContentID: 1, Attempt: 1, SubmittedAt: time.Now()},
+	}
+	indHidden := submission.IndividualSubmission{
+		Submission: submission.Submission{Uuid: uuid.New(), ContentID: 1, Attempt: 2, SubmittedAt: time.Now()},
+	}
+	grpVisible := submission.GroupSubmission{
+		Submission: submission.Submission{Uuid: uuid.New(), ContentID: 2, Attempt: 1, SubmittedAt: time.Now()},
+	}
+	grpHidden := submission.GroupSubmission{
+		Submission: submission.Submission{Uuid: uuid.New(), ContentID: 2, Attempt: 2, SubmittedAt: time.Now()},
+	}
+	assert.NoError(t, db.Create(&indVisible).Error)
+	assert.NoError(t, db.Create(&indHidden).Error)
+	assert.NoError(t, db.Create(&grpVisible).Error)
+	assert.NoError(t, db.Create(&grpHidden).Error)
+
+	assert.NoError(t, db.Create(&Grade{IndividualSubmissionID: &indVisible.ID, Score: 85, Feedback: "Good", IsVisibleToStudent: true}).Error)
+	assert.NoError(t, db.Create(&Grade{IndividualSubmissionID: &indHidden.ID, Score: 90, Feedback: "Draft", IsVisibleToStudent: false}).Error)
+	assert.NoError(t, db.Create(&Grade{GroupSubmissionID: &grpVisible.ID, Score: 88, Feedback: "Team", IsVisibleToStudent: true}).Error)
+	assert.NoError(t, db.Create(&Grade{GroupSubmissionID: &grpHidden.ID, Score: 95, Feedback: "Draft team", IsVisibleToStudent: false}).Error)
+
+	indMapVis, err := lookup.GetSubmissionGrades([]uint{indVisible.ID, indHidden.ID}, false, true)
+	assert.NoError(t, err)
+	assert.Len(t, indMapVis, 1)
+	assert.Equal(t, 85.0, indMapVis[indVisible.ID].Score)
+
+	indMapAll, err := lookup.GetSubmissionGrades([]uint{indVisible.ID, indHidden.ID}, false, false)
+	assert.NoError(t, err)
+	assert.Len(t, indMapAll, 2)
+	assert.Equal(t, 90.0, indMapAll[indHidden.ID].Score)
+
+	grpMapVis, err := lookup.GetSubmissionGrades([]uint{grpVisible.ID, grpHidden.ID}, true, true)
+	assert.NoError(t, err)
+	assert.Len(t, grpMapVis, 1)
+	assert.Equal(t, 88.0, grpMapVis[grpVisible.ID].Score)
+
+	grpMapAll, err := lookup.GetSubmissionGrades([]uint{grpVisible.ID, grpHidden.ID}, true, false)
+	assert.NoError(t, err)
+	assert.Len(t, grpMapAll, 2)
+	assert.Equal(t, 95.0, grpMapAll[grpHidden.ID].Score)
+
+	sqlDB, err := db.DB()
+	assert.NoError(t, err)
+	_ = sqlDB.Close()
+
+	_, err = lookup.GetSubmissionGrades([]uint{indVisible.ID}, false, true)
+	assert.Error(t, err)
 }

@@ -49,6 +49,7 @@ func main() {
 	app.Provide(submission.NewSubmissionPublisher)
 	app.Provide(quiz.NewQuizService)
 	app.Provide(course.NewGroupService)
+	app.Provide(grade.NewGradeLookup)
 	app.Provide(grade.NewGradeService)
 
 	app.RegisterApi(info.NewInfoApi)
@@ -86,9 +87,10 @@ func main() {
 	app.RegisterModel(&submission.Submission{})
 	app.RegisterModel(&submission.GroupSubmission{})
 	app.RegisterModel(&submission.IndividualSubmission{})
-	app.RegisterModel(&submission.Grade{})
 	app.RegisterModel(&submission.DeadlineReminder{})
 	app.RegisterModel(&submission.UploadTicket{})
+	// Grade
+	app.RegisterModel(&grade.Grade{})
 
 	app.Migrate()
 

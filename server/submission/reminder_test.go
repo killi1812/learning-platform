@@ -36,7 +36,7 @@ func TestSubmissionService_CheckDeadlineReminders(t *testing.T) {
 	logger := zap.NewNop().Sugar()
 	hub := notification.NewHub()
 	notifier := notification.NewNotifier(db, hub, logger)
-	svc := submission.NewSubmissionService(db, notifier, logger)
+	svc := submission.NewSubmissionService(db, notifier, &mockGradeLookup{}, logger)
 
 	c := &course.Course{Title: "Operating Systems", Term: course.TermAutumn, Year: 2026}
 	require.NoError(t, db.Create(c).Error)
@@ -175,7 +175,7 @@ func TestSubmissionService_CheckDeadlineReminders(t *testing.T) {
 	})
 
 	t.Run("Edge cases with nil notifications and empty targets", func(t *testing.T) {
-		nilNotifSvc := submission.NewSubmissionService(db, nil, logger)
+		nilNotifSvc := submission.NewSubmissionService(db, nil, &mockGradeLookup{}, logger)
 		assert.NotPanics(t, func() {
 			nilNotifSvc.NotifySubmitted(nil)
 			nilNotifSvc.NotifySubmitted(&submission.SubmissionTarget{})
@@ -216,7 +216,7 @@ func TestSubmissionService_CheckDeadlineReminders_DBError(t *testing.T) {
 	require.NoError(t, err)
 	_ = sqlDB.Close()
 
-	svc := submission.NewSubmissionService(closedDb, nil, zap.NewNop().Sugar())
+	svc := submission.NewSubmissionService(closedDb, nil, &mockGradeLookup{}, zap.NewNop().Sugar())
 	_, err = svc.CheckDeadlineReminders(time.Now())
 	assert.Error(t, err)
 }

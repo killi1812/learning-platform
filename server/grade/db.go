@@ -35,11 +35,16 @@ type userContentKey struct {
 	contentID uint
 }
 
+type submissionEntry struct {
+	sub   submission.Submission
+	grade *Grade
+}
+
 type courseScoreLookup struct {
 	quizBest         map[userContentKey]quiz.Attempt
 	quizAttemptCount map[userContentKey]int
-	handinSubs       map[userContentKey][]submission.IndividualSubmission
-	groupHandinSubs  map[userContentKey][]submission.GroupSubmission
+	handinSubs       map[userContentKey][]submissionEntry
+	groupHandinSubs  map[userContentKey][]submissionEntry
 }
 
 func roundPercent2(pct float64) float64 {
@@ -67,12 +72,46 @@ func (s *GradeService) findUserByUUID(userUuid uuid.UUID) (*user.User, error) {
 	return &u, nil
 }
 
+func (s *GradeService) loadGradesBySubmissionID(subIDs []uint, isGroup bool, preloadGrader bool) (map[uint]*Grade, error) {
+	result := make(map[uint]*Grade, len(subIDs))
+	if len(subIDs) == 0 {
+		return result, nil
+	}
+
+	col := "individual_submission_id"
+	if isGroup {
+		col = "group_submission_id"
+	}
+
+	query := s.db.Where(col+" IN ?", subIDs)
+	if preloadGrader {
+		query = query.Preload("GradedBy")
+	}
+
+	var grades []Grade
+	if err := query.Find(&grades).Error; err != nil {
+		return nil, err
+	}
+	for i := range grades {
+		var key uint
+		if isGroup && grades[i].GroupSubmissionID != nil {
+			key = *grades[i].GroupSubmissionID
+		} else if !isGroup && grades[i].IndividualSubmissionID != nil {
+			key = *grades[i].IndividualSubmissionID
+		}
+		if key != 0 {
+			result[key] = &grades[i]
+		}
+	}
+	return result, nil
+}
+
 func (s *GradeService) buildCourseScoreLookup(studentIDs []uint, contents []content.Content, preloadGrader bool) (*courseScoreLookup, error) {
 	lookup := &courseScoreLookup{
 		quizBest:         make(map[userContentKey]quiz.Attempt),
 		quizAttemptCount: make(map[userContentKey]int),
-		handinSubs:       make(map[userContentKey][]submission.IndividualSubmission),
-		groupHandinSubs:  make(map[userContentKey][]submission.GroupSubmission),
+		handinSubs:       make(map[userContentKey][]submissionEntry),
+		groupHandinSubs:  make(map[userContentKey][]submissionEntry),
 	}
 	if len(studentIDs) == 0 || len(contents) == 0 {
 		return lookup, nil
@@ -116,15 +155,19 @@ func (s *GradeService) buildCourseScoreLookup(studentIDs []uint, contents []cont
 	}
 
 	if len(handinIDs) > 0 {
-		query := s.db.Preload("Grade")
-		if preloadGrader {
-			query = query.Preload("Grade.GradedBy")
-		}
 		var subs []submission.IndividualSubmission
-		if err := query.
+		if err := s.db.
 			Where("user_id IN ? AND content_id IN ?", studentIDs, handinIDs).
 			Order("attempt DESC").
 			Find(&subs).Error; err != nil {
+			return nil, err
+		}
+		indIDs := make([]uint, 0, len(subs))
+		for _, sub := range subs {
+			indIDs = append(indIDs, sub.ID)
+		}
+		gradesBySubID, err := s.loadGradesBySubmissionID(indIDs, false, preloadGrader)
+		if err != nil {
 			return nil, err
 		}
 		for _, sub := range subs {
@@ -132,39 +175,103 @@ func (s *GradeService) buildCourseScoreLookup(studentIDs []uint, contents []cont
 				continue
 			}
 			key := userContentKey{userID: *sub.UserID, contentID: sub.ContentID}
-			lookup.handinSubs[key] = append(lookup.handinSubs[key], sub)
+			lookup.handinSubs[key] = append(lookup.handinSubs[key], submissionEntry{
+				sub:   sub.Submission,
+				grade: gradesBySubID[sub.ID],
+			})
 		}
 	}
 
 	if len(groupHandinIDs) > 0 {
-		query := s.db.Preload("Grade").Preload("Members")
-		if preloadGrader {
-			query = query.Preload("Grade.GradedBy")
-		}
 		var grpSubs []submission.GroupSubmission
-		if err := query.
+		if err := s.db.Preload("Members").
 			Where("content_id IN ?", groupHandinIDs).
 			Order("attempt DESC").
 			Find(&grpSubs).Error; err != nil {
 			return nil, err
 		}
+		grpIDs := make([]uint, 0, len(grpSubs))
 		for _, sub := range grpSubs {
+			grpIDs = append(grpIDs, sub.ID)
+		}
+		gradesBySubID, err := s.loadGradesBySubmissionID(grpIDs, true, preloadGrader)
+		if err != nil {
+			return nil, err
+		}
+		for _, sub := range grpSubs {
+			entry := submissionEntry{
+				sub:   sub.Submission,
+				grade: gradesBySubID[sub.ID],
+			}
 			seen := make(map[uint]bool, len(sub.Members)+1)
 			for _, m := range sub.Members {
 				if studentIDSet[m.ID] && !seen[m.ID] {
 					seen[m.ID] = true
 					key := userContentKey{userID: m.ID, contentID: sub.ContentID}
-					lookup.groupHandinSubs[key] = append(lookup.groupHandinSubs[key], sub)
+					lookup.groupHandinSubs[key] = append(lookup.groupHandinSubs[key], entry)
 				}
 			}
 			if sub.UserID != nil && studentIDSet[*sub.UserID] && !seen[*sub.UserID] {
 				key := userContentKey{userID: *sub.UserID, contentID: sub.ContentID}
-				lookup.groupHandinSubs[key] = append(lookup.groupHandinSubs[key], sub)
+				lookup.groupHandinSubs[key] = append(lookup.groupHandinSubs[key], entry)
 			}
 		}
 	}
 
 	return lookup, nil
+}
+
+// GradeLookup implements submission.IGradeLookup so submission can hydrate grades without importing grade.
+type GradeLookup struct {
+	db *gorm.DB
+}
+
+// NewGradeLookup constructs a submission.IGradeLookup backed by GORM.
+func NewGradeLookup(db *gorm.DB) submission.IGradeLookup {
+	return &GradeLookup{db: db}
+}
+
+// GetSubmissionGrades resolves grade summaries keyed by individual or group submission ID.
+func (l *GradeLookup) GetSubmissionGrades(submissionIDs []uint, isGroup bool, visibleOnly bool) (map[uint]*submission.SubmissionGradeDto, error) {
+	result := make(map[uint]*submission.SubmissionGradeDto, len(submissionIDs))
+	if len(submissionIDs) == 0 {
+		return result, nil
+	}
+
+	col := "individual_submission_id"
+	if isGroup {
+		col = "group_submission_id"
+	}
+
+	query := l.db.Where(col+" IN ?", submissionIDs)
+	if visibleOnly {
+		query = query.Where("is_visible_to_student = ?", true)
+	}
+
+	var grades []Grade
+	if err := query.Find(&grades).Error; err != nil {
+		return nil, err
+	}
+
+	for i := range grades {
+		g := &grades[i]
+		var key uint
+		if isGroup && g.GroupSubmissionID != nil {
+			key = *g.GroupSubmissionID
+		} else if !isGroup && g.IndividualSubmissionID != nil {
+			key = *g.IndividualSubmissionID
+		}
+		if key != 0 {
+			result[key] = &submission.SubmissionGradeDto{
+				Score:              g.Score,
+				Feedback:           g.Feedback,
+				IsVisibleToStudent: g.IsVisibleToStudent,
+				GradedAt:           g.UpdatedAt,
+				ReleasedAt:         g.ReleasedAt,
+			}
+		}
+	}
+	return result, nil
 }
 
 type IGradeService interface {
@@ -280,7 +387,7 @@ func (s *GradeService) UpsertGrade(courseUuid, contentUuid, submissionUuid, grad
 
 	now := time.Now()
 	var shouldNotify bool
-	var savedGrade submission.Grade
+	var savedGrade Grade
 	var maxPoints float64
 
 	err = s.db.Transaction(func(tx *gorm.DB) error {
@@ -297,7 +404,7 @@ func (s *GradeService) UpsertGrade(courseUuid, contentUuid, submissionUuid, grad
 			return ErrScoreOutOfRange
 		}
 
-		var existing submission.Grade
+		var existing Grade
 		findErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where(filterCol+" = ?", targetSubID).
 			First(&existing).Error
@@ -327,7 +434,7 @@ func (s *GradeService) UpsertGrade(courseUuid, contentUuid, submissionUuid, grad
 				relAt = &now
 				shouldNotify = true
 			}
-			newGrade := submission.Grade{
+			newGrade := Grade{
 				Score:              *dto.Score,
 				Feedback:           dto.Feedback,
 				IsVisibleToStudent: dto.IsVisibleToStudent,
@@ -347,7 +454,6 @@ func (s *GradeService) UpsertGrade(courseUuid, contentUuid, submissionUuid, grad
 		}
 		return findErr
 	})
-
 	if err != nil {
 		s.logger.Errorf("Failed to save grade for submission %s: %v", submissionUuid, err)
 		return nil, err
@@ -486,7 +592,7 @@ func (s *GradeService) ReleaseAssignmentGrades(courseUuid, contentUuid uuid.UUID
 	}
 
 	now := time.Now()
-	err = s.db.Model(&submission.Grade{}).
+	err = s.db.Model(&Grade{}).
 		Where("id IN ?", gradeIDs).
 		Updates(map[string]any{
 			"is_visible_to_student": true,
@@ -1073,38 +1179,26 @@ func (s *GradeService) ExportCourseCSV(courseUuid uuid.UUID, w io.Writer) error 
 
 			if asgn.AllowsGroupSubmission {
 				rec.AssignmentType = "HANDIN (GROUP)"
-				subs := lookup.groupHandinSubs[key]
-				if len(subs) > 0 {
-					var targetSub *submission.GroupSubmission
-					for i := range subs {
-						if subs[i].Grade != nil {
-							targetSub = &subs[i]
-							break
-						}
-					}
-					if targetSub == nil {
-						targetSub = &subs[0]
-					}
-					populateHandinCSVRecord(&rec, targetSub.Submission, targetSub.Grade, maxPts)
-				}
-				records = append(records, rec)
-				continue
+			} else {
+				rec.AssignmentType = "HANDIN"
 			}
 
-			rec.AssignmentType = "HANDIN"
-			subs := lookup.handinSubs[key]
-			if len(subs) > 0 {
-				var targetSub *submission.IndividualSubmission
-				for i := range subs {
-					if subs[i].Grade != nil {
-						targetSub = &subs[i]
+			entries := lookup.handinSubs[key]
+			if asgn.AllowsGroupSubmission {
+				entries = lookup.groupHandinSubs[key]
+			}
+			if len(entries) > 0 {
+				var targetEntry *submissionEntry
+				for i := range entries {
+					if entries[i].grade != nil {
+						targetEntry = &entries[i]
 						break
 					}
 				}
-				if targetSub == nil {
-					targetSub = &subs[0]
+				if targetEntry == nil {
+					targetEntry = &entries[0]
 				}
-				populateHandinCSVRecord(&rec, targetSub.Submission, targetSub.Grade, maxPts)
+				populateHandinCSVRecord(&rec, targetEntry.sub, targetEntry.grade, maxPts)
 			}
 
 			records = append(records, rec)
@@ -1114,7 +1208,7 @@ func (s *GradeService) ExportCourseCSV(courseUuid uuid.UUID, w io.Writer) error 
 	return WriteGradebookCSV(w, records)
 }
 
-func populateHandinCSVRecord(rec *GradebookRecord, sub submission.Submission, gr *submission.Grade, maxPts float64) {
+func populateHandinCSVRecord(rec *GradebookRecord, sub submission.Submission, gr *Grade, maxPts float64) {
 	rec.Attempt = fmt.Sprintf("%d", sub.Attempt)
 	rec.SubmittedAt = sub.SubmittedAt.Format(time.RFC3339)
 	if sub.IsLate {
@@ -1168,19 +1262,13 @@ func computeStudentCourseTotal(studentID uint, contents []content.Content, looku
 
 		totalMax += maxPts
 
+		entries := lookup.handinSubs[key]
 		if asgn.AllowsGroupSubmission {
-			for _, sub := range lookup.groupHandinSubs[key] {
-				if sub.Grade != nil && (!studentViewOnly || sub.Grade.IsVisibleToStudent) {
-					earned += sub.Grade.Score
-					break
-				}
-			}
-			continue
+			entries = lookup.groupHandinSubs[key]
 		}
-
-		for _, sub := range lookup.handinSubs[key] {
-			if sub.Grade != nil && (!studentViewOnly || sub.Grade.IsVisibleToStudent) {
-				earned += sub.Grade.Score
+		for _, entry := range entries {
+			if entry.grade != nil && (!studentViewOnly || entry.grade.IsVisibleToStudent) {
+				earned += entry.grade.Score
 				break
 			}
 		}

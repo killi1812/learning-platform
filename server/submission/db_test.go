@@ -16,6 +16,29 @@ import (
 	"go.uber.org/zap"
 )
 
+type mockGradeLookup struct {
+	indGrades map[uint]*submission.SubmissionGradeDto
+	grpGrades map[uint]*submission.SubmissionGradeDto
+	err       error
+}
+
+func (m *mockGradeLookup) GetSubmissionGrades(submissionIDs []uint, isGroup bool, visibleOnly bool) (map[uint]*submission.SubmissionGradeDto, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	src := m.indGrades
+	if isGroup {
+		src = m.grpGrades
+	}
+	res := make(map[uint]*submission.SubmissionGradeDto, len(submissionIDs))
+	for _, id := range submissionIDs {
+		if g, ok := src[id]; ok && g != nil && (!visibleOnly || g.IsVisibleToStudent) {
+			res[id] = g
+		}
+	}
+	return res, nil
+}
+
 func TestSubmissionService_ResolveTarget(t *testing.T) {
 	db := testutil.NewSqliteTestDb(t,
 		&user.User{},
@@ -31,14 +54,13 @@ func TestSubmissionService_ResolveTarget(t *testing.T) {
 		&content.StudentInteraction{},
 		&submission.Submission{},
 		&submission.IndividualSubmission{},
-		&submission.Grade{},
 		&submission.DeadlineReminder{},
 		&notification.Notification{},
 		&submission.UploadTicket{},
 	)
 
 	notifier := notification.NewNotifier(db, notification.NewHub(), zap.NewNop().Sugar())
-	svc := submission.NewSubmissionService(db, notifier, zap.NewNop().Sugar())
+	svc := submission.NewSubmissionService(db, notifier, &mockGradeLookup{}, zap.NewNop().Sugar())
 
 	c := &course.Course{Title: "DAT250", Term: course.TermAutumn, Year: 2026}
 	assert.NoError(t, db.Create(c).Error)
@@ -310,14 +332,13 @@ func TestSubmissionService_SaveFromMessage(t *testing.T) {
 		&submission.Submission{},
 		&submission.IndividualSubmission{},
 		&submission.GroupSubmission{},
-		&submission.Grade{},
 		&submission.DeadlineReminder{},
 		&notification.Notification{},
 		&submission.UploadTicket{},
 	)
 
 	notifier := notification.NewNotifier(db, notification.NewHub(), zap.NewNop().Sugar())
-	svc := submission.NewSubmissionService(db, notifier, zap.NewNop().Sugar())
+	svc := submission.NewSubmissionService(db, notifier, &mockGradeLookup{}, zap.NewNop().Sugar())
 
 	c := &course.Course{Title: "DAT250", Term: course.TermAutumn, Year: 2026}
 	assert.NoError(t, db.Create(c).Error)
@@ -540,14 +561,17 @@ func TestSubmissionService_FileSubmissionWorkflow(t *testing.T) {
 		&submission.Submission{},
 		&submission.IndividualSubmission{},
 		&submission.GroupSubmission{},
-		&submission.Grade{},
 		&submission.DeadlineReminder{},
 		&notification.Notification{},
 		&submission.UploadTicket{},
 	)
 
 	notifier := notification.NewNotifier(db, notification.NewHub(), zap.NewNop().Sugar())
-	svc := submission.NewSubmissionService(db, notifier, zap.NewNop().Sugar())
+	gradeLookup := &mockGradeLookup{
+		indGrades: make(map[uint]*submission.SubmissionGradeDto),
+		grpGrades: make(map[uint]*submission.SubmissionGradeDto),
+	}
+	svc := submission.NewSubmissionService(db, notifier, gradeLookup, zap.NewNop().Sugar())
 
 	c := &course.Course{Title: "DAT250", Term: course.TermAutumn, Year: 2026}
 	assert.NoError(t, db.Create(c).Error)
@@ -708,9 +732,31 @@ func TestSubmissionService_FileSubmissionWorkflow(t *testing.T) {
 	assert.ErrorIs(t, err, submission.ErrContentNotFound)
 
 	// 6. ListCourseAssignmentSubmissions
+	gradeLookup.indGrades[savedSub.ID] = &submission.SubmissionGradeDto{
+		Score:              77.0,
+		Feedback:           "Hidden draft",
+		IsVisibleToStudent: false,
+	}
 	allSubs, err := svc.ListCourseAssignmentSubmissions(c.Uuid, cnt.Uuid)
 	assert.NoError(t, err)
 	assert.Len(t, allSubs, 1)
+	if assert.NotNil(t, allSubs[0].Grade) {
+		assert.Equal(t, 77.0, allSubs[0].Grade.Score)
+	}
+
+	// Student sees nil while hidden
+	mySubsHidden, err := svc.ListMySubmissions(c.Uuid, cnt.Uuid, student.Uuid)
+	assert.NoError(t, err)
+	assert.Len(t, mySubsHidden, 1)
+	assert.Nil(t, mySubsHidden[0].Grade)
+
+	// Error propagation from IGradeLookup on individual submissions
+	gradeLookup.err = assert.AnError
+	_, err = svc.ListMySubmissions(c.Uuid, cnt.Uuid, student.Uuid)
+	assert.ErrorIs(t, err, assert.AnError)
+	_, err = svc.ListCourseAssignmentSubmissions(c.Uuid, cnt.Uuid)
+	assert.ErrorIs(t, err, assert.AnError)
+	gradeLookup.err = nil
 
 	// 7. GetSubmissionForDownload
 	// Owner can download
@@ -793,14 +839,17 @@ func TestSubmissionService_GroupSubmissionsWorkflow(t *testing.T) {
 		&submission.Submission{},
 		&submission.IndividualSubmission{},
 		&submission.GroupSubmission{},
-		&submission.Grade{},
 		&submission.DeadlineReminder{},
 		&notification.Notification{},
 		&submission.UploadTicket{},
 	)
 
 	notifier := notification.NewNotifier(db, notification.NewHub(), zap.NewNop().Sugar())
-	svc := submission.NewSubmissionService(db, notifier, zap.NewNop().Sugar())
+	gradeLookup := &mockGradeLookup{
+		indGrades: make(map[uint]*submission.SubmissionGradeDto),
+		grpGrades: make(map[uint]*submission.SubmissionGradeDto),
+	}
+	svc := submission.NewSubmissionService(db, notifier, gradeLookup, zap.NewNop().Sugar())
 
 	c := &course.Course{Title: "DAT250", Term: course.TermAutumn, Year: 2026}
 	assert.NoError(t, db.Create(c).Error)
@@ -964,18 +1013,16 @@ func TestSubmissionService_GroupSubmissionsWorkflow(t *testing.T) {
 	var grpSub1, grpSub2 submission.GroupSubmission
 	assert.NoError(t, db.Where("uuid = ?", sub1Uuid).First(&grpSub1).Error)
 	assert.NoError(t, db.Where("uuid = ?", sub2Uuid).First(&grpSub2).Error)
-	assert.NoError(t, db.Create(&submission.Grade{
-		GroupSubmissionID:  &grpSub1.ID,
+	gradeLookup.grpGrades[grpSub1.ID] = &submission.SubmissionGradeDto{
 		Score:              88.5,
 		Feedback:           "Solid milestone 1",
 		IsVisibleToStudent: true,
-	}).Error)
-	assert.NoError(t, db.Create(&submission.Grade{
-		GroupSubmissionID:  &grpSub2.ID,
+	}
+	gradeLookup.grpGrades[grpSub2.ID] = &submission.SubmissionGradeDto{
 		Score:              95.0,
 		Feedback:           "Draft hidden feedback",
 		IsVisibleToStudent: false,
-	}).Error)
+	}
 
 	// Student sees visible grade on attempt 1, nil on hidden attempt 2
 	gradedList1, err := svc.ListMySubmissions(c.Uuid, cnt.Uuid, s1.Uuid)
@@ -996,6 +1043,14 @@ func TestSubmissionService_GroupSubmissionsWorkflow(t *testing.T) {
 		assert.Equal(t, 95.0, instructorGradedList[0].Grade.Score)
 		assert.False(t, instructorGradedList[0].Grade.IsVisibleToStudent)
 	}
+
+	// Error propagation from IGradeLookup
+	gradeLookup.err = assert.AnError
+	_, err = svc.ListMySubmissions(c.Uuid, cnt.Uuid, s1.Uuid)
+	assert.ErrorIs(t, err, assert.AnError)
+	_, err = svc.ListCourseAssignmentSubmissions(c.Uuid, cnt.Uuid)
+	assert.ErrorIs(t, err, assert.AnError)
+	gradeLookup.err = nil
 
 	// 7. GetSubmissionForDownload on group submission
 	fileSubUuid := uuid.New()
