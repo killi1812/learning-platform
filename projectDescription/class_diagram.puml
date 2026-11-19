@@ -1,0 +1,262 @@
+@startuml
+title Learning Platform - Domain Class Diagram
+hide circle
+hide empty members
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+skinparam shadowing false
+skinparam packageBorderColor #999999
+skinparam packageBackgroundColor #FAFAFA
+skinparam nodesep 35
+skinparam ranksep 45
+
+package "Users & Notifications" {
+  enum SystemRole <<enum>> {
+    USER
+    ADMIN
+  }
+
+  class User {
+    uuid : UUID {id}
+    username : String
+    email : String
+    role : SystemRole
+  }
+
+  class Notification {
+    uuid : UUID {id}
+    title : String
+    body : String
+    url : String [0..1]
+    createdAt : DateTime
+    seenAt : DateTime [0..1]
+  }
+
+  User "1" -l- "0..*" Notification : receives >
+  User "0..1" -l- "0..*" Notification : sends >
+  SystemRole -[hidden]- User
+}
+
+package "Course Structure" {
+  enum CourseRole <<enum>> {
+    STUDENT
+    TEACHER
+  }
+
+  enum Term <<enum>> {
+    SPRING
+    AUTUMN
+  }
+
+  class Enrollment {
+    role : CourseRole
+    enrolledAt : DateTime
+  }
+
+  class Course {
+    uuid : UUID {id}
+    title : String
+    description : String
+    term : Term
+    year : int
+  }
+
+  class GradingScale {
+    scaleA : float
+    scaleB : float
+    scaleC : float
+    scaleD : float
+    scaleE : float
+  }
+
+  together {
+    class Group {
+      uuid : UUID {id}
+      name : String
+      maxMembers : int
+    }
+
+    class Module {
+      uuid : UUID {id}
+      title : String
+      position : int
+    }
+  }
+
+  Course "1" *-r- "1" GradingScale
+  Course "1" *-d- "0..*" Module : consists of >
+  Course "1" *-d- "0..*" Group : has >
+  Module "0..*" -- "0..1" Module : dependsOn >
+
+  CourseRole -[hidden]- Enrollment
+  Term -[hidden]- Course
+}
+
+package "Content Hierarchy" {
+  enum ContentType <<enum>> {
+    FILE
+    ASSIGNMENT
+  }
+
+  enum AssignmentType <<enum>> {
+    HANDIN
+    QUIZ
+    CODING_EXERCISE
+  }
+
+  abstract class Content {
+    uuid : UUID {id}
+    title : String
+    position : int
+    type : ContentType
+    visibleFrom : DateTime [0..1]
+    visibleUntil : DateTime [0..1]
+  }
+
+  class StudentInteraction {
+    completedAt : DateTime [0..1]
+  }
+
+  together {
+    class File {
+      fileName : String [0..1]
+      fileSize : int [0..1]
+      contentType : String [0..1]
+      storageKey : String [0..1]
+      sourceUrl : String [0..1]
+      richText : RichText [0..1]
+    }
+
+    class Assignment {
+      type : AssignmentType
+      deadline : DateTime [0..1]
+      allowsGroupSubmission : boolean
+      acceptsLateSubmissions : boolean
+      maxPoints : float
+    }
+  }
+
+  together {
+    class CodingExercise {
+      starterCodeRepo : String
+      visibleTestCases : String [0..1]
+      hiddenTestCases : String [0..1]
+    }
+
+    class Quiz {
+      maxAttempts : int
+      passPercent : int
+      published : boolean
+    }
+  }
+
+  Content <|-- File
+  Content <|-- Assignment
+  Assignment <|-- CodingExercise
+  Assignment <|-- Quiz
+  StudentInteraction "0..*" -r- "1" Content
+
+  ContentType -[hidden]r- Content
+  Assignment -[hidden]r- AssignmentType
+}
+
+package "Quiz & Attempts" {
+  enum QuestionType <<enum>> {
+    MULTIPLE_CHOICE
+    TRUE_FALSE
+    ORDERING
+    MATCHING
+    FILL_IN_THE_BLANKS
+  }
+
+  together {
+    class Question {
+      uuid : UUID {id}
+      position : int
+      type : QuestionType
+      prompt : String
+      hint : String [0..1]
+      options : JSON [0..1]
+      answerKey : JSON [0..1]
+      points : float
+    }
+
+    class Attempt {
+      startedAt : DateTime
+      submittedAt : DateTime [0..1]
+      percent : float
+      passed : boolean
+    }
+  }
+
+  class Answer {
+    selected : JSON
+  }
+
+  Attempt "1" *-d- "0..*" Answer : contains >
+  Question "1" -d- "0..*" Answer : for <
+
+  QuestionType -[hidden]r- Question
+}
+
+package "Submissions & Grading" {
+  enum PayloadType <<enum>> {
+    URL
+    FILE
+  }
+
+  abstract class Submission {
+    uuid : UUID {id}
+    attempt : int
+    isLate : boolean
+    payloadType : PayloadType
+    payloadUrl : String [0..1]
+    fileName : String [0..1]
+    fileSize : int [0..1]
+    contentType : String [0..1]
+    storageKey : String [0..1]
+    submittedAt : DateTime
+  }
+
+  together {
+    class IndividualSubmission {
+    }
+
+    class GroupSubmission {
+    }
+  }
+
+  class Grade {
+    score : float
+    feedback : String [0..1]
+    isVisibleToStudent : boolean
+    releasedAt : DateTime [0..1]
+  }
+
+  Submission <|-- IndividualSubmission
+  Submission <|-- GroupSubmission
+  Submission "1" -r- "0..1" Grade : graded by >
+
+  PayloadType -[hidden]r- Submission
+}
+
+' Cross-group domain relationships
+User "1" -r- "0..*" Enrollment
+Enrollment "0..*" -r- "1" Course
+User "0..*" -- "0..*" Group : members >
+User "1" -d- "0..*" StudentInteraction
+
+Module "1" -d- "0..*" Content : contents >
+
+Quiz "1" *-d- "0..*" Question : contains >
+Quiz "1" -d- "0..*" Attempt : has >
+User "1" -- "0..*" Attempt : takes >
+
+Assignment "1" -d- "0..*" Submission : receives >
+User "0..1" -- "0..*" IndividualSubmission : submits >
+Group "0..1" -- "0..*" GroupSubmission : submits >
+User "0..1" -- "0..*" GroupSubmission : submittedBy >
+GroupSubmission "0..*" -- "0..*" User : members >
+User "0..1" -- "0..*" Grade : grades >
+
+@enduml
