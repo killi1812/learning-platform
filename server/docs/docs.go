@@ -6034,10 +6034,21 @@ const docTemplate = `{
                     "description": "\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"",
                     "type": "string"
                 },
+                "finished": {
+                    "description": "Finished is true when every counted item is graded or past its deadline.\nFinalGrade is only meaningful for the student when Finished is true.",
+                    "type": "boolean"
+                },
                 "gradingScale": {
                     "$ref": "#/definitions/course.GradingScaleDto"
                 },
                 "percent": {
+                    "type": "number"
+                },
+                "progressMaxScore": {
+                    "type": "number"
+                },
+                "progressScore": {
+                    "description": "ProgressScore and ProgressMaxScore only count items that are graded or past their deadline.",
                     "type": "number"
                 },
                 "totalMaxScore": {
@@ -6099,6 +6110,9 @@ const docTemplate = `{
                 "status": {
                     "$ref": "#/definitions/grade.CourseGradeStatus"
                 },
+                "submittedAt": {
+                    "type": "string"
+                },
                 "title": {
                     "type": "string"
                 },
@@ -6122,6 +6136,10 @@ const docTemplate = `{
                 "finalGrade": {
                     "type": "string"
                 },
+                "finished": {
+                    "description": "Finished is true when every counted item is graded or past its deadline.\nFinalGrade is only meaningful for the student when Finished is true.",
+                    "type": "boolean"
+                },
                 "gradedPercent": {
                     "type": "number"
                 },
@@ -6135,6 +6153,13 @@ const docTemplate = `{
                     }
                 },
                 "percent": {
+                    "type": "number"
+                },
+                "progressMaxScore": {
+                    "type": "number"
+                },
+                "progressScore": {
+                    "description": "ProgressScore and ProgressMaxScore only count items that are graded or past their deadline.",
                     "type": "number"
                 },
                 "totalMaxScore": {

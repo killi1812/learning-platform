@@ -4,7 +4,7 @@
       <div>
         <h1 class="text-h4 font-weight-bold text-high-emphasis my-0">Grades &amp; Evaluations</h1>
         <p class="text-subtitle-1 text-medium-emphasis mb-0">
-          Review academic performance, feedback, and grading tasks.
+          Your total result for each course, and grading tasks.
         </p>
       </div>
 
@@ -34,16 +34,6 @@
             />
           </v-list>
         </v-menu>
-
-        <v-btn
-          color="primary"
-          :loading="loading"
-          prepend-icon="mdi-refresh"
-          variant="text"
-          @click="loadAll"
-        >
-          Refresh
-        </v-btn>
       </div>
     </div>
 
@@ -52,15 +42,6 @@
       <v-tab v-if="isStudent" value="my-grades">
         <v-icon icon="mdi-school-outline" start />
         My Grades
-        <v-chip
-          v-if="myGrades.length > 0"
-          class="ml-2"
-          color="primary"
-          size="x-small"
-          variant="tonal"
-        >
-          {{ myGrades.length }}
-        </v-chip>
       </v-tab>
       <v-tab value="pending">
         <v-icon icon="mdi-clipboard-check-outline" start />
@@ -104,11 +85,7 @@
     <!-- Tabbed Content (Teachers/Admins) -->
     <v-tabs-window v-else-if="canGrade" v-model="activeTab">
       <v-tabs-window-item v-if="isStudent" value="my-grades">
-        <StudentGradesTab
-          :my-final-grades="myFinalGrades"
-          :my-grades="myGrades"
-          :student-courses="studentCourses"
-        />
+        <StudentGradesTab :my-final-grades="myFinalGrades" />
       </v-tabs-window-item>
 
       <v-tabs-window-item value="pending">
@@ -133,12 +110,7 @@
     </v-tabs-window>
 
     <!-- Pure Student View -->
-    <StudentGradesTab
-      v-else
-      :my-final-grades="myFinalGrades"
-      :my-grades="myGrades"
-      :student-courses="studentCourses"
-    />
+    <StudentGradesTab v-else :my-final-grades="myFinalGrades" />
   </v-container>
 </template>
 
@@ -148,7 +120,6 @@ import type {
   CourseFinalGradeDto,
   PendingSubmissionDto,
   StudentFinalGradeRowDto,
-  StudentGradeDto,
 } from '@/types/grade'
 import { computed, onMounted, ref } from 'vue'
 import { getApiErrorMessage } from '@/api/client'
@@ -157,7 +128,6 @@ import {
   exportCourseGrades,
   getCourseRosterFinalGrades,
   getMyFinalGrades,
-  listMyGrades,
   listPendingGrades,
 } from '@/api/grade'
 import CourseRosterGradesTab from '@/components/grades/CourseRosterGradesTab.vue'
@@ -174,7 +144,6 @@ const loadError = ref<string | undefined>(undefined)
 const exporting = ref(false)
 const myCourses = ref<MyCourse[]>([])
 const allCourses = ref<Course[]>([])
-const myGrades = ref<StudentGradeDto[]>([])
 const myFinalGrades = ref<CourseFinalGradeDto[]>([])
 const pendingSubmissions = ref<PendingSubmissionDto[]>([])
 const rosterStudents = ref<StudentFinalGradeRowDto[]>([])
@@ -190,7 +159,6 @@ const isStudent = computed(() => myCourses.value.some(c => c.role === 'STUDENT')
 const isTeacher = computed(() => myCourses.value.some(c => c.role === 'TEACHER'))
 const canGrade = computed(() => isTeacher.value || isAdminOrSuperadmin.value)
 
-const studentCourses = computed(() => myCourses.value.filter(c => c.role === 'STUDENT'))
 const gradingCourses = computed<Course[]>(() => {
   if (isAdminOrSuperadmin.value) {
     return allCourses.value
@@ -281,11 +249,6 @@ async function loadAll(): Promise<void> {
 
     if (hasStudentRole) {
       tasks.push(
-        listMyGrades().then(g => {
-          if (requestId === loadCounter) {
-            myGrades.value = g
-          }
-        }),
         getMyFinalGrades().then(fg => {
           if (requestId === loadCounter) {
             myFinalGrades.value = fg

@@ -87,6 +87,12 @@ type CourseFinalGradeDto struct {
 	Percent       float64                `json:"percent"`
 	FinalGrade    string                 `json:"finalGrade"` // "A", "B", "C", "D", "E", "F"
 	GradingScale  course.GradingScaleDto `json:"gradingScale"`
+	// Finished is true when every counted item is graded or past its deadline.
+	// FinalGrade is only meaningful for the student when Finished is true.
+	Finished bool `json:"finished"`
+	// ProgressScore and ProgressMaxScore only count items that are graded or past their deadline.
+	ProgressScore    float64 `json:"progressScore"`
+	ProgressMaxScore float64 `json:"progressMaxScore"`
 }
 
 // CourseGradeStatus describes where a student stands on one graded item.
@@ -113,6 +119,7 @@ type CourseGradeItemDto struct {
 	ModuleTitle string            `json:"moduleTitle"`
 	Deadline    *time.Time        `json:"deadline,omitempty"`
 	Status      CourseGradeStatus `json:"status"`
+	SubmittedAt *time.Time        `json:"submittedAt,omitempty"`
 	Score       *float64          `json:"score,omitempty"`
 	MaxPoints   float64           `json:"maxPoints"`
 	Percent     *float64          `json:"percent,omitempty"`
@@ -139,7 +146,13 @@ type CourseGradeOverviewDto struct {
 	GradedPercent float64                `json:"gradedPercent"`
 	FinalGrade    string                 `json:"finalGrade"`
 	GradingScale  course.GradingScaleDto `json:"gradingScale"`
-	Items         []CourseGradeItemDto   `json:"items"`
+	// Finished is true when every counted item is graded or past its deadline.
+	// FinalGrade is only meaningful for the student when Finished is true.
+	Finished bool `json:"finished"`
+	// ProgressScore and ProgressMaxScore only count items that are graded or past their deadline.
+	ProgressScore    float64              `json:"progressScore"`
+	ProgressMaxScore float64              `json:"progressMaxScore"`
+	Items            []CourseGradeItemDto `json:"items"`
 }
 
 // StudentFinalGradeRowDto represents a student's final grade in the teacher's course roster overview.

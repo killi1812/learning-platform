@@ -1333,6 +1333,7 @@ func (s *GradeService) GetStudentFinalGrades(userUuid uuid.UUID, courseUuid *uui
 		return nil, err
 	}
 
+	now := time.Now()
 	dtos := make([]CourseFinalGradeDto, 0, len(enrollments))
 	for _, enr := range enrollments {
 		crs := enr.Course
@@ -1346,6 +1347,7 @@ func (s *GradeService) GetStudentFinalGrades(userUuid uuid.UUID, courseUuid *uui
 			pct = roundPercent2((earned / totalMax) * 100.0)
 		}
 		finalGrade := crs.CalculateGrade(pct)
+		progressScore, progressMax, finished := courseProgress(u.ID, contentsByCourse[crs.ID], lookup, now)
 
 		dtos = append(dtos, CourseFinalGradeDto{
 			CourseUuid:    crs.Uuid,
@@ -1356,6 +1358,10 @@ func (s *GradeService) GetStudentFinalGrades(userUuid uuid.UUID, courseUuid *uui
 			Percent:       pct,
 			FinalGrade:    finalGrade,
 			GradingScale:  course.GradingScaleDto{}.FromModel(crs.GradingScale),
+
+			Finished:         finished,
+			ProgressScore:    progressScore,
+			ProgressMaxScore: progressMax,
 		})
 	}
 
@@ -1398,32 +1404,25 @@ func (s *GradeService) GetMyCourseGradeOverview(userUuid, courseUuid uuid.UUID) 
 
 	now := time.Now()
 	items := make([]CourseGradeItemDto, 0, len(contents))
+	allItems := make([]CourseGradeItemDto, 0, len(contents))
 	gradedMax := 0.0
 	for _, cnt := range contents {
 		if !isCountedAssignment(cnt) {
 			continue
 		}
+		item := buildGradeItem(cnt, lookup, u.ID)
+		allItems = append(allItems, item)
+
 		// Students must not see items that are not open yet.
 		if cnt.VisibleFrom != nil && now.Before(*cnt.VisibleFrom) {
 			continue
-		}
-
-		var item CourseGradeItemDto
-		key := userContentKey{userID: u.ID, contentID: cnt.ID}
-		if cnt.Assignment.Type == content.AssignmentQuiz {
-			item = buildQuizGradeItem(cnt, lookup, key)
-		} else {
-			item = buildHandinGradeItem(cnt, lookup, key)
-		}
-		if cnt.Module != nil {
-			item.ModuleUuid = cnt.Module.Uuid
-			item.ModuleTitle = cnt.Module.Title
 		}
 		if item.Status == CourseGradeStatusGraded {
 			gradedMax += item.MaxPoints
 		}
 		items = append(items, item)
 	}
+	progressScore, progressMax, finished := computeCourseProgress(allItems, now)
 
 	earned, totalMax := computeStudentCourseTotal(u.ID, contents, lookup, true)
 	pct := 0.0
@@ -1445,8 +1444,60 @@ func (s *GradeService) GetMyCourseGradeOverview(userUuid, courseUuid uuid.UUID) 
 		GradedPercent: gradedPct,
 		FinalGrade:    crs.CalculateGrade(pct),
 		GradingScale:  course.GradingScaleDto{}.FromModel(crs.GradingScale),
-		Items:         items,
+
+		Finished:         finished,
+		ProgressScore:    progressScore,
+		ProgressMaxScore: progressMax,
+		Items:            items,
 	}, nil
+}
+
+// buildGradeItem builds the grade item for one counted assignment, including its module info.
+func buildGradeItem(cnt content.Content, lookup *courseScoreLookup, userID uint) CourseGradeItemDto {
+	key := userContentKey{userID: userID, contentID: cnt.ID}
+	var item CourseGradeItemDto
+	if cnt.Assignment.Type == content.AssignmentQuiz {
+		item = buildQuizGradeItem(cnt, lookup, key)
+	} else {
+		item = buildHandinGradeItem(cnt, lookup, key)
+	}
+	if cnt.Module != nil {
+		item.ModuleUuid = cnt.Module.Uuid
+		item.ModuleTitle = cnt.Module.Title
+	}
+	return item
+}
+
+// computeCourseProgress sums the points of items that are graded or past their deadline.
+// An ungraded item without a deadline, or with a deadline in the future, is still pending.
+// A course is finished when it has at least one item and none is pending.
+func computeCourseProgress(items []CourseGradeItemDto, now time.Time) (earned, maxPoints float64, finished bool) {
+	pending := false
+	for _, item := range items {
+		switch {
+		case item.Status == CourseGradeStatusGraded:
+			if item.Score != nil {
+				earned += *item.Score
+			}
+			maxPoints += item.MaxPoints
+		case item.Deadline != nil && item.Deadline.Before(now):
+			maxPoints += item.MaxPoints
+		default:
+			pending = true
+		}
+	}
+	return earned, maxPoints, len(items) > 0 && !pending
+}
+
+// courseProgress computes progress for all counted contents of one course for a student.
+func courseProgress(userID uint, contents []content.Content, lookup *courseScoreLookup, now time.Time) (earned, maxPoints float64, finished bool) {
+	items := make([]CourseGradeItemDto, 0, len(contents))
+	for _, cnt := range contents {
+		if isCountedAssignment(cnt) {
+			items = append(items, buildGradeItem(cnt, lookup, userID))
+		}
+	}
+	return computeCourseProgress(items, now)
 }
 
 func buildQuizGradeItem(cnt content.Content, lookup *courseScoreLookup, key userContentKey) CourseGradeItemDto {
@@ -1473,6 +1524,7 @@ func buildQuizGradeItem(cnt content.Content, lookup *courseScoreLookup, key user
 	item.Percent = &percent
 	item.Passed = &passed
 	item.GradedAt = best.SubmittedAt
+	item.SubmittedAt = best.SubmittedAt
 	return item
 }
 
@@ -1511,6 +1563,8 @@ func buildHandinGradeItem(cnt content.Content, lookup *courseScoreLookup, key us
 		item.Status = CourseGradeStatusGraded
 		item.Score = &score
 		item.Percent = &percent
+		submittedAt := entry.sub.SubmittedAt
+		item.SubmittedAt = &submittedAt
 		item.Attempt = entry.sub.Attempt
 		item.IsLate = entry.sub.IsLate
 		item.GroupName = entry.groupName
@@ -1520,6 +1574,8 @@ func buildHandinGradeItem(cnt content.Content, lookup *courseScoreLookup, key us
 	}
 
 	latest := entries[0]
+	latestSubmittedAt := latest.sub.SubmittedAt
+	item.SubmittedAt = &latestSubmittedAt
 	item.Attempt = latest.sub.Attempt
 	item.IsLate = latest.sub.IsLate
 	item.GroupName = latest.groupName

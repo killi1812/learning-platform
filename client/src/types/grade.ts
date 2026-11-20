@@ -68,6 +68,11 @@ export interface CourseFinalGradeDto {
   percent: number
   finalGrade: string
   gradingScale: GradingScale
+  /** True when every counted item is graded or past its deadline. finalGrade only applies then. */
+  finished: boolean
+  /** Points of items that are graded or past their deadline. */
+  progressScore: number
+  progressMaxScore: number
 }
 
 export interface StudentFinalGradeRowDto {
@@ -91,6 +96,7 @@ export interface CourseGradeItem {
   moduleTitle: string
   deadline?: string
   status: CourseGradeStatus
+  submittedAt?: string
   score?: number
   maxPoints: number
   percent?: number
@@ -114,5 +120,10 @@ export interface CourseGradeOverview {
   gradedPercent: number
   finalGrade: string
   gradingScale: GradingScale
+  /** True when every counted item is graded or past its deadline. finalGrade only applies then. */
+  finished: boolean
+  /** Points of items that are graded or past their deadline. */
+  progressScore: number
+  progressMaxScore: number
   items: CourseGradeItem[]
 }

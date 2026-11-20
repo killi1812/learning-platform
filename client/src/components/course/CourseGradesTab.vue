@@ -14,86 +14,112 @@
     </v-alert>
 
     <template v-else-if="overview">
-      <div v-if="overview.items.length > 0">
-        <v-table density="comfortable" hover>
-          <thead>
-            <tr>
-              <th class="text-left font-weight-bold">Deadline</th>
-              <th class="text-left font-weight-bold">Assignment</th>
-              <th class="text-center font-weight-bold">Status</th>
-              <th class="text-center font-weight-bold">Score</th>
-              <th class="text-right font-weight-bold">Feedback</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="item in sortedItems" :key="item.contentUuid">
-              <td class="py-3 text-body-2 font-weight-medium text-no-wrap">
-                {{ formatDateTime(item.deadline, 'No deadline') }}
-              </td>
-              <td class="py-3">
-                <div class="d-flex align-center flex-wrap ga-1">
-                  <v-icon
-                    :icon="
-                      item.type === 'QUIZ' ? 'mdi-help-circle-outline' : 'mdi-file-upload-outline'
-                    "
-                    size="small"
-                  />
-                  <span class="font-weight-bold text-high-emphasis">{{ item.title }}</span>
-                  <v-chip v-if="item.isGroup" size="x-small" variant="tonal">
-                    <v-icon icon="mdi-account-group" size="x-small" start />
-                    {{ item.groupName || 'Group' }}
-                  </v-chip>
-                  <v-chip v-if="item.isLate" color="warning" size="x-small" variant="tonal">
-                    Late
-                  </v-chip>
-                </div>
-                <div class="text-caption text-medium-emphasis">{{ item.moduleTitle }}</div>
-              </td>
-              <td class="text-center">
-                <v-chip :color="statusOf(item).color" size="small" variant="tonal">
-                  {{ statusOf(item).label }}
-                </v-chip>
-              </td>
-              <td class="text-center">
-                <span
-                  :class="
-                    item.status === 'GRADED'
-                      ? 'font-weight-bold text-high-emphasis'
-                      : 'text-medium-emphasis'
+      <v-table v-if="overview.items.length > 0" class="grades-table" density="comfortable">
+        <thead>
+          <tr>
+            <th class="text-left font-weight-bold">Name</th>
+            <th class="text-left font-weight-bold">Deadline</th>
+            <th class="text-left font-weight-bold">Submitted</th>
+            <th class="text-left font-weight-bold">Status</th>
+            <th class="text-right font-weight-bold">Result</th>
+            <th class="text-right font-weight-bold">Feedback</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="item in sortedItems" :key="item.contentUuid">
+            <td class="py-3">
+              <div class="d-flex align-start ga-2">
+                <v-icon
+                  class="mt-1"
+                  :icon="
+                    item.type === 'QUIZ' ? 'mdi-help-circle-outline' : 'mdi-file-upload-outline'
                   "
-                >
-                  {{ item.status === 'GRADED' ? formatPoints(item.score ?? 0) : '-' }} /
-                  {{ formatPoints(item.maxPoints) }}
-                </span>
-                <template v-if="item.status === 'GRADED'">
-                  <span class="text-caption text-medium-emphasis">
-                    · {{ Math.round(item.percent ?? 0) }}%
-                  </span>
-                  <v-icon
-                    v-if="item.passed !== undefined"
-                    :color="item.passed ? 'success' : 'error'"
-                    :icon="item.passed ? 'mdi-check-circle' : 'mdi-close-circle'"
-                    size="small"
-                  />
-                </template>
-              </td>
-              <td class="text-right">
-                <v-btn
-                  v-if="item.feedback"
-                  color="primary"
-                  prepend-icon="mdi-comment-text-outline"
                   size="small"
-                  variant="tonal"
-                  @click="openFeedback(item)"
+                />
+                <div>
+                  <div class="font-weight-bold text-high-emphasis">{{ item.title }}</div>
+                  <div class="text-caption text-medium-emphasis">
+                    {{ item.type === 'QUIZ' ? 'Quiz' : 'Hand-in' }} · {{ item.moduleTitle }}
+                    <template v-if="item.isGroup"> · {{ item.groupName || 'Group' }}</template>
+                  </div>
+                </div>
+              </div>
+            </td>
+            <td class="text-body-2 text-no-wrap">
+              {{ formatDateTime(item.deadline, 'No deadline') }}
+            </td>
+            <td class="text-body-2 text-no-wrap">
+              {{ formatDateTime(item.submittedAt, '-') }}
+            </td>
+            <td>
+              <v-chip :color="statusOf(item).color" size="small" variant="tonal">
+                {{ statusOf(item).label }}
+              </v-chip>
+            </td>
+            <td class="text-right text-no-wrap">
+              <span
+                :class="
+                  item.status === 'GRADED'
+                    ? 'font-weight-bold text-high-emphasis'
+                    : 'text-medium-emphasis'
+                "
+              >
+                {{ scoreLabel(item) }} / {{ formatPoints(item.maxPoints) }}
+              </span>
+              <v-icon
+                v-if="item.status === 'GRADED' && item.passed !== undefined"
+                :color="item.passed ? 'success' : 'error'"
+                :icon="item.passed ? 'mdi-check-circle' : 'mdi-close-circle'"
+                size="small"
+              />
+            </td>
+            <td class="text-right">
+              <v-btn
+                v-if="item.feedback"
+                color="primary"
+                prepend-icon="mdi-comment-text-outline"
+                size="small"
+                variant="tonal"
+                @click="openFeedback(item)"
+              >
+                View
+              </v-btn>
+              <span v-else class="text-caption text-disabled font-italic">None</span>
+            </td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr class="grades-table__total">
+            <td class="py-4 text-h6 text-high-emphasis" colspan="3">
+              Total
+              <div class="text-caption text-medium-emphasis">
+                Counts graded items and items past their deadline. The grade shows when the course
+                is finished.
+              </div>
+            </td>
+            <td>
+              <div v-if="overview.finished" class="d-flex align-center ga-3">
+                <span class="text-h5 font-weight-bold text-high-emphasis">
+                  {{ formatPoints(overview.percent) }}%
+                </span>
+                <v-avatar
+                  class="font-weight-bold elevation-1"
+                  :color="getGradeBadgeColor(overview.finalGrade)"
+                  size="36"
                 >
-                  View
-                </v-btn>
-                <span v-else class="text-caption text-disabled font-italic">None</span>
-              </td>
-            </tr>
-          </tbody>
-        </v-table>
-      </div>
+                  {{ overview.finalGrade }}
+                </v-avatar>
+              </div>
+              <v-chip v-else color="info" size="small" variant="tonal">In progress</v-chip>
+            </td>
+            <td class="text-right text-h6 font-weight-bold text-high-emphasis text-no-wrap">
+              {{ formatPoints(overview.progressScore) }} /
+              {{ formatPoints(overview.progressMaxScore) }}
+            </td>
+            <td />
+          </tr>
+        </tfoot>
+      </v-table>
 
       <v-card v-else class="pa-6 bg-surface mb-6 text-center" elevation="1" rounded="lg">
         <v-icon class="mb-3 text-medium-emphasis" icon="mdi-school-outline" size="48" />
@@ -139,6 +165,7 @@ import { getMyCourseGrades } from '@/api/grade'
 import MarkdownView from '@/components/MarkdownView.vue'
 import { useToast } from '@/composables/useToast'
 import { formatDateTime, parseValidDate } from '@/util/dateTime'
+import { getGradeBadgeColor } from '@/util/grading'
 
 interface Props {
   courseUuid: string
@@ -169,6 +196,18 @@ const sortedItems = computed(() => {
   return sorted
 })
 
+function isPastDeadline(item: CourseGradeItem): boolean {
+  const deadline = parseValidDate(item.deadline)
+  return deadline !== undefined && deadline.getTime() < Date.now()
+}
+
+// Missing work past its deadline scores 0. Anything else without a visible grade shows "-".
+function scoreLabel(item: CourseGradeItem): string {
+  if (item.status === 'GRADED') return formatPoints(item.score ?? 0)
+  if (item.status === 'NOT_SUBMITTED' && isPastDeadline(item)) return formatPoints(0)
+  return '-'
+}
+
 async function loadOverview() {
   const requestId = ++loadCounter
   loading.value = true
@@ -198,17 +237,16 @@ watch(
 function statusOf(item: CourseGradeItem): { label: string; color?: string } {
   switch (item.status) {
     case 'GRADED': {
-      return { label: 'Graded', color: 'success' }
+      return { label: item.isLate ? 'Graded (late)' : 'Graded', color: 'success' }
     }
     case 'AWAITING_RELEASE': {
       return { label: 'Awaiting release', color: 'info' }
     }
     case 'SUBMITTED': {
-      return { label: 'Submitted', color: 'info' }
+      return { label: item.isLate ? 'Submitted (late)' : 'Submitted', color: 'info' }
     }
     default: {
-      const deadline = parseValidDate(item.deadline)
-      if (deadline && deadline.getTime() < Date.now()) {
+      if (isPastDeadline(item)) {
         return { label: 'Missing', color: 'error' }
       }
       return { label: item.type === 'QUIZ' ? 'Not attempted' : 'Not submitted' }
@@ -216,8 +254,10 @@ function statusOf(item: CourseGradeItem): { label: string; color?: string } {
   }
 }
 
+const numberFormat = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 })
+
 function formatPoints(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toFixed(1)
+  return numberFormat.format(value)
 }
 
 function openFeedback(item: CourseGradeItem): void {
@@ -225,3 +265,9 @@ function openFeedback(item: CourseGradeItem): void {
   feedbackOpen.value = true
 }
 </script>
+
+<style scoped>
+.grades-table__total td {
+  border-top: 2px solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+</style>

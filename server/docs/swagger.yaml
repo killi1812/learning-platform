@@ -445,9 +445,20 @@ definitions:
       finalGrade:
         description: '"A", "B", "C", "D", "E", "F"'
         type: string
+      finished:
+        description: |-
+          Finished is true when every counted item is graded or past its deadline.
+          FinalGrade is only meaningful for the student when Finished is true.
+        type: boolean
       gradingScale:
         $ref: '#/definitions/course.GradingScaleDto'
       percent:
+        type: number
+      progressMaxScore:
+        type: number
+      progressScore:
+        description: ProgressScore and ProgressMaxScore only count items that are
+          graded or past their deadline.
         type: number
       totalMaxScore:
         type: number
@@ -488,6 +499,8 @@ definitions:
         type: number
       status:
         $ref: '#/definitions/grade.CourseGradeStatus'
+      submittedAt:
+        type: string
       title:
         type: string
       type:
@@ -503,6 +516,11 @@ definitions:
         type: string
       finalGrade:
         type: string
+      finished:
+        description: |-
+          Finished is true when every counted item is graded or past its deadline.
+          FinalGrade is only meaningful for the student when Finished is true.
+        type: boolean
       gradedPercent:
         type: number
       gradingScale:
@@ -512,6 +530,12 @@ definitions:
           $ref: '#/definitions/grade.CourseGradeItemDto'
         type: array
       percent:
+        type: number
+      progressMaxScore:
+        type: number
+      progressScore:
+        description: ProgressScore and ProgressMaxScore only count items that are
+          graded or past their deadline.
         type: number
       totalMaxScore:
         type: number
