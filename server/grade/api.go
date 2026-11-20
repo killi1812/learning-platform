@@ -45,6 +45,7 @@ func (ctn *GradeCtn) RegisterEndpoints(api *gin.RouterGroup) {
 	courses.POST("/:uuid/content/:contentUuid/grade/release", ctn.releaseGrades)
 	courses.GET("/:uuid/grade/export", ctn.exportCSV)
 	courses.GET("/:uuid/grade/roster", ctn.getCourseRoster)
+	courses.GET("/:uuid/grade/my", ctn.getMyCourseGrades)
 
 	grades := api.Group("/grade")
 	grades.Use(authutils.Protect())
@@ -344,6 +345,45 @@ func (ctn *GradeCtn) getMyFinalGrades(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, finals)
+}
+
+// GetMyCourseGrades godoc
+//
+//	@Summary		Get student's grade overview for one course
+//	@Description	Enrolled user or Admin. Returns every counted hand-in and quiz with status, released scores, and course totals matching /grade/my/final. Unreleased grades are shown as AWAITING_RELEASE without a score.
+//	@Tags			grade
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			uuid	path		string	true	"Course UUID"
+//	@Success		200		{object}	CourseGradeOverviewDto
+//	@Failure		400		{object}	ginutil.ErrorResponse
+//	@Failure		401		{object}	ginutil.ErrorResponse
+//	@Failure		403		{object}	ginutil.ErrorResponse
+//	@Failure		404		{object}	ginutil.ErrorResponse
+//	@Failure		500		{object}	ginutil.ErrorResponse
+//	@Router			/course/{uuid}/grade/my [get]
+func (ctn *GradeCtn) getMyCourseGrades(c *gin.Context) {
+	courseUuid, ok := ginutil.ParseUUIDParam(c, "uuid")
+	if !ok {
+		return
+	}
+
+	if !authutils.CheckCourseAccess(c, courseUuid, ctn.courseService.IsEnrolledOrAdmin, course.ErrCourseNotFound) {
+		return
+	}
+
+	userUuid, err := authutils.GetUserUUID(c)
+	if err != nil {
+		ginutil.RespondWithError(c, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	overview, err := ctn.Service.GetMyCourseGradeOverview(userUuid, courseUuid)
+	if ctn.handleError(c, err, "Failed to retrieve course grade overview") {
+		return
+	}
+
+	c.JSON(http.StatusOK, overview)
 }
 
 // GetCourseRoster godoc

@@ -1,5 +1,6 @@
 import type {
   CourseFinalGradeDto,
+  CourseGradeOverview,
   GradeDto,
   PendingSubmissionDto,
   ReleaseResultDto,
@@ -64,6 +65,11 @@ export function getMyFinalGrades(courseUuid?: string): Promise<CourseFinalGradeD
       params: courseUuid ? { courseUuid } : undefined,
     }),
   )
+}
+
+/** Get authenticated student's per-item grade overview and totals for one course */
+export function getMyCourseGrades(courseUuid: string): Promise<CourseGradeOverview> {
+  return request(authApi.get<CourseGradeOverview>(`/course/${enc(courseUuid)}/grade/my`))
 }
 
 /** List course roster with final cumulative points and letter grades (Teachers & Admins) */

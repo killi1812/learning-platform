@@ -36,8 +36,9 @@ type userContentKey struct {
 }
 
 type submissionEntry struct {
-	sub   submission.Submission
-	grade *Grade
+	sub       submission.Submission
+	grade     *Grade
+	groupName string
 }
 
 type courseScoreLookup struct {
@@ -184,7 +185,7 @@ func (s *GradeService) buildCourseScoreLookup(studentIDs []uint, contents []cont
 
 	if len(groupHandinIDs) > 0 {
 		var grpSubs []submission.GroupSubmission
-		if err := s.db.Preload("Members").
+		if err := s.db.Preload("Members").Preload("Group").
 			Where("content_id IN ?", groupHandinIDs).
 			Order("attempt DESC").
 			Find(&grpSubs).Error; err != nil {
@@ -202,6 +203,9 @@ func (s *GradeService) buildCourseScoreLookup(studentIDs []uint, contents []cont
 			entry := submissionEntry{
 				sub:   sub.Submission,
 				grade: gradesBySubID[sub.ID],
+			}
+			if sub.Group != nil {
+				entry.groupName = sub.Group.Name
 			}
 			seen := make(map[uint]bool, len(sub.Members)+1)
 			for _, m := range sub.Members {
@@ -280,6 +284,7 @@ type IGradeService interface {
 	ListPending(userUuid uuid.UUID, isAdmin bool, courseUuid *uuid.UUID) ([]PendingSubmissionDto, error)
 	ListMyGrades(userUuid uuid.UUID, courseUuid *uuid.UUID) ([]StudentGradeDto, error)
 	GetStudentFinalGrades(userUuid uuid.UUID, courseUuid *uuid.UUID) ([]CourseFinalGradeDto, error)
+	GetMyCourseGradeOverview(userUuid, courseUuid uuid.UUID) (*CourseGradeOverviewDto, error)
 	GetCourseRosterFinalGrades(courseUuid uuid.UUID) ([]StudentFinalGradeRowDto, error)
 	ExportCourseCSV(courseUuid uuid.UUID, w io.Writer) error
 }
@@ -1355,6 +1360,174 @@ func (s *GradeService) GetStudentFinalGrades(userUuid uuid.UUID, courseUuid *uui
 	}
 
 	return dtos, nil
+}
+
+// GetMyCourseGradeOverview returns every counted hand-in and quiz in a course with the caller's status on each,
+// plus course totals that match GetStudentFinalGrades. Unreleased grades are reported as AWAITING_RELEASE without a score.
+func (s *GradeService) GetMyCourseGradeOverview(userUuid, courseUuid uuid.UUID) (*CourseGradeOverviewDto, error) {
+	u, err := s.findUserByUUID(userUuid)
+	if err != nil {
+		return nil, err
+	}
+
+	var crs course.Course
+	if err := s.db.Where("uuid = ?", courseUuid).First(&crs).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, course.ErrCourseNotFound
+		}
+		return nil, err
+	}
+
+	var contents []content.Content
+	err = s.db.
+		Joins("JOIN modules ON modules.id = contents.module_id AND modules.deleted_at IS NULL").
+		Preload("Module").
+		Preload("Assignment").
+		Preload("Assignment.Quiz").
+		Where("modules.course_id = ? AND contents.type = ? AND contents.deleted_at IS NULL", crs.ID, content.TypeAssignment).
+		Order("modules.position ASC, contents.position ASC").
+		Find(&contents).Error
+	if err != nil {
+		return nil, err
+	}
+
+	lookup, err := s.buildCourseScoreLookup([]uint{u.ID}, contents, false)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	items := make([]CourseGradeItemDto, 0, len(contents))
+	gradedMax := 0.0
+	for _, cnt := range contents {
+		if !isCountedAssignment(cnt) {
+			continue
+		}
+		// Students must not see items that are not open yet.
+		if cnt.VisibleFrom != nil && now.Before(*cnt.VisibleFrom) {
+			continue
+		}
+
+		var item CourseGradeItemDto
+		key := userContentKey{userID: u.ID, contentID: cnt.ID}
+		if cnt.Assignment.Type == content.AssignmentQuiz {
+			item = buildQuizGradeItem(cnt, lookup, key)
+		} else {
+			item = buildHandinGradeItem(cnt, lookup, key)
+		}
+		if cnt.Module != nil {
+			item.ModuleUuid = cnt.Module.Uuid
+			item.ModuleTitle = cnt.Module.Title
+		}
+		if item.Status == CourseGradeStatusGraded {
+			gradedMax += item.MaxPoints
+		}
+		items = append(items, item)
+	}
+
+	earned, totalMax := computeStudentCourseTotal(u.ID, contents, lookup, true)
+	pct := 0.0
+	if totalMax > 0 {
+		pct = roundPercent2((earned / totalMax) * 100.0)
+	}
+	gradedPct := 0.0
+	if gradedMax > 0 {
+		gradedPct = roundPercent2((earned / gradedMax) * 100.0)
+	}
+
+	return &CourseGradeOverviewDto{
+		CourseUuid:    crs.Uuid,
+		CourseName:    crs.Title,
+		CourseCode:    fmt.Sprintf("%s %d", crs.Term, crs.Year),
+		TotalScore:    earned,
+		TotalMaxScore: totalMax,
+		Percent:       pct,
+		GradedPercent: gradedPct,
+		FinalGrade:    crs.CalculateGrade(pct),
+		GradingScale:  course.GradingScaleDto{}.FromModel(crs.GradingScale),
+		Items:         items,
+	}, nil
+}
+
+func buildQuizGradeItem(cnt content.Content, lookup *courseScoreLookup, key userContentKey) CourseGradeItemDto {
+	item := CourseGradeItemDto{
+		Type:        GradeTypeQuiz,
+		ContentUuid: cnt.Uuid,
+		Title:       cnt.Title,
+		Deadline:    cnt.Assignment.Deadline,
+		Status:      CourseGradeStatusNotSubmitted,
+		MaxPoints:   100,
+		Attempt:     lookup.quizAttemptCount[key],
+	}
+	if cnt.Assignment.Quiz != nil {
+		item.MaxAttempts = cnt.Assignment.Quiz.MaxAttempts
+	}
+	best, ok := lookup.quizBest[key]
+	if !ok {
+		return item
+	}
+	percent := best.Percent
+	passed := best.Passed
+	item.Status = CourseGradeStatusGraded
+	item.Score = &percent
+	item.Percent = &percent
+	item.Passed = &passed
+	item.GradedAt = best.SubmittedAt
+	return item
+}
+
+func buildHandinGradeItem(cnt content.Content, lookup *courseScoreLookup, key userContentKey) CourseGradeItemDto {
+	asgn := cnt.Assignment
+	maxPts := asgn.MaxPoints
+	if maxPts <= 0 {
+		maxPts = content.DefaultHandinMaxPoints
+	}
+	item := CourseGradeItemDto{
+		Type:        GradeTypeHandin,
+		ContentUuid: cnt.Uuid,
+		Title:       cnt.Title,
+		Deadline:    asgn.Deadline,
+		Status:      CourseGradeStatusNotSubmitted,
+		MaxPoints:   maxPts,
+		IsGroup:     asgn.AllowsGroupSubmission,
+	}
+
+	entries := lookup.handinSubs[key]
+	if asgn.AllowsGroupSubmission {
+		entries = lookup.groupHandinSubs[key]
+	}
+	if len(entries) == 0 {
+		return item
+	}
+
+	// Entries are ordered newest attempt first. Same rule as computeStudentCourseTotal: first visible grade wins.
+	for _, entry := range entries {
+		if entry.grade == nil || !entry.grade.IsVisibleToStudent {
+			continue
+		}
+		score := entry.grade.Score
+		percent := roundPercent2((score / maxPts) * 100.0)
+		gradedAt := entry.grade.UpdatedAt
+		item.Status = CourseGradeStatusGraded
+		item.Score = &score
+		item.Percent = &percent
+		item.Attempt = entry.sub.Attempt
+		item.IsLate = entry.sub.IsLate
+		item.GroupName = entry.groupName
+		item.Feedback = entry.grade.Feedback
+		item.GradedAt = &gradedAt
+		return item
+	}
+
+	latest := entries[0]
+	item.Attempt = latest.sub.Attempt
+	item.IsLate = latest.sub.IsLate
+	item.GroupName = latest.groupName
+	item.Status = CourseGradeStatusSubmitted
+	if latest.grade != nil {
+		item.Status = CourseGradeStatusAwaitingRelease
+	}
+	return item
 }
 
 // GetCourseRosterFinalGrades returns all enrolled students in a course with their cumulative scores, percentages, and final letter grades.
