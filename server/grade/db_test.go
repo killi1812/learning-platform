@@ -1177,3 +1177,331 @@ func TestGradeLookup_GetSubmissionGrades(t *testing.T) {
 	_, err = lookup.GetSubmissionGrades([]uint{indVisible.ID}, false, true)
 	assert.Error(t, err)
 }
+
+func TestGradeService_GetMyCourseGradeOverview(t *testing.T) {
+	db, _, svc := setupGradeTestDb(t)
+
+	crs := course.Course{Uuid: uuid.New(), Title: "Overview Course", Term: course.TermAutumn, Year: 2026, GradingScale: course.DefaultGradingScale()}
+	assert.NoError(t, db.Create(&crs).Error)
+	mod := course.Module{Uuid: uuid.New(), CourseID: crs.ID, Title: "Module 1", Position: 1}
+	assert.NoError(t, db.Create(&mod).Error)
+
+	me := user.User{Uuid: uuid.New(), Username: "me", Email: "me@example.com"}
+	other := user.User{Uuid: uuid.New(), Username: "other", Email: "other@example.com"}
+	assert.NoError(t, db.Create(&me).Error)
+	assert.NoError(t, db.Create(&other).Error)
+	assert.NoError(t, db.Create(&course.Enrollment{CourseID: crs.ID, UserID: me.ID, UserEmail: me.Email, Role: course.RoleStudent}).Error)
+	assert.NoError(t, db.Create(&course.Enrollment{CourseID: crs.ID, UserID: other.ID, UserEmail: other.Email, Role: course.RoleStudent}).Error)
+
+	pos := 0
+	newAssignment := func(title string, asgn content.Assignment, visibleFrom *time.Time) content.Content {
+		pos++
+		cnt := content.Content{Uuid: uuid.New(), ModuleID: mod.ID, Title: title, Position: pos, Type: content.TypeAssignment, VisibleFrom: visibleFrom}
+		assert.NoError(t, db.Create(&cnt).Error)
+		asgn.ContentID = cnt.ID
+		assert.NoError(t, db.Create(&asgn).Error)
+		return cnt
+	}
+	newSub := func(cnt content.Content, u user.User, attempt int, late bool) submission.IndividualSubmission {
+		sub := submission.IndividualSubmission{
+			Submission: submission.Submission{Uuid: uuid.New(), ContentID: cnt.ID, Attempt: attempt, IsLate: late, SubmittedAt: time.Now()},
+			UserID:     &u.ID,
+			UserEmail:  u.Email,
+		}
+		assert.NoError(t, db.Create(&sub).Error)
+		return sub
+	}
+	handin := content.Assignment{Type: content.AssignmentHandIn, MaxPoints: 5}
+
+	deadline := time.Now().Add(24 * time.Hour).Truncate(time.Second)
+	notSubmitted := newAssignment("Not submitted", content.Assignment{Type: content.AssignmentHandIn, MaxPoints: 5, Deadline: &deadline}, nil)
+	submitted := newAssignment("Submitted", handin, nil)
+	unreleased := newAssignment("Unreleased", handin, nil)
+	released := newAssignment("Released", handin, nil)
+
+	newSub(submitted, me, 1, false)
+	unrelSub := newSub(unreleased, me, 1, false)
+	assert.NoError(t, db.Create(&Grade{IndividualSubmissionID: &unrelSub.ID, Score: 4, Feedback: "secret", IsVisibleToStudent: false}).Error)
+	relSub := newSub(released, me, 1, true)
+	assert.NoError(t, db.Create(&Grade{IndividualSubmissionID: &relSub.ID, Score: 3, Feedback: "nice", IsVisibleToStudent: true}).Error)
+
+	// Another student's released grade on the same assignment must never leak.
+	otherSub := newSub(notSubmitted, other, 1, false)
+	assert.NoError(t, db.Create(&Grade{IndividualSubmissionID: &otherSub.ID, Score: 5, IsVisibleToStudent: true}).Error)
+
+	// Group hand-in: caller is a member but not the submitter.
+	grp := course.Group{Uuid: uuid.New(), CourseID: crs.ID, Name: "Alpha", MaxMembers: 4}
+	assert.NoError(t, db.Create(&grp).Error)
+	grpCnt := newAssignment("Group work", content.Assignment{Type: content.AssignmentHandIn, MaxPoints: 10, AllowsGroupSubmission: true}, nil)
+	grpSub := submission.GroupSubmission{
+		Submission: submission.Submission{Uuid: uuid.New(), ContentID: grpCnt.ID, Attempt: 1, SubmittedAt: time.Now()},
+		GroupID:    &grp.ID,
+		UserID:     &other.ID,
+		UserEmail:  other.Email,
+		Members:    []user.User{me, other},
+	}
+	assert.NoError(t, db.Create(&grpSub).Error)
+	assert.NoError(t, db.Create(&Grade{GroupSubmissionID: &grpSub.ID, Score: 8, IsVisibleToStudent: true}).Error)
+
+	// Quizzes: attempted (best of two), unattempted, unpublished.
+	attempted := newAssignment("Quiz attempted", content.Assignment{Type: content.AssignmentQuiz}, nil)
+	assert.NoError(t, db.Create(&content.Quiz{ContentID: attempted.ID, Published: true, MaxAttempts: 3}).Error)
+	unattempted := newAssignment("Quiz unattempted", content.Assignment{Type: content.AssignmentQuiz}, nil)
+	assert.NoError(t, db.Create(&content.Quiz{ContentID: unattempted.ID, Published: true, MaxAttempts: 1}).Error)
+	draftQuiz := newAssignment("Quiz draft", content.Assignment{Type: content.AssignmentQuiz}, nil)
+	assert.NoError(t, db.Create(&content.Quiz{ContentID: draftQuiz.ID, Published: false}).Error)
+
+	now := time.Now()
+	for _, pct := range []float64{60, 80} {
+		assert.NoError(t, db.Create(&quiz.Attempt{UserID: me.ID, QuizID: attempted.ID, StartedAt: now.Add(-time.Hour), SubmittedAt: &now, Percent: pct, Passed: pct >= 50}).Error)
+	}
+	// In-progress attempt must not count.
+	assert.NoError(t, db.Create(&quiz.Attempt{UserID: me.ID, QuizID: unattempted.ID, StartedAt: now}).Error)
+
+	// Not open yet: hidden from the item list.
+	future := time.Now().Add(48 * time.Hour)
+	newAssignment("Future", handin, &future)
+
+	overview, err := svc.GetMyCourseGradeOverview(me.Uuid, crs.Uuid)
+	assert.NoError(t, err)
+	if !assert.NotNil(t, overview) {
+		return
+	}
+
+	byTitle := make(map[string]CourseGradeItemDto, len(overview.Items))
+	titles := make([]string, 0, len(overview.Items))
+	for _, it := range overview.Items {
+		byTitle[it.Title] = it
+		titles = append(titles, it.Title)
+	}
+
+	t.Run("lists counted visible items in module and content order", func(t *testing.T) {
+		assert.Equal(t, []string{"Not submitted", "Submitted", "Unreleased", "Released", "Group work", "Quiz attempted", "Quiz unattempted"}, titles)
+		assert.Equal(t, mod.Uuid, overview.Items[0].ModuleUuid)
+		assert.Equal(t, "Module 1", overview.Items[0].ModuleTitle)
+		assert.Equal(t, "Overview Course", overview.CourseName)
+		assert.Equal(t, "AUTUMN 2026", overview.CourseCode)
+	})
+
+	t.Run("not submitted hides other student's grade", func(t *testing.T) {
+		it := byTitle["Not submitted"]
+		assert.Equal(t, CourseGradeStatusNotSubmitted, it.Status)
+		assert.Nil(t, it.Score)
+		assert.Nil(t, it.Percent)
+		assert.Nil(t, it.SubmittedAt)
+		assert.NotNil(t, it.Deadline)
+		assert.Equal(t, 5.0, it.MaxPoints)
+	})
+
+	t.Run("submitted without grade", func(t *testing.T) {
+		it := byTitle["Submitted"]
+		assert.Equal(t, CourseGradeStatusSubmitted, it.Status)
+		assert.NotNil(t, it.SubmittedAt)
+		assert.Equal(t, 1, it.Attempt)
+		assert.Nil(t, it.Score)
+	})
+
+	t.Run("graded but unreleased hides score and feedback", func(t *testing.T) {
+		it := byTitle["Unreleased"]
+		assert.Equal(t, CourseGradeStatusAwaitingRelease, it.Status)
+		assert.Nil(t, it.Score)
+		assert.Nil(t, it.Percent)
+		assert.Empty(t, it.Feedback)
+		assert.Nil(t, it.GradedAt)
+	})
+
+	t.Run("released grade shows score, percent, feedback, late flag", func(t *testing.T) {
+		it := byTitle["Released"]
+		assert.Equal(t, CourseGradeStatusGraded, it.Status)
+		if assert.NotNil(t, it.Score) && assert.NotNil(t, it.Percent) {
+			assert.Equal(t, 3.0, *it.Score)
+			assert.Equal(t, 60.0, *it.Percent)
+		}
+		assert.Equal(t, "nice", it.Feedback)
+		assert.NotNil(t, it.SubmittedAt)
+		assert.True(t, it.IsLate)
+		assert.NotNil(t, it.GradedAt)
+	})
+
+	t.Run("group hand-in graded for non-submitting member", func(t *testing.T) {
+		it := byTitle["Group work"]
+		assert.Equal(t, CourseGradeStatusGraded, it.Status)
+		assert.True(t, it.IsGroup)
+		assert.Equal(t, "Alpha", it.GroupName)
+		if assert.NotNil(t, it.Score) {
+			assert.Equal(t, 8.0, *it.Score)
+		}
+	})
+
+	t.Run("quiz uses best finished attempt", func(t *testing.T) {
+		it := byTitle["Quiz attempted"]
+		assert.Equal(t, CourseGradeStatusGraded, it.Status)
+		assert.Equal(t, 100.0, it.MaxPoints)
+		assert.Equal(t, 2, it.Attempt)
+		assert.Equal(t, 3, it.MaxAttempts)
+		assert.NotNil(t, it.SubmittedAt)
+		if assert.NotNil(t, it.Percent) && assert.NotNil(t, it.Passed) {
+			assert.Equal(t, 80.0, *it.Percent)
+			assert.True(t, *it.Passed)
+		}
+	})
+
+	t.Run("unattempted quiz ignores in-progress attempt", func(t *testing.T) {
+		it := byTitle["Quiz unattempted"]
+		assert.Equal(t, CourseGradeStatusNotSubmitted, it.Status)
+		assert.Equal(t, 0, it.Attempt)
+		assert.Nil(t, it.Passed)
+	})
+
+	t.Run("totals match GetStudentFinalGrades", func(t *testing.T) {
+		finals, err := svc.GetStudentFinalGrades(me.Uuid, &crs.Uuid)
+		assert.NoError(t, err)
+		if assert.Len(t, finals, 1) {
+			assert.Equal(t, finals[0].TotalScore, overview.TotalScore)
+			assert.Equal(t, finals[0].TotalMaxScore, overview.TotalMaxScore)
+			assert.Equal(t, finals[0].Percent, overview.Percent)
+			assert.Equal(t, finals[0].FinalGrade, overview.FinalGrade)
+		}
+		// 3 (released) + 8 (group) + 80 (quiz); unreleased grade excluded.
+		assert.Equal(t, 91.0, overview.TotalScore)
+	})
+
+	t.Run("graded percent only counts graded items", func(t *testing.T) {
+		// graded max = 5 (released) + 10 (group) + 100 (quiz) = 115; 91 / 115 = 79.13%
+		assert.Equal(t, 79.13, overview.GradedPercent)
+		assert.Greater(t, overview.GradedPercent, overview.Percent)
+	})
+
+	t.Run("course with pending items is not finished and progress counts graded items only", func(t *testing.T) {
+		assert.False(t, overview.Finished)
+		// graded items: 3 + 8 + 80 = 91 of 5 + 10 + 100 = 115. Pending items have a future or no deadline.
+		assert.Equal(t, 91.0, overview.ProgressScore)
+		assert.Equal(t, 115.0, overview.ProgressMaxScore)
+	})
+
+	t.Run("course with no assignments returns empty items and zero totals", func(t *testing.T) {
+		empty := course.Course{Uuid: uuid.New(), Title: "Empty", Term: course.TermAutumn, Year: 2026, GradingScale: course.DefaultGradingScale()}
+		assert.NoError(t, db.Create(&empty).Error)
+		res, err := svc.GetMyCourseGradeOverview(me.Uuid, empty.Uuid)
+		assert.NoError(t, err)
+		assert.NotNil(t, res.Items)
+		assert.Empty(t, res.Items)
+		assert.Equal(t, 0.0, res.Percent)
+		assert.Equal(t, 0.0, res.GradedPercent)
+	})
+
+	t.Run("unknown user returns ErrUserNotFound", func(t *testing.T) {
+		_, err := svc.GetMyCourseGradeOverview(uuid.New(), crs.Uuid)
+		assert.ErrorIs(t, err, ErrUserNotFound)
+	})
+
+	t.Run("unknown course returns ErrCourseNotFound", func(t *testing.T) {
+		_, err := svc.GetMyCourseGradeOverview(me.Uuid, uuid.New())
+		assert.ErrorIs(t, err, course.ErrCourseNotFound)
+	})
+}
+
+func TestComputeCourseProgress(t *testing.T) {
+	now := time.Now()
+	past := now.Add(-time.Hour)
+	future := now.Add(time.Hour)
+	graded := func(score, maxPts float64, deadline *time.Time) CourseGradeItemDto {
+		return CourseGradeItemDto{Status: CourseGradeStatusGraded, Score: &score, MaxPoints: maxPts, Deadline: deadline}
+	}
+	open := func(maxPts float64, deadline *time.Time) CourseGradeItemDto {
+		return CourseGradeItemDto{Status: CourseGradeStatusNotSubmitted, MaxPoints: maxPts, Deadline: deadline}
+	}
+
+	tests := []struct {
+		name         string
+		items        []CourseGradeItemDto
+		wantEarned   float64
+		wantMax      float64
+		wantFinished bool
+	}{
+		{"no items is not finished", nil, 0, 0, false},
+		{"second item not due yet is left out", []CourseGradeItemDto{graded(4, 5, &past), open(5, &future)}, 4, 5, false},
+		{"missed item past deadline counts as zero", []CourseGradeItemDto{graded(4, 5, &past), open(5, &past)}, 4, 10, true},
+		{"graded item before its deadline still counts", []CourseGradeItemDto{graded(5, 5, &future)}, 5, 5, true},
+		{"ungraded item without deadline stays pending", []CourseGradeItemDto{graded(4, 5, &past), open(5, nil)}, 4, 5, false},
+		{"awaiting release past deadline counts max without score", []CourseGradeItemDto{
+			{Status: CourseGradeStatusAwaitingRelease, MaxPoints: 5, Deadline: &past},
+		}, 0, 5, true},
+		{"submitted before deadline is still pending", []CourseGradeItemDto{
+			{Status: CourseGradeStatusSubmitted, MaxPoints: 5, Deadline: &future},
+		}, 0, 0, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			earned, maxPts, finished := computeCourseProgress(tc.items, now)
+			assert.Equal(t, tc.wantEarned, earned)
+			assert.Equal(t, tc.wantMax, maxPts)
+			assert.Equal(t, tc.wantFinished, finished)
+		})
+	}
+}
+
+func TestGradeService_CourseFinishedState(t *testing.T) {
+	db, _, svc := setupGradeTestDb(t)
+
+	crs := course.Course{Uuid: uuid.New(), Title: "Finish Course", Term: course.TermAutumn, Year: 2026, GradingScale: course.DefaultGradingScale()}
+	assert.NoError(t, db.Create(&crs).Error)
+	mod := course.Module{Uuid: uuid.New(), CourseID: crs.ID, Title: "Module 1", Position: 1}
+	assert.NoError(t, db.Create(&mod).Error)
+	me := user.User{Uuid: uuid.New(), Username: "finisher", Email: "finisher@example.com"}
+	assert.NoError(t, db.Create(&me).Error)
+	assert.NoError(t, db.Create(&course.Enrollment{CourseID: crs.ID, UserID: me.ID, UserEmail: me.Email, Role: course.RoleStudent}).Error)
+
+	past := time.Now().Add(-48 * time.Hour)
+	future := time.Now().Add(48 * time.Hour)
+	newHandin := func(title string, pos int, deadline *time.Time) content.Content {
+		cnt := content.Content{Uuid: uuid.New(), ModuleID: mod.ID, Title: title, Position: pos, Type: content.TypeAssignment}
+		assert.NoError(t, db.Create(&cnt).Error)
+		assert.NoError(t, db.Create(&content.Assignment{ContentID: cnt.ID, Type: content.AssignmentHandIn, MaxPoints: 5, Deadline: deadline}).Error)
+		return cnt
+	}
+	first := newHandin("First", 1, &past)
+	sub := submission.IndividualSubmission{
+		Submission: submission.Submission{Uuid: uuid.New(), ContentID: first.ID, Attempt: 1, SubmittedAt: time.Now()},
+		UserID:     &me.ID,
+		UserEmail:  me.Email,
+	}
+	assert.NoError(t, db.Create(&sub).Error)
+	assert.NoError(t, db.Create(&Grade{IndividualSubmissionID: &sub.ID, Score: 4, IsVisibleToStudent: true}).Error)
+	second := newHandin("Second", 2, &future)
+
+	t.Run("in progress while a later deadline is open", func(t *testing.T) {
+		overview, err := svc.GetMyCourseGradeOverview(me.Uuid, crs.Uuid)
+		assert.NoError(t, err)
+		assert.False(t, overview.Finished)
+		assert.Equal(t, 4.0, overview.ProgressScore)
+		assert.Equal(t, 5.0, overview.ProgressMaxScore)
+
+		finals, err := svc.GetStudentFinalGrades(me.Uuid, &crs.Uuid)
+		assert.NoError(t, err)
+		if assert.Len(t, finals, 1) {
+			assert.False(t, finals[0].Finished)
+			assert.Equal(t, 4.0, finals[0].ProgressScore)
+			assert.Equal(t, 5.0, finals[0].ProgressMaxScore)
+		}
+	})
+
+	t.Run("finished once every deadline has passed", func(t *testing.T) {
+		assert.NoError(t, db.Model(&content.Assignment{}).Where("content_id = ?", second.ID).Update("deadline", past).Error)
+
+		overview, err := svc.GetMyCourseGradeOverview(me.Uuid, crs.Uuid)
+		assert.NoError(t, err)
+		assert.True(t, overview.Finished)
+		assert.Equal(t, 4.0, overview.ProgressScore)
+		assert.Equal(t, 10.0, overview.ProgressMaxScore)
+		assert.Equal(t, overview.TotalScore, overview.ProgressScore)
+		assert.Equal(t, overview.TotalMaxScore, overview.ProgressMaxScore)
+
+		finals, err := svc.GetStudentFinalGrades(me.Uuid, &crs.Uuid)
+		assert.NoError(t, err)
+		if assert.Len(t, finals, 1) {
+			assert.True(t, finals[0].Finished)
+			assert.Equal(t, overview.FinalGrade, finals[0].FinalGrade)
+		}
+	})
+}

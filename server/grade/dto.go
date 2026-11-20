@@ -87,6 +87,72 @@ type CourseFinalGradeDto struct {
 	Percent       float64                `json:"percent"`
 	FinalGrade    string                 `json:"finalGrade"` // "A", "B", "C", "D", "E", "F"
 	GradingScale  course.GradingScaleDto `json:"gradingScale"`
+	// Finished is true when every counted item is graded or past its deadline.
+	// FinalGrade is only meaningful for the student when Finished is true.
+	Finished bool `json:"finished"`
+	// ProgressScore and ProgressMaxScore only count items that are graded or past their deadline.
+	ProgressScore    float64 `json:"progressScore"`
+	ProgressMaxScore float64 `json:"progressMaxScore"`
+}
+
+// CourseGradeStatus describes where a student stands on one graded item.
+type CourseGradeStatus string
+
+const (
+	// CourseGradeStatusNotSubmitted means no hand-in submission or no finished quiz attempt exists.
+	CourseGradeStatusNotSubmitted CourseGradeStatus = "NOT_SUBMITTED"
+	// CourseGradeStatusSubmitted means a hand-in was submitted but not graded yet.
+	CourseGradeStatusSubmitted CourseGradeStatus = "SUBMITTED"
+	// CourseGradeStatusAwaitingRelease means a grade exists but is not visible to the student. Score is hidden.
+	CourseGradeStatusAwaitingRelease CourseGradeStatus = "AWAITING_RELEASE"
+	// CourseGradeStatusGraded means the student can see a score.
+	CourseGradeStatusGraded CourseGradeStatus = "GRADED"
+)
+
+// CourseGradeItemDto is one hand-in or quiz row in a student's course grade overview.
+// Score, Percent, Feedback and GradedAt are only set when Status is GRADED.
+type CourseGradeItemDto struct {
+	Type        StudentGradeType  `json:"type"`
+	ContentUuid uuid.UUID         `json:"contentUuid"`
+	Title       string            `json:"title"`
+	ModuleUuid  uuid.UUID         `json:"moduleUuid"`
+	ModuleTitle string            `json:"moduleTitle"`
+	Deadline    *time.Time        `json:"deadline,omitempty"`
+	Status      CourseGradeStatus `json:"status"`
+	SubmittedAt *time.Time        `json:"submittedAt,omitempty"`
+	Score       *float64          `json:"score,omitempty"`
+	MaxPoints   float64           `json:"maxPoints"`
+	Percent     *float64          `json:"percent,omitempty"`
+	IsLate      bool              `json:"isLate"`
+	Passed      *bool             `json:"passed,omitempty"`
+	Attempt     int               `json:"attempt"`
+	MaxAttempts int               `json:"maxAttempts,omitempty"`
+	IsGroup     bool              `json:"isGroup"`
+	GroupName   string            `json:"groupName,omitempty"`
+	Feedback    string            `json:"feedback,omitempty"`
+	GradedAt    *time.Time        `json:"gradedAt,omitempty"`
+}
+
+// CourseGradeOverviewDto is a student's full grade overview for one course.
+// TotalScore, TotalMaxScore, Percent and FinalGrade match GET /grade/my/final.
+// GradedPercent only counts items that already have a visible grade.
+type CourseGradeOverviewDto struct {
+	CourseUuid    uuid.UUID              `json:"courseUuid"`
+	CourseName    string                 `json:"courseName"`
+	CourseCode    string                 `json:"courseCode"`
+	TotalScore    float64                `json:"totalScore"`
+	TotalMaxScore float64                `json:"totalMaxScore"`
+	Percent       float64                `json:"percent"`
+	GradedPercent float64                `json:"gradedPercent"`
+	FinalGrade    string                 `json:"finalGrade"`
+	GradingScale  course.GradingScaleDto `json:"gradingScale"`
+	// Finished is true when every counted item is graded or past its deadline.
+	// FinalGrade is only meaningful for the student when Finished is true.
+	Finished bool `json:"finished"`
+	// ProgressScore and ProgressMaxScore only count items that are graded or past their deadline.
+	ProgressScore    float64              `json:"progressScore"`
+	ProgressMaxScore float64              `json:"progressMaxScore"`
+	Items            []CourseGradeItemDto `json:"items"`
 }
 
 // StudentFinalGradeRowDto represents a student's final grade in the teacher's course roster overview.

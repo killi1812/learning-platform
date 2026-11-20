@@ -1741,6 +1741,70 @@
                 }
             }
         },
+        "/course/{uuid}/grade/my": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Enrolled user or Admin. Returns every counted hand-in and quiz with status, released scores, and course totals matching /grade/my/final. Unreleased grades are shown as AWAITING_RELEASE without a score.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "grade"
+                ],
+                "summary": "Get student's grade overview for one course",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Course UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/grade.CourseGradeOverviewDto"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ginutil.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/course/{uuid}/grade/roster": {
             "get": {
                 "security": [
@@ -5959,10 +6023,21 @@
                     "description": "\"A\", \"B\", \"C\", \"D\", \"E\", \"F\"",
                     "type": "string"
                 },
+                "finished": {
+                    "description": "Finished is true when every counted item is graded or past its deadline.\nFinalGrade is only meaningful for the student when Finished is true.",
+                    "type": "boolean"
+                },
                 "gradingScale": {
                     "$ref": "#/definitions/course.GradingScaleDto"
                 },
                 "percent": {
+                    "type": "number"
+                },
+                "progressMaxScore": {
+                    "type": "number"
+                },
+                "progressScore": {
+                    "description": "ProgressScore and ProgressMaxScore only count items that are graded or past their deadline.",
                     "type": "number"
                 },
                 "totalMaxScore": {
@@ -5972,6 +6047,132 @@
                     "type": "number"
                 }
             }
+        },
+        "grade.CourseGradeItemDto": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "contentUuid": {
+                    "type": "string"
+                },
+                "deadline": {
+                    "type": "string"
+                },
+                "feedback": {
+                    "type": "string"
+                },
+                "gradedAt": {
+                    "type": "string"
+                },
+                "groupName": {
+                    "type": "string"
+                },
+                "isGroup": {
+                    "type": "boolean"
+                },
+                "isLate": {
+                    "type": "boolean"
+                },
+                "maxAttempts": {
+                    "type": "integer"
+                },
+                "maxPoints": {
+                    "type": "number"
+                },
+                "moduleTitle": {
+                    "type": "string"
+                },
+                "moduleUuid": {
+                    "type": "string"
+                },
+                "passed": {
+                    "type": "boolean"
+                },
+                "percent": {
+                    "type": "number"
+                },
+                "score": {
+                    "type": "number"
+                },
+                "status": {
+                    "$ref": "#/definitions/grade.CourseGradeStatus"
+                },
+                "submittedAt": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "type": {
+                    "$ref": "#/definitions/grade.StudentGradeType"
+                }
+            }
+        },
+        "grade.CourseGradeOverviewDto": {
+            "type": "object",
+            "properties": {
+                "courseCode": {
+                    "type": "string"
+                },
+                "courseName": {
+                    "type": "string"
+                },
+                "courseUuid": {
+                    "type": "string"
+                },
+                "finalGrade": {
+                    "type": "string"
+                },
+                "finished": {
+                    "description": "Finished is true when every counted item is graded or past its deadline.\nFinalGrade is only meaningful for the student when Finished is true.",
+                    "type": "boolean"
+                },
+                "gradedPercent": {
+                    "type": "number"
+                },
+                "gradingScale": {
+                    "$ref": "#/definitions/course.GradingScaleDto"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/grade.CourseGradeItemDto"
+                    }
+                },
+                "percent": {
+                    "type": "number"
+                },
+                "progressMaxScore": {
+                    "type": "number"
+                },
+                "progressScore": {
+                    "description": "ProgressScore and ProgressMaxScore only count items that are graded or past their deadline.",
+                    "type": "number"
+                },
+                "totalMaxScore": {
+                    "type": "number"
+                },
+                "totalScore": {
+                    "type": "number"
+                }
+            }
+        },
+        "grade.CourseGradeStatus": {
+            "type": "string",
+            "enum": [
+                "NOT_SUBMITTED",
+                "SUBMITTED",
+                "AWAITING_RELEASE",
+                "GRADED"
+            ],
+            "x-enum-varnames": [
+                "CourseGradeStatusNotSubmitted",
+                "CourseGradeStatusSubmitted",
+                "CourseGradeStatusAwaitingRelease",
+                "CourseGradeStatusGraded"
+            ]
         },
         "grade.GradeDto": {
             "type": "object",

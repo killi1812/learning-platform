@@ -68,6 +68,11 @@ export interface CourseFinalGradeDto {
   percent: number
   finalGrade: string
   gradingScale: GradingScale
+  /** True when every counted item is graded or past its deadline. finalGrade only applies then. */
+  finished: boolean
+  /** Points of items that are graded or past their deadline. */
+  progressScore: number
+  progressMaxScore: number
 }
 
 export interface StudentFinalGradeRowDto {
@@ -78,4 +83,47 @@ export interface StudentFinalGradeRowDto {
   totalMaxScore: number
   percent: number
   finalGrade: string
+}
+
+export type CourseGradeStatus = 'NOT_SUBMITTED' | 'SUBMITTED' | 'AWAITING_RELEASE' | 'GRADED'
+
+/** Score, percent, feedback and gradedAt are only present when status is GRADED. */
+export interface CourseGradeItem {
+  type: StudentGradeType
+  contentUuid: string
+  title: string
+  moduleUuid: string
+  moduleTitle: string
+  deadline?: string
+  status: CourseGradeStatus
+  submittedAt?: string
+  score?: number
+  maxPoints: number
+  percent?: number
+  isLate: boolean
+  passed?: boolean
+  attempt: number
+  maxAttempts?: number
+  isGroup: boolean
+  groupName?: string
+  feedback?: string
+  gradedAt?: string
+}
+
+export interface CourseGradeOverview {
+  courseUuid: string
+  courseName: string
+  courseCode: string
+  totalScore: number
+  totalMaxScore: number
+  percent: number
+  gradedPercent: number
+  finalGrade: string
+  gradingScale: GradingScale
+  /** True when every counted item is graded or past its deadline. finalGrade only applies then. */
+  finished: boolean
+  /** Points of items that are graded or past their deadline. */
+  progressScore: number
+  progressMaxScore: number
+  items: CourseGradeItem[]
 }

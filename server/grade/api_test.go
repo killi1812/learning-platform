@@ -30,6 +30,30 @@ type mockGradeService struct {
 	getMyFinalsFn func(userUuid uuid.UUID, courseUuid *uuid.UUID) ([]grade.CourseFinalGradeDto, error)
 	getRosterFn   func(courseUuid uuid.UUID) ([]grade.StudentFinalGradeRowDto, error)
 	exportCSVFn   func(courseUuid uuid.UUID, w io.Writer) error
+	overviewFn    func(userUuid, courseUuid uuid.UUID) (*grade.CourseGradeOverviewDto, error)
+}
+
+func (m *mockGradeService) GetMyCourseGradeOverview(userUuid, courseUuid uuid.UUID) (*grade.CourseGradeOverviewDto, error) {
+	if m.overviewFn != nil {
+		return m.overviewFn(userUuid, courseUuid)
+	}
+	score := 4.0
+	pct := 80.0
+	return &grade.CourseGradeOverviewDto{
+		CourseUuid:    courseUuid,
+		CourseName:    "DAT250",
+		CourseCode:    "AUTUMN 2026",
+		TotalScore:    4.0,
+		TotalMaxScore: 10.0,
+		Percent:       40.0,
+		GradedPercent: 80.0,
+		FinalGrade:    "F",
+		GradingScale:  course.GradingScaleDto{}.FromModel(course.DefaultGradingScale()),
+		Items: []grade.CourseGradeItemDto{
+			{Type: grade.GradeTypeHandin, Title: "Lab 1", Status: grade.CourseGradeStatusGraded, Score: &score, Percent: &pct, MaxPoints: 5},
+			{Type: grade.GradeTypeHandin, Title: "Lab 2", Status: grade.CourseGradeStatusNotSubmitted, MaxPoints: 5},
+		},
+	}, nil
 }
 
 func (m *mockGradeService) UpsertGrade(courseUuid, contentUuid, submissionUuid, graderUuid uuid.UUID, dto grade.UpsertGradeDto) (*grade.GradeDto, error) {
@@ -135,6 +159,14 @@ func (m *mockGradeService) GetCourseRosterFinalGrades(courseUuid uuid.UUID) ([]g
 type mockCourseServiceForGrade struct {
 	course.ICourseService
 	isTeacherOrAdminFunc func(courseUuid, userUuid uuid.UUID, isSystemAdmin bool) (bool, error)
+	isEnrolledOrAdminFn  func(courseUuid, userUuid uuid.UUID, isSystemAdmin bool) (bool, error)
+}
+
+func (m *mockCourseServiceForGrade) IsEnrolledOrAdmin(courseUuid, userUuid uuid.UUID, isSystemAdmin bool) (bool, error) {
+	if m.isEnrolledOrAdminFn != nil {
+		return m.isEnrolledOrAdminFn(courseUuid, userUuid, isSystemAdmin)
+	}
+	return true, nil
 }
 
 func (m *mockCourseServiceForGrade) IsTeacherOrAdmin(courseUuid, userUuid uuid.UUID, isSystemAdmin bool) (bool, error) {
@@ -618,5 +650,98 @@ func TestGradeCtn_FinalGradesEndpoints(t *testing.T) {
 		w := doJSONReq(r, http.MethodGet, "/api/course/not-a-uuid/grade/roster", teacherAuth, nil)
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	myPath := fmt.Sprintf("/api/course/%s/grade/my", courseUuid.String())
+
+	t.Run("GET /course/:uuid/grade/my returns 200 with overview", func(t *testing.T) {
+		r := setupGradeApiTest(&mockGradeService{}, &mockCourseServiceForGrade{})
+		w := doJSONReq(r, http.MethodGet, myPath, studentAuth, nil)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		var dto grade.CourseGradeOverviewDto
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &dto))
+		assert.Equal(t, courseUuid, dto.CourseUuid)
+		require.Len(t, dto.Items, 2)
+		assert.Equal(t, grade.CourseGradeStatusGraded, dto.Items[0].Status)
+		assert.Nil(t, dto.Items[1].Score)
+	})
+
+	t.Run("GET /course/:uuid/grade/my passes caller uuid to service", func(t *testing.T) {
+		var gotUser, gotCourse uuid.UUID
+		svc := &mockGradeService{
+			overviewFn: func(userUuid, cUuid uuid.UUID) (*grade.CourseGradeOverviewDto, error) {
+				gotUser, gotCourse = userUuid, cUuid
+				return &grade.CourseGradeOverviewDto{Items: []grade.CourseGradeItemDto{}}, nil
+			},
+		}
+		r := setupGradeApiTest(svc, &mockCourseServiceForGrade{})
+		w := doJSONReq(r, http.MethodGet, myPath, studentAuth, nil)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, courseUuid, gotCourse)
+		assert.NotEqual(t, uuid.Nil, gotUser)
+	})
+
+	t.Run("GET /course/:uuid/grade/my returns 401 without token", func(t *testing.T) {
+		r := setupGradeApiTest(&mockGradeService{}, &mockCourseServiceForGrade{})
+		w := doJSONReq(r, http.MethodGet, myPath, "", nil)
+
+		assert.Equal(t, http.StatusUnauthorized, w.Code)
+	})
+
+	t.Run("GET /course/:uuid/grade/my returns 400 for invalid UUID", func(t *testing.T) {
+		r := setupGradeApiTest(&mockGradeService{}, &mockCourseServiceForGrade{})
+		w := doJSONReq(r, http.MethodGet, "/api/course/not-a-uuid/grade/my", studentAuth, nil)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("GET /course/:uuid/grade/my returns 403 when not enrolled", func(t *testing.T) {
+		cs := &mockCourseServiceForGrade{
+			isEnrolledOrAdminFn: func(cUuid, uUuid uuid.UUID, isSystemAdmin bool) (bool, error) {
+				return false, nil
+			},
+		}
+		r := setupGradeApiTest(&mockGradeService{}, cs)
+		w := doJSONReq(r, http.MethodGet, myPath, studentAuth, nil)
+
+		assert.Equal(t, http.StatusForbidden, w.Code)
+	})
+
+	t.Run("GET /course/:uuid/grade/my returns 404 when course missing", func(t *testing.T) {
+		cs := &mockCourseServiceForGrade{
+			isEnrolledOrAdminFn: func(cUuid, uUuid uuid.UUID, isSystemAdmin bool) (bool, error) {
+				return false, course.ErrCourseNotFound
+			},
+		}
+		r := setupGradeApiTest(&mockGradeService{}, cs)
+		w := doJSONReq(r, http.MethodGet, myPath, studentAuth, nil)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+	})
+
+	t.Run("GET /course/:uuid/grade/my returns 404 when service reports course missing", func(t *testing.T) {
+		svc := &mockGradeService{
+			overviewFn: func(userUuid, cUuid uuid.UUID) (*grade.CourseGradeOverviewDto, error) {
+				return nil, course.ErrCourseNotFound
+			},
+		}
+		r := setupGradeApiTest(svc, &mockCourseServiceForGrade{})
+		w := doJSONReq(r, http.MethodGet, myPath, studentAuth, nil)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+	})
+
+	t.Run("GET /course/:uuid/grade/my returns 500 on service error", func(t *testing.T) {
+		svc := &mockGradeService{
+			overviewFn: func(userUuid, cUuid uuid.UUID) (*grade.CourseGradeOverviewDto, error) {
+				return nil, errors.New("boom")
+			},
+		}
+		r := setupGradeApiTest(svc, &mockCourseServiceForGrade{})
+		w := doJSONReq(r, http.MethodGet, myPath, studentAuth, nil)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 }

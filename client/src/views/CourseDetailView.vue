@@ -46,6 +46,10 @@
           <v-icon icon="mdi-clipboard-text-outline" start />
           Assignments
         </v-tab>
+        <v-tab v-if="isEnrolled && !isTeacher" value="grades">
+          <v-icon icon="mdi-school-outline" start />
+          Grades
+        </v-tab>
         <v-tab v-if="isEnrolled" value="groups">
           <v-icon icon="mdi-account-multiple" start />
           Groups ({{ groups.length }})
@@ -118,6 +122,10 @@
             @submit-handin="openStudentSubmit"
             @take-quiz="takeQuiz"
           />
+        </v-tabs-window-item>
+
+        <v-tabs-window-item v-if="isEnrolled && !isTeacher" value="grades">
+          <CourseGradesTab :course-uuid="resolvedCourseUuid" />
         </v-tabs-window-item>
 
         <v-tabs-window-item v-if="isEnrolled" value="groups">
@@ -252,6 +260,7 @@ import { deleteHandin } from '@/api/submission'
 import AddParticipantDialog from '@/components/course/AddParticipantDialog.vue'
 import BulkGroupsDialog from '@/components/course/BulkGroupsDialog.vue'
 import CourseAssignmentsTab from '@/components/course/CourseAssignmentsTab.vue'
+import CourseGradesTab from '@/components/course/CourseGradesTab.vue'
 import CourseGroupsTab from '@/components/course/CourseGroupsTab.vue'
 import CourseModulesTab from '@/components/course/CourseModulesTab.vue'
 import CourseOverviewTab from '@/components/course/CourseOverviewTab.vue'
@@ -269,12 +278,14 @@ import { useConfirm } from '@/composables/useConfirm'
 import { useToast } from '@/composables/useToast'
 import { findUserGroup } from '@/util/group'
 
-type CourseTab = 'overview' | 'modules' | 'participants' | 'assignments' | 'groups' | 'settings'
+type CourseTab =
+  'overview' | 'modules' | 'participants' | 'assignments' | 'grades' | 'groups' | 'settings'
 const VALID_TABS: readonly CourseTab[] = [
   'overview',
   'modules',
   'participants',
   'assignments',
+  'grades',
   'groups',
   'settings',
 ]
@@ -323,6 +334,9 @@ function canAccessTab(tab: CourseTab): boolean {
   }
   if (tab === 'participants' || tab === 'settings') {
     return isTeacher.value
+  }
+  if (tab === 'grades') {
+    return isEnrolled.value && !isTeacher.value
   }
   return isEnrolled.value
 }

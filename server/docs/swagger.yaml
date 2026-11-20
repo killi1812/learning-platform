@@ -445,15 +445,115 @@ definitions:
       finalGrade:
         description: '"A", "B", "C", "D", "E", "F"'
         type: string
+      finished:
+        description: |-
+          Finished is true when every counted item is graded or past its deadline.
+          FinalGrade is only meaningful for the student when Finished is true.
+        type: boolean
       gradingScale:
         $ref: '#/definitions/course.GradingScaleDto'
       percent:
+        type: number
+      progressMaxScore:
+        type: number
+      progressScore:
+        description: ProgressScore and ProgressMaxScore only count items that are
+          graded or past their deadline.
         type: number
       totalMaxScore:
         type: number
       totalScore:
         type: number
     type: object
+  grade.CourseGradeItemDto:
+    properties:
+      attempt:
+        type: integer
+      contentUuid:
+        type: string
+      deadline:
+        type: string
+      feedback:
+        type: string
+      gradedAt:
+        type: string
+      groupName:
+        type: string
+      isGroup:
+        type: boolean
+      isLate:
+        type: boolean
+      maxAttempts:
+        type: integer
+      maxPoints:
+        type: number
+      moduleTitle:
+        type: string
+      moduleUuid:
+        type: string
+      passed:
+        type: boolean
+      percent:
+        type: number
+      score:
+        type: number
+      status:
+        $ref: '#/definitions/grade.CourseGradeStatus'
+      submittedAt:
+        type: string
+      title:
+        type: string
+      type:
+        $ref: '#/definitions/grade.StudentGradeType'
+    type: object
+  grade.CourseGradeOverviewDto:
+    properties:
+      courseCode:
+        type: string
+      courseName:
+        type: string
+      courseUuid:
+        type: string
+      finalGrade:
+        type: string
+      finished:
+        description: |-
+          Finished is true when every counted item is graded or past its deadline.
+          FinalGrade is only meaningful for the student when Finished is true.
+        type: boolean
+      gradedPercent:
+        type: number
+      gradingScale:
+        $ref: '#/definitions/course.GradingScaleDto'
+      items:
+        items:
+          $ref: '#/definitions/grade.CourseGradeItemDto'
+        type: array
+      percent:
+        type: number
+      progressMaxScore:
+        type: number
+      progressScore:
+        description: ProgressScore and ProgressMaxScore only count items that are
+          graded or past their deadline.
+        type: number
+      totalMaxScore:
+        type: number
+      totalScore:
+        type: number
+    type: object
+  grade.CourseGradeStatus:
+    enum:
+    - NOT_SUBMITTED
+    - SUBMITTED
+    - AWAITING_RELEASE
+    - GRADED
+    type: string
+    x-enum-varnames:
+    - CourseGradeStatusNotSubmitted
+    - CourseGradeStatusSubmitted
+    - CourseGradeStatusAwaitingRelease
+    - CourseGradeStatusGraded
   grade.GradeDto:
     properties:
       feedback:
@@ -2091,6 +2191,49 @@ paths:
       security:
       - BearerAuth: []
       summary: Export course gradebook as CSV
+      tags:
+      - grade
+  /course/{uuid}/grade/my:
+    get:
+      description: Enrolled user or Admin. Returns every counted hand-in and quiz
+        with status, released scores, and course totals matching /grade/my/final.
+        Unreleased grades are shown as AWAITING_RELEASE without a score.
+      parameters:
+      - description: Course UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/grade.CourseGradeOverviewDto'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ginutil.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get student's grade overview for one course
       tags:
       - grade
   /course/{uuid}/grade/roster:
